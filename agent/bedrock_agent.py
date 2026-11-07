@@ -64,14 +64,19 @@ from engine.cierre import (  # noqa: E402
 
 MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "amazon.nova-pro-v1:0")
 KB_ID = os.environ.get("BEDROCK_KB_ID", "")      # opcional
-# La region se lee de AWS_REGION (que es lo que inyecta Terraform en la
-# Lambda) y, como respaldo, de AWS_DEFAULT_REGION (lo que usan las CLI y los
-# perfiles de AWS CLI). Sin este respaldo, un despliegue en una region
-# distinta de eu-west-1 fallaria con "security token invalid" en Bedrock.
+# La region se lee de BEDROCK_REGION (la que inyecta Terraform: AWS_REGION
+# es una clave RESERVADA en Lambda y AWS rechaza la Creacion si se declara
+# en `environment`). Como respaldo, AWS_REGION / AWS_DEFAULT_REGION (lo que
+# usan las CLI y los entornos locales).
+#
+# El default es us-east-1, NO eu-west-1: la cuenta del workshop tiene una
+# policy "DenyAllOutsideAllowedRegions" que solo permite crear recursos en
+# us-east-1, y Bedrock solo esta disponible en la region de la clave.
 REGION = (
-    os.environ.get("AWS_REGION")
+    os.environ.get("BEDROCK_REGION")
+    or os.environ.get("AWS_REGION")
     or os.environ.get("AWS_DEFAULT_REGION")
-    or "eu-west-1"
+    or "us-east-1"
 )
 
 SYSTEM_PROMPT = """Eres el analista financiero de MoraBanc para autonomos y pymes de Andorra.

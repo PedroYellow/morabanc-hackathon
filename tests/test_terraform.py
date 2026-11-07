@@ -489,6 +489,46 @@ if _deploy_welcome:
           "187.127.64.126 es OTRO servidor")
 
 
+
+# ==========================================================================
+# Regresiones del apply en AWS: claves reservadas y authorizer REQUEST
+# ==========================================================================
+
+# BUG 16: AWS_REGION es una clave RESERVADA en Lambda. Declararla en
+# `environment` hace fallar la Creacion con
+# "InvalidParameterValueException: Lambda was unable to configure your
+# environment variables... Reserved keys used in this request: AWS_REGION".
+check("las Lambdas no declaran AWS_REGION en su entorno",
+      not re.search(r'AWS_REGION\s*=\s*var\.aws_region', SRC),
+      "AWS_REGION es reservada: usa BEDROCK_REGION")
+check("las Lambdas declaran BEDROCK_REGION",
+      "BEDROCK_REGION" in SRC,
+      "es el nombre que si acepta Lambda")
+
+# BUG 17: AuthorizerPayloadFormatVersion es OBLIGATORIO en los authorizers
+# REQUEST: sin eso, "BadRequestException: AuthorizerPayloadFormatVersion is
+# a required parameter for REQUEST authorizer".
+check("el authorizer REQUEST declara payload format 2.0",
+      re.search(r'authorizer_payload_format_version\s*=\s*"2\.0"', SRC) is not None)
+check("el authorizer desactiva simple responses (devuelve policy IAM)",
+      re.search(r'enable_simple_responses\s*=\s*false', SRC) is not None,
+      "la lambda del authorizer devuelve policyDocument, no un simple 200")
+
+# La region por defecto del agente es us-east-1 (la cuenta del workshop solo
+# permite crear ahi), no eu-west-1.
+try:
+    with open(os.path.join(_RAIZ, "agent", "bedrock_agent.py"), encoding="utf-8") as _f:
+        _src_ag = _f.read()
+    check("el agente lee BEDROCK_REGION",
+          'os.environ.get("BEDROCK_REGION")' in _src_ag)
+    check("el default de region del agente es us-east-1",
+          '"us-east-1"' in _src_ag and 'or "eu-west-1"' not in _src_ag,
+          "eu-west-1 esta bloqueada por la policy del workshop")
+except OSError:
+    check("el agente lee BEDROCK_REGION", False, "no se pudo leer el agente")
+    check("el default de region del agente es us-east-1", False, "no se pudo leer el agente")
+
+
 # ==========================================================================
 
 for o in ["api_url", "front_url", "bucket_datos", "guardrail_id",

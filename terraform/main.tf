@@ -532,7 +532,13 @@ resource "aws_lambda_function" "motor" {
 
   environment {
     variables = {
-      AWS_REGION       = var.aws_region
+      # OJO: AWS_REGION es una clave RESERVADA en Lambda. Si se declara en
+      # `environment`, la Creacion falla con
+      # "InvalidParameterValueException: Lambda was unable to configure your
+      # environment variables because the environment variables you have
+      # provided contains reserved keys... AWS_REGION".
+      # La region la pone la plataforma; boto3 la lee de ahi.
+      BEDROCK_REGION   = var.aws_region
       BEDROCK_MODEL_ID = var.bedrock_model_id
       BEDROCK_KB_ID    = var.bedrock_kb_id
       BUCKET_DATOS     = aws_s3_bucket.datos.id
@@ -569,7 +575,8 @@ resource "aws_lambda_function" "api" {
 
   environment {
     variables = {
-      AWS_REGION      = var.aws_region
+      # (AWS_REGION es reservada en Lambda: ver la nota en la lambda del motor.)
+      BEDROCK_REGION  = var.aws_region
       FUNC_MOTOR_NAME = aws_lambda_function.motor.function_name
       BUCKET_DATOS    = aws_s3_bucket.datos.id
       TABLE_PRINCIPAL = aws_dynamodb_table.principal.name
@@ -655,6 +662,15 @@ resource "aws_apigatewayv2_authorizer" "key" {
   authorizer_type  = "REQUEST"
   name             = "clave-morabanc"
   identity_sources = ["$request.header.x-api-key"]
+
+  # OBLIGATORIO en los authorizers REQUEST: sin esto, la Creacion falla con
+  # "BadRequestException: AuthorizerPayloadFormatVersion is a required
+  # parameter for REQUEST authorizer".
+  authorizer_payload_format_version = "2.0"
+
+  # La Lambda del authorizer responde con la policy de IAM de API Gateway
+  # (allow/deny + context), no con el cuerpo crudo de la peticion.
+  enable_simple_responses = false
 
   authorizer_uri = aws_lambda_function.authorizer.invoke_arn
 }
@@ -1145,8 +1161,10 @@ resource "time_sleep" "aoss_policy" {
     policy = one(aws_opensearchserverless_security_policy.cifrado[*].id)
   }
 
-  # 30 s: es lo que tarda OpenSearch en propagar la policy.
-  create_duration = "30s"
+  # 60 s: OpenSearch Serverless tarda en indexar la security policy y en
+  # dejar la coleccion lista para recibir indices. Con 30 s la KB fallaba
+  # con "[security_exception] 403 Forbidden" al validar el storage config.
+  create_duration = "60s"
 }
 
 # Network access policy: es la que dice QUE puede entrar en la coleccion.
