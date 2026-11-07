@@ -177,6 +177,70 @@ resource "aws_kms_key" "main" {
   enable_key_rotation     = true
   deletion_window_in_days = 7
   tags                    = local.tags
+
+  # Sin esta key policy, CloudWatch Logs NO puede cifrar sus log groups con
+  # esta clave y el apply falla con:
+  # "AccessDeniedException: The specified KMS key does not exist or is not
+  #  allowed to be used with Arn 'arn:aws:logs:...:log-group:/aws/lambda/...'"
+  #
+  # La default policy de KMS solo permite a la cuenta Proprietaria, pero los
+  # servicios de AWS (Logs, Bedrock, S3) necesitan una delegacion
+  # explicita para usar la clave. Es el patron estandar de "key policy +
+  # IAM policy" de AWS.
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "EnableIAMUserPermissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "AllowCloudWatchLogs"
+        Effect = "Allow"
+        Principal = {
+          Service = "logs.${var.aws_region}.amazonaws.com"
+        }
+        Action = [
+          "kms:Encrypt*",
+          "kms:Decrypt*",
+          "kms:ReEncrypt*",
+          "kms:GenerateDataKey*",
+          "kms:Describe*",
+        ]
+        Resource = "*"
+        Condition = {
+          ArnLike = {
+            "kms:EncryptionContext:aws:logs:arn" = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:*"
+          }
+        }
+      },
+      {
+        Sid    = "AllowBedrockAndServices"
+        Effect = "Allow"
+        Principal = {
+          Service = [
+            "bedrock.amazonaws.com",
+            "bedrock-agent.amazonaws.com",
+            "aoss.amazonaws.com",
+            "s3.amazonaws.com",
+          ]
+        }
+        Action = [
+          "kms:Encrypt*",
+          "kms:Decrypt*",
+          "kms:ReEncrypt*",
+          "kms:GenerateDataKey*",
+          "kms:Describe*",
+        ]
+        Resource = "*"
+      },
+    ]
+  })
 }
 
 resource "aws_kms_alias" "main" {
@@ -341,9 +405,9 @@ data "aws_iam_policy_document" "lambda_exec" {
   }
 
   statement {
-    sid       = "Logs"
-    effect    = "Allow"
-    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    sid     = "Logs"
+    effect  = "Allow"
+    actions = ["logs:CreateLogStream", "logs:PutLogEvents"]
     # Los dos log groups: el del motor y el de la API. Con solo uno, la
     # otra Lambda falla con "not allowed to be used with Arn ...".
     resources = [
@@ -711,7 +775,12 @@ resource "aws_cognito_user_pool_domain" "dominio" {
   # proyecto entero + el id de cuenta se llegaba a 76 y el apply fallaba con
   # "expected length of domain to be in the range (1 - 63)". Por eso se
   # recorta el nombre y se usa un hash corto del id de cuenta.
-  domain       = "${local.cognito_prefix}.auth.${var.aws_region}.amazoncognito.com"
+  # OJO: el campo "domain" es SOLO el prefijo. AWS anade por su cuenta
+  # ".auth.<region>.amazoncognito.com". Si se le pasa el dominio completo
+  # (con puntos), el apply falla con "InvalidParameterException: The domain
+  # name contains an invalid character" porque los puntos no son validos
+  # en el prefijo.
+  domain       = local.cognito_prefix
   user_pool_id = aws_cognito_user_pool.usuarios.id
 }
 
@@ -766,9 +835,10 @@ resource "aws_cloudfront_distribution" "web" {
   default_cache_behavior {
     target_origin_id       = "s3-${aws_s3_bucket.datos.id}"
     viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
-    cached_methods         = ["GET", "HEAD"]
-    compress               = true
+    # Combinacion admitida por AWS (no puede faltar HEAD ni GET).
+    allowed_methods = ["HEAD", "GET", "OPTIONS"]
+    cached_methods  = ["GET", "HEAD"]
+    compress        = true
 
     forwarded_values {
       query_string = false
@@ -787,9 +857,11 @@ resource "aws_cloudfront_distribution" "web" {
     path_pattern           = "/preguntar"
     target_origin_id       = "api-${aws_apigatewayv2_api.api.id}"
     viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["POST", "OPTIONS"]
-    cached_methods         = []
-    compress               = true
+    # AWS exige una combinacion concreta: no vale ["POST", "OPTIONS"].
+    # La lista completa es la unica que incluye POST con OPTIONS.
+    allowed_methods = ["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"]
+    cached_methods  = []
+    compress        = true
 
     forwarded_values {
       query_string = false
@@ -1034,13 +1106,13 @@ resource "aws_opensearchserverless_security_policy" "cifrado" {
   type        = "encryption"
 
   policy = jsonencode({
+    # OJO: OpenSearch Serverless acepta UNA sola regla y el ResourceType
+    # debe ser una constante ("collection"). Con dos reglas falla con
+    # "there must be a maximum of 1 items in the array" y con
+    # "dashboard" falla con "must be a constant value collection".
     Rules = [
       {
         ResourceType = "collection"
-        Resource     = ["collection/${local.name}-vector"]
-      },
-      {
-        ResourceType = "dashboard"
         Resource     = ["collection/${local.name}-vector"]
       },
     ]
@@ -1247,7 +1319,8 @@ output "cognito_client_id" {
 
 output "cognito_domain" {
   description = "Dominio de Cognito para el login del front."
-  value       = aws_cognito_user_pool_domain.dominio.domain
+  # El provider ya devuelve el dominio completo (prefijo.auth.region...).
+  value = aws_cognito_user_pool_domain.dominio.domain
 }
 
 output "bucket_datos" {

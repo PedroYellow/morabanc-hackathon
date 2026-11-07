@@ -135,8 +135,14 @@ if cognito:
           "local.cognito_prefix" in dom,
           "los prefijos de dominio Cognito son GLOBALES: sin sufijo, "
           "colisiona con otro equipo del hackathon")
-    check("el dominio usa var.aws_region (no eu-west-1 hardcodeado)",
-          "var.aws_region" in dom)
+    # El campo "domain" es SOLO el prefijo: AWS anade .auth.<region>...
+    # asi que ya no hay ninguna region en este bloque. Lo que se comprueba
+    # es que la region venga de la variable (no hardcodeada) en el sitio
+    # donde SI se usa: el output del front.
+    check("la region viene de la variable (no hardcodeada)",
+          "var.aws_region" in SRC
+          and not re.search(r'domain\s*=\s*"[^"]*\.auth\.eu-west-1', SRC),
+          "el prefijo de Cognito ya no lleva la region: AWS la anade")
 
     # AWS valida que el dominio COMPLETO no pase de 63 caracteres. Con el
     # nombre del proyecto entero + el id de cuenta se llegaba a 78 y el
@@ -315,6 +321,61 @@ check("las referencias condicionales no usan [0]",
       and not re.search(r"aws_opensearchserverless_collection\.vector\[0\]", SRC)
       and not re.search(r"aws_bedrockagent_knowledge_base\.normativa\[0\]", SRC),
       "con count=0 el plan falla con 'Invalid index': usar one() o splat")
+
+
+
+# ==========================================================================
+# Regresiones del SEGUNDO apply (bugs de la API de AWS)
+# ==========================================================================
+
+# BUG 6: el campo "domain" de Cognito es SOLO el prefijo.
+# Si se le pasa el dominio completo (con puntos), AWS responde
+# "InvalidParameterException: The domain name contains an invalid character".
+check("el dominio de Cognito es solo el prefijo (sin puntos)",
+      'domain       = local.cognito_prefix' in SRC
+      and '.auth.${var.aws_region}.amazoncognito.com"' not in SRC.split('resource "aws_cognito_user_pool_domain"')[1][:600]
+      if 'resource "aws_cognito_user_pool_domain"' in SRC else False,
+      "AWS anade .auth.<region>.amazoncognito.com por su cuenta")
+
+# BUG 7: CloudFront solo admite combinaciones concretas de AllowedMethods.
+# ["POST", "OPTIONS"] es invalido ("The parameter AllowedMethods is invalid").
+VALIDAS = (
+    '["HEAD", "GET"]',
+    '["HEAD", "GET", "OPTIONS"]',
+    '["GET", "HEAD", "OPTIONS"]',
+    '["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"]',
+)
+_metodos = re.findall(r'allowed_methods\s*=\s*(\[[^\]]*\])', SRC)
+check("todos los AllowedMethods de CloudFront son combinaciones validas",
+      _metodos and all(m in VALIDAS for m in _metodos),
+      f"encontrados: {_metodos}")
+
+# BUG 8: la KMS necesita key policy para que CloudWatch Logs la use.
+# Sin ella: "AccessDeniedException: The specified KMS key does not exist
+# or is not allowed to be used with Arn ...log-group:/aws/lambda/..."
+check("la KMS tiene key policy propia",
+      re.search(r'resource "aws_kms_key" "main" \{.*?policy\s*=\s*jsonencode', SRC, re.S) is not None)
+check("la key policy delega en CloudWatch Logs",
+      "logs.${var.aws_region}.amazonaws.com" in SRC
+      and "AllowCloudWatchLogs" in SRC)
+
+# BUG 9: la security policy de OpenSearch solo admite 1 regla y el
+# ResourceType debe ser constante ("collection").
+m_sp_pol = re.search(r'aws_opensearchserverless_security_policy"\s+"\w+"\s*\{.*?policy\s*=\s*jsonencode\(\{(.*?)\n  \}\)', SRC, re.S)
+if m_sp_pol:
+    cuerpo = m_sp_pol.group(1)
+    # Los comentarios de HCL no cuentan: solo mira las lineas con codigo.
+    codigo = "\n".join(l for l in cuerpo.split("\n")
+                       if not l.strip().startswith("#"))
+    n_reglas = codigo.count("ResourceType")
+    check("la security policy de OpenSearch tiene una sola regla", n_reglas == 1,
+          f"OpenSearch Serverless admite maximo 1 regla (hay {n_reglas})")
+    check("la security policy de OpenSearch no usa 'dashboard'",
+          '"dashboard"' not in codigo,
+          "ResourceType debe ser una constante: solo 'collection'")
+else:
+    check("la security policy de OpenSearch tiene una sola regla", False, "no se encontro la policy")
+    check("la security policy de OpenSearch no usa 'dashboard'", False, "no se encontro la policy")
 
 
 # ==========================================================================
