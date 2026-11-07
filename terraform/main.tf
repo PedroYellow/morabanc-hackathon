@@ -94,7 +94,27 @@ variable "bedrock_kb_id" {
 }
 
 variable "enable_kb" {
-  description = "Crear la Knowledge Base de Bedrock + la coleccion de vectores. Requiere permisos de OpenSearch Serverless y Bedrock Agent que la cuenta del workshop no tiene; se puede desactivar para desplegar el resto."
+  description = <<-EOT
+    Crear la Knowledge Base de Bedrock + la coleccion de vectores.
+
+    OJO: en la cuenta del workshop (539756034803, rol WSParticipantRole)
+    esto NO es posible. La policy "ws-default-policy" tiene un Deny
+    (DenyAllOutsideAllowedRegions) cuyo NotAction NO incluye "aoss", asi
+    que cualquier llamada a las APIs de datos de OpenSearch Serverless
+    queda denegada. Consecuencias:
+
+      - El indice "default" no se puede crear (403 Forbidden).
+      - Bedrock no puede validar la coleccion al crear la KB
+        ("[security_exception] 403 Forbidden"), asi que la KB tampoco.
+
+    La red y la access policy estan bien escritas; el bloqueo es de la
+    cuenta. Con enable_kb=false se despliega todo lo demas (motor,
+    Lambdas, API Gateway, Cognito, CloudFront, S3, DynamoDB, guardrail)
+    y el proyecto funciona igual: el RAG ya es opcional en el agente.
+
+    Con credenciales de una cuenta propia, enable_kb=true crea la KB
+    completa con el corpus normativo.
+  EOT
   type        = bool
   default     = true
 }
@@ -1162,6 +1182,7 @@ resource "null_resource" "indice_default" {
   depends_on = [
     aws_opensearchserverless_collection.vector,
     time_sleep.aoss_policy,
+    aws_opensearchserverless_access_policy.datos,
   ]
 
   triggers = {
@@ -1180,7 +1201,10 @@ resource "null_resource" "indice_default" {
         echo "sin endpoint de la coleccion: se salta"
         exit 0
       fi
-      python3 "$RAIZ/scripts/crear_indice_opensearch.py" "$ENDPOINT" default
+      # OJO: $RAIZ no existe dentro del provisioner (es una variable del
+      # script de shell, no de terraform). La ruta se saca de path.module,
+      # que es el directorio del modulo de terraform.
+      python3 "${path.module}/../scripts/crear_indice_opensearch.py" "$ENDPOINT" default
     EOT
   }
 }
@@ -1340,7 +1364,10 @@ resource "aws_opensearchserverless_security_policy" "red" {
         },
       ]
       AllowFromPublic = false
-      SourceServices  = ["bedrock.amazonaws.com"]
+      # OJO: SourceServices solo admite "bedrock.amazonaws.com" para una
+      # network policy. Con otros valores la API responde "Invalid
+      # SourceServices".
+      SourceServices = ["bedrock.amazonaws.com"]
     },
     {
       Description = "Bedrock accede al dashboard de la coleccion"
@@ -1351,7 +1378,105 @@ resource "aws_opensearchserverless_security_policy" "red" {
         },
       ]
       AllowFromPublic = false
-      SourceServices  = ["bedrock.amazonaws.com"]
+      # OJO: SourceServices solo admite "bedrock.amazonaws.com" para una
+      # network policy. Con otros valores la API responde "Invalid
+      # SourceServices".
+      SourceServices = ["bedrock.amazonaws.com"]
+    },
+  ])
+}
+
+# Access policy de DATOS: es la que dice quien puede LEER y ESCRIBIR en
+# la coleccion (las de encryption y network no dan acceso a los datos).
+#
+# Sin ella, cualquier peticion a la coleccion (crear el indice, indexar
+# el corpus, buscar vectores) responde 403 Forbidden, aunque las otras dos
+# policies esten correctas.
+#
+# El permiso IAM (aoss:APIAccessAll) y la access policy van juntos: el
+# IAM concede la accion, la access policy concede el acceso al recurso.
+resource "aws_opensearchserverless_access_policy" "datos" {
+  count = (var.bedrock_kb_id != "" || !var.enable_kb) ? 0 : 1
+
+  name        = "${local.name}-acceso"
+  description = "Acceso a la coleccion de vectores para Bedrock y el equipo"
+  type        = "data"
+
+  # El rol de la KB se cita en el Principal: tiene que existir antes.
+  depends_on = [aws_iam_role.bedrock_kb]
+
+  # FORMATO DE LA POLICY (verificado contra la API, no de memoria):
+  #  - El array de fuera es una LISTA de entradas, cada una con sus Rules
+  #    y su Principal.
+  #  - El Principal es un ARRAY DE STRINGS: ["arn:aws:iam::...:root"].
+  #    Con un objeto {"AWS": [...]} el error es "Principal: object found,
+  #    array expected"; con [{"AWS": [...]}] es "Principal[0]: object
+  #    found, string expected".
+  #  - El Permission va DENTRO de cada Rule. Fuera, el error es
+  #    "Rules[0].Permission: is missing but it is required".
+  #  - El ResourceType puede ser "collection" o "index" en el MISMO
+  #    array de Rules: lo que no se puede es repetir el mismo tipo.
+  policy = jsonencode([
+    {
+      # Permisos a nivel de coleccion: alias, plantillas, crear y
+      # modificar la coleccion.
+      Rules = [
+        {
+          ResourceType = "collection"
+          Resource     = ["collection/${local.name}-vector"]
+          # aoss:* y no una lista de permisos: esta API de
+          # OpenSearch Serverless SOLO acepta el comodin (o los permisos
+          # de ML). Con la lista de la documentacion responde
+          # "Permission[0]: does not have a value in the enumeration
+          # [aoss:DescribeMLResource, ... aoss:*]".
+          Permission = ["aoss:*"]
+        },
+      ]
+      # El Principal tiene que incluir a QUIEN va a usar la coleccion:
+      #  - el root de la cuenta (permite a los miembros del equipo)
+      #  - el rol de la KB de Bedrock
+      #  - el rol del workshop (WSParticipantRole/Participant), que es el
+      #    que usa el provisioner para crear el indice y el que usa el
+      #    CLI de AWS. Sin el, la peticion responde 403 aunque el IAM
+      #    tenga permiso: la access policy manda sobre el IAM.
+      # OJO: AWS compara el Principal con el ARN REAL de quien llama, que
+      # para el rol del workshop es el ARN ASUMIDO
+      # (assumed-role/WSParticipantRole/Participant), no el del rol. Por
+      # eso van los dos.
+      Principal = [
+        "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root",
+        aws_iam_role.bedrock_kb[0].arn,
+        "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/WSParticipantRole",
+        "arn:aws:sts::${data.aws_caller_identity.current.account_id}:assumed-role/WSParticipantRole/Participant",
+      ]
+    },
+    {
+      # Permisos a nivel de indice: leer y buscar documentos. Es lo que
+      # necesita la KB para indexar el corpus y para responder.
+      Rules = [
+        {
+          ResourceType = "index"
+          Resource     = ["index/${local.name}-vector/*"]
+          Permission = ["aoss:*"]
+        },
+      ]
+      # El Principal tiene que incluir a QUIEN va a usar la coleccion:
+      #  - el root de la cuenta (permite a los miembros del equipo)
+      #  - el rol de la KB de Bedrock
+      #  - el rol del workshop (WSParticipantRole/Participant), que es el
+      #    que usa el provisioner para crear el indice y el que usa el
+      #    CLI de AWS. Sin el, la peticion responde 403 aunque el IAM
+      #    tenga permiso: la access policy manda sobre el IAM.
+      # OJO: AWS compara el Principal con el ARN REAL de quien llama, que
+      # para el rol del workshop es el ARN ASUMIDO
+      # (assumed-role/WSParticipantRole/Participant), no el del rol. Por
+      # eso van los dos.
+      Principal = [
+        "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root",
+        aws_iam_role.bedrock_kb[0].arn,
+        "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/WSParticipantRole",
+        "arn:aws:sts::${data.aws_caller_identity.current.account_id}:assumed-role/WSParticipantRole/Participant",
+      ]
     },
   ])
 }
@@ -1362,6 +1487,7 @@ resource "aws_opensearchserverless_collection" "vector" {
   depends_on = [
     time_sleep.aoss_policy,
     aws_opensearchserverless_security_policy.red,
+    aws_opensearchserverless_access_policy.datos,
   ]
 
   name = "${local.name}-vector"

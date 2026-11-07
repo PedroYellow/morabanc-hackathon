@@ -45,10 +45,13 @@ EOF
     echo "    API:      $API_URL"
     echo "    Cognito:  ${COGNITO_DOMAIN:-<sin dominio>} / ${COGNITO_CLIENT_ID:-<sin client id>}"
     echo "    Region:   $AWS_REGION"
-    [ -n "$API_KEY" ] && echo "    API key:  ${API_KEY:0:4}... (inyectada en el front)"
-    python3 - "$API_URL" "$COGNITO_DOMAIN" "$COGNITO_CLIENT_ID" "$AWS_REGION" "$API_KEY" <<'PY'
+    # La API key NO se inyecta en el front: la CloudFront Function
+    # "mora-inject-api-key" la anade en el edge, en las rutas /api/*.
+    # Asi la clave nunca se descarga en el navegador.
+    echo "    API key:  la anade la CloudFront Function en el edge (no va en el bundle)"
+    python3 - "$COGNITO_DOMAIN" "$COGNITO_CLIENT_ID" "$AWS_REGION" <<'PY'
 import json, re, sys
-api_url, cognito_domain, cognito_client_id, region, api_key = sys.argv[1:6]
+cognito_domain, cognito_client_id, region = sys.argv[1:4]
 path = "frontend/index.html"
 s = open(path, encoding="utf-8").read()
 
@@ -56,17 +59,20 @@ s = open(path, encoding="utf-8").read()
 # para que ejecutar el script dos veces no duplique la linea.
 s = re.sub(r"\n?<script>window\.__API_URL__=.*?</script>", "", s, flags=re.S)
 
-cfg = ('<script>window.__API_URL__=%s;window.__API_KEY__=%s;'
+cfg = ('<script>window.__API_URL__="/api";window.__API_KEY__="";'
        'window.__COGNITO_DOMAIN__=%s;'
        'window.__COGNITO_CLIENT_ID__=%s;window.__AWS_REGION__=%s;</script>'
-       % (json.dumps(api_url), json.dumps(api_key), json.dumps(cognito_domain),
+       % (json.dumps(cognito_domain),
           json.dumps(cognito_client_id), json.dumps(region)))
 
-marker = '<script src="assets/app.js"></script>'
-if marker not in s:
+# El marcador tiene que tolerar el versionado de assets (?v=...) que se
+# usa para que un despliegue se vea al instante y no 5 minutos despues
+# por la cache de CloudFront/nginx.
+marker = re.search(r'<script src="assets/app\.js(?:\?[^"]*)?"></script>', s)
+if not marker:
     print("ERROR: no se encontro el marker app.js en index.html", file=sys.stderr)
     sys.exit(1)
-s = s.replace(marker, cfg + "\n" + marker)
+s = s.replace(marker.group(0), cfg + "\n" + marker.group(0))
 open(path, "w", encoding="utf-8").write(s)
 print("    config inyectada en index.html")
 PY

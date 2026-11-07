@@ -32,6 +32,18 @@ def check(nombre: str, obtenido, esperado=True) -> None:
         print(f"  PASS  {nombre}")
 
 
+def check_msg(nombre: str, condicion, explicacion: str = "") -> None:
+    """Como check(), pero el tercer argumento es una EXPLICACION, no un
+    valor esperado. Para booleanos con texto explicativo."""
+    global n
+    n += 1
+    if not condicion:
+        fallos.append(f"{nombre}: {explicacion}")
+        print(f"  FAIL  {nombre}")
+    else:
+        print(f"  PASS  {nombre}")
+
+
 app = open(APP_JS, encoding="utf-8").read()
 html = open(INDEX_HTML, encoding="utf-8").read()
 
@@ -97,6 +109,24 @@ print("\n=== LA MARCA ===")
 check("el HTML usa PlanificAND", "PlanificAND" in html)
 check("MoraBanc sigue como partner", "MoraBanc" in html)
 check("el titulo lleva PlanificAND", "<title>PlanificAND" in html)
+
+print("\n=== EL PROXY DE /api EN EL VPS ===")
+# El vhost de nginx tiene que tener el bloque /api: sin el, el POST
+# devuelve 404 y la web se queda en modo demo sin que se note.
+deploy = open(os.path.join(RAIZ, "scripts", "deploy_welcome.sh"), encoding="utf-8").read()
+check("el vhost de nginx tiene bloque /api", "location /api/" in deploy)
+check("el proxy apunta a la API de AWS", "proxy_pass" in deploy and "API_UPSTREAM" in deploy)
+check_msg("la API key la pone nginx, no el navegador",
+      'proxy_set_header x-api-key' in deploy,
+      "si la clave viaja en el HTML, se puede leer en el codigo fuente")
+check_msg("el Host es el de API Gateway, no el del dominio",
+      "proxy_set_header Host ${API_HOST}" in deploy
+      and "proxy_set_header Host $host" not in deploy,
+      "con el Host del dominio propio, API Gateway responde 403")
+check_msg("se recorta la barra final de la URL de la API",
+      'API_UPSTREAM="${API_URL%/}"' in deploy,
+      "con barra final proxy_pass la usaria como ruta y daria 404")
+
 
 print("\n" + "=" * 62)
 if fallos:
