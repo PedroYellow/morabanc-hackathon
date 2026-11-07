@@ -185,7 +185,11 @@ check("punto de corte", c.renta_punto, D("40000"))
 
 c = crossover_cass(D("45000"))
 check("crossover existe a 45.000", c.existe, True)
-check("crossover tipo a 45.000", c.tipo, "CASS 100% -> 125%")
+# El tipo del crossover cambio: el salto de tramo no ocurre este ano, sino
+# el ano que viene (el tramo lo fija el ingreso del ano anterior, que se
+# declara en enero).
+check("crossover tipo a 45.000 (el salto es del ano que viene)",
+      c.tipo, "El tramo CASS sube el año que viene (se declara en enero)")
 # (734.94 - 587.95) * 12 = 1763.88
 check("delta CASS anual 100->125", c.delta_anual, D("1763.88"))
 
@@ -222,3 +226,38 @@ if fallos:
     sys.exit(1)
 print("TODOS LOS TESTS PASAN")
 print("=" * 62)
+
+
+# ==========================================================================
+# El tramo CASS lo fija el ingreso del AÑO ANTERIOR
+# ==========================================================================
+# Hecho verificado por Pedro: el tramo de CASS de un año se determina por
+# la renta neta del año ANTERIOR, que se declara en enero y aplica desde
+# ese mismo enero. Por eso cruzar 40.000 € NO sube la cuota de este año:
+# sube la del año siguiente.
+
+_c = crossover_cass(D("45000"))
+# OJO: el check() de este fichero compara "obtenido == esperado", no un
+# booleano. Por eso se comparan cadenas/valores, no True/False.
+check("cruzar 40.000 € NO sube la cuota de este año",
+      "año que viene" in _c.detalle.lower(), True)
+check("el texto dice que el salto llega en enero",
+      "enero" in _c.detalle.lower(), True)
+check("el delta del salto de CASS es 1.763,88 €",
+      _c.delta_anual, D("1763.88"))
+check("el delta de CASS del año siguiente se guarda aparte",
+      getattr(_c, "delta_cass_ano_siguiente", None), D("1763.88"))
+check("la cuota del año siguiente es 8.819,28 €",
+      getattr(_c, "cuota_cass_ano_siguiente", None), D("8819.28"))
+
+# Con 60.000 el salto es al tramo 137,5%
+_c60 = crossover_cass(D("60000"))
+check("con 60.000 € el salto es al tramo 137,5%",
+      "137,5%" in _c60.detalle, True)
+
+# tramo_cass_para acepta la renta del año anterior
+_t_prior = tramo_cass_para(D("30000"), renta_neta_anio_anterior=D("30000"))
+_t_actual = tramo_cass_para(D("30000"))
+check("renta_neta_anio_anterior no rompe el calculo",
+      _t_prior.cuota_mensual, _t_actual.cuota_mensual)
+

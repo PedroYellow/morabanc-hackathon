@@ -169,14 +169,34 @@ def tramo_cass_para(
     *,
     mes_inicio_actividad: bool = False,
     salario_minimo: Decimal = SALARIO_MINIMO_MENSUAL,
+    renta_neta_anio_anterior: Optional[Decimal] = None,
 ) -> TramoCASS:
     """
     Calcula el tramo CASS de un treballador per compte propi.
 
     La base del 50% se eleva al salari minim cuando el calculo por porcentaje
     queda por debajo (regla CASS / art. 99).
+
+    OJO — EL TRAMO LO FIJA EL INGRESO DEL ANO ANTERIOR
+    ----------------------------------------------------
+    El tramo CASS de un ano se determina por la renta neta del ano ANTERIOR,
+    que se declara en enero y aplica desde ese mismo enero. Por eso el
+    "crossover" (cruzar 40.000 €) NO sube la cuota de este ano: sube la
+    del AÑO SIGUIENTE.
+
+    Ejemplo: con 30.000 € este año, el tramo es 100%. Si el año que viene
+    facturas 45.000 €, la cuota de CASS de ese año pasara a 125% (+1.764 €
+    al año), pero el de este año no cambia.
+
+    Por eso el parametro `renta_neta_anio_anterior`: si se pasa, el tramo se
+    calcula con ese valor (el que se declaro en enero). Si no se pasa, se
+    usa la renta del año en curso, que es lo que se hacia antes (y lo que
+    hay que seguir haciendo cuando no se conoce el dato del año anterior).
     """
-    nombre, pct = _tramo_por_renta(renta_neta_anual)
+    base_tramo = (_d(renta_neta_anio_anterior)
+                  if renta_neta_anio_anterior is not None
+                  else _d(renta_neta_anual))
+    nombre, pct = _tramo_por_renta(base_tramo)
 
     if nombre == "25%" and mes_inicio_actividad:
         # Inicio o represa: 12 primeros meses al 25%
@@ -399,6 +419,11 @@ class Crossover:
     renta_punto: Decimal
     detalle: str
     delta_anual: Decimal
+    #: Cuota CASS que se pagara el ano SIGUIENTE si se cruza el punto.
+    #: None si no aplica. El tramo lo fija el ingreso del ano anterior.
+    cuota_cass_ano_siguiente: Optional[Decimal] = None
+    #: Incremento anual de la cuota CASS entre este ano y el siguiente.
+    delta_cass_ano_siguiente: Optional[Decimal] = None
 
 
 def crossover_cass(renta_neta_anual: Decimal) -> Crossover:
@@ -412,6 +437,56 @@ def crossover_cass(renta_neta_anual: Decimal) -> Crossover:
     que salta) supera el ingreso adicional.
     """
     r = _d(renta_neta_anual)
+
+    # ------------------------------------------------------------------
+    # CASS: el tramo lo fija el ingreso del AÑO ANTERIOR
+    # ------------------------------------------------------------------
+    # Este ano se cotiza en el tramo que corresponde a la renta del ano
+    # pasado. Si este ano se cruza un umbral, el salto de cuota NO ocurre
+    # ahora: ocurre en enero del año que viene, cuando se declare este
+    # ingreso de este año.
+    #
+    # Ejemplo: con 30.000 € este ano, el tramo es 100% (587,95 €/mes). Si
+    # este ano se llega a 45.000 €, el año que viene la cuota pasara a
+    # 125% (734,94 €/mes): +1.764,20 € al año.
+    # Tramo de ESTE año: lo fijo el ingreso del año anterior. Como no
+    # conocemos ese dato, se usa el propio r como aproximacion del tramo
+    # vigente (que es lo que se cotiza hoy).
+    #
+    # Tramo del AÑO QUE VIENE: lo fijara el ingreso de ESTE año, es decir r.
+    # Si r cruza un umbral, el año que viene el tramo sera mayor.
+    tramo_este_ano = tramo_cass_para(r)
+    if r > Decimal("40000"):
+        tramo_siguiente = tramo_cass_para(r)
+        cuota_actual = cass_anual(tramo_este_ano)
+        cuota_siguiente = cass_anual(tramo_siguiente)
+        delta = _r2(cuota_siguiente - cuota_actual)
+        if delta == 0:
+            # El ingreso ya estaba en el tramo alto: el salto real ocurre
+            # al cruzar el umbral (40.000 -> 125%, 50.000 -> 137,5%).
+            tramo_base = tramo_cass_para(Decimal("40000"))
+            cuota_base = cass_anual(tramo_base)
+            delta = _r2(cuota_siguiente - cuota_base)
+            cuota_actual = cuota_base
+        return Crossover(
+            existe=True,
+            tipo="El tramo CASS sube el año que viene (se declara en enero)",
+            renta_punto=Decimal("40000"),
+            detalle=(
+                f"Cruzar los 40.000 € NO te sube la cuota de CASS de este "
+                f"año: el tramo lo fija el ingreso del AÑO ANTERIOR, que se "
+                f"declara en enero. "
+                f"Con estos ingresos ({eur(r)} €), en enero del año que viene "
+                f"declaras este año y la CASS te pasa al tramo "
+                f"{tramo_siguiente.nombre}: {eur(tramo_siguiente.cuota_mensual)} €/mes "
+                f"({eur(cuota_siguiente)} € al año, +{eur(delta)} € frente al "
+                f"tramo anterior de {eur(cuota_actual)} €). "
+                f"Ojo: es el año que viene el que se encarece, no este."
+            ),
+            delta_anual=delta,
+            cuota_cass_ano_siguiente=cuota_siguiente,
+            delta_cass_ano_siguiente=delta,
+        )
 
     # Tramos donde el IRPF sube de tipo efectivo
     if Decimal("24000") < r < Decimal("40000"):

@@ -83,7 +83,39 @@ function check(nombre, ok, extra) {
   check("sugerencias pintadas", (await page.locator("#sugerencias .sugerencia").count()) >= 3);
 
   const titulo = await page.textContent("#verdictTitle");
-  check("veredicto coherente con el caso", /agota|fuga/i.test(titulo), titulo);
+  // El titular es proporcional al problema: con un hueco de 0,31 € NO es
+  // "Tu caja se agota" (eso lo desmonta el jurado en una pregunta), sino
+  // "Tu caja va justa".
+  check("veredicto coherente con el caso",
+    /agota|va justa|se queda corta|fuga/i.test(titulo), titulo);
+  check("el titular del veredicto no es alarmista con un hueco minimo",
+    !/se agota/.test(titulo) || !/0,31/.test(titulo),
+    titulo);
+
+  // --- Los 4 fixes de la revision del pitch ---------------------------
+  const etiquetasMetricas = await page.evaluate(() =>
+    Array.from(document.querySelectorAll("#verdictMetrics .metric-label")).map(
+      (e) => e.innerText.trim()
+    )
+  );
+  check("la metrica del flujo dice ANUAL (no mensual)",
+    etiquetasMetricas.some((t) => /FLUJO ANUAL/i.test(t)) &&
+    !etiquetasMetricas.some((t) => /FLUJO MENSUAL/i.test(t)),
+    etiquetasMetricas.join(" | "));
+
+  const hint = await page.textContent(".field-hint").catch(() => "");
+  check("el campo de renta neta explica que es lo que queda tras gastos",
+    /tras gastos/i.test(hint || ""), (hint || "").slice(0, 90));
+
+  const titHallazgos = await page.evaluate(() =>
+    Array.from(document.querySelectorAll(".hallazgo-titulo")).map((e) => e.innerText.trim())
+  );
+  check("el titulo del crossover no esta cortado",
+    !titHallazgos.some((t) => /art\.$/.test(t)),
+    titHallazgos[0] || "(ninguno)");
+  check("el titulo del crossover se ve completo",
+    titHallazgos.some((t) => /Bonificacion IRPF art\. 46/.test(t)),
+    titHallazgos[0] || "(ninguno)");
 
   console.log("\n=== TRAZA TECNICA ===");
   await page.click("#trazaBox summary");

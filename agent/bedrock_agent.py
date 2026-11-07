@@ -22,6 +22,7 @@ Referencia API: AWS Bedrock Converse API (toolConfig / toolUse / toolResult).
 from __future__ import annotations
 
 import json
+import re
 import os
 import sys
 from dataclasses import asdict
@@ -73,12 +74,12 @@ REGION = (
     or "eu-west-1"
 )
 
-SYSTEM_PROMPT = """\
-Eres el analista financiero de MoraBanc para autonomos y pymes de Andorra.
+SYSTEM_PROMPT = """Eres el analista financiero de MoraBanc para autonomos y pymes de Andorra.
 
 REGLAS INVIOLABLES:
-1. NUNCA calcules nada. Todo numero que des debe venir de una herramienta.
-   Si no tienes el dato, llama a la herramienta que lo calcula.
+1. NUNCA calcules nada por tu cuenta. Todo numero que des debe venir de una
+   herramienta del motor o del RESULTADO DEL MOTOR que te dan. Si no tienes
+   el dato, pide el dato que falta.
 2. Cuando des un numero, cita la regla que lo origina (CASS, IRPF, IGI,
    bonificacion art. 46, etc.). La regla va en el campo "regla".
 3. Si la pregunta es sobre fiscalidad andorrana, usa la normativa vigente:
@@ -89,7 +90,7 @@ REGLAS INVIOLABLES:
 5. Tono: claro, concreto, sin jerga. Como un asesor que explica, no como un
    formulario. Maximo 200 palabras salvo que pidan detalle.
 6. NUNCA prometas resultados fiscales. Si el caso depende de factores que
-   no tienes (renta neta real, margen, actividad), dilo y pide el dato.
+   no tienes, dilo y pide el dato.
 
 FORMATO DE RESPUESTA (Markdown):
 - Empieza por la respuesta directa en una frase.
@@ -582,6 +583,56 @@ def ejecutar_tool(nombre: str, ctx: ContextoEmpresa, argumentos: Optional[dict] 
 # 3. Agente de Bedrock (Converse API con tool-use)
 # ==========================================================================
 
+RE_THINKING = re.compile(r"<thinking>.*?</thinking>", re.S | re.I)
+
+
+def _resultado_legible(out: dict) -> str:
+    """Formatea el resultado del motor para que el LLM lo cite bien.
+
+    El motor devuelve floats crudos (7055.4). Si se pasan tal cual, el
+    LLM los redondea como quiere (7055, 7.055) o los confunde con la
+    cifra que el usuario ha dicho. Se formatean en euros con el formato
+    europeo (7.055,40 EUR) y se rotulan, para que la respuesta cite
+    exactamente los numeros del motor.
+    """
+    import json as _json
+
+    res = out.get("resultado") or {}
+    regla = out.get("regla") or ""
+
+    def fmt(v):
+        if isinstance(v, bool) or v is None:
+            return v
+        if isinstance(v, (int, float)):
+            return f"{eur(v)} EUR"
+        if isinstance(v, Decimal):
+            return f"{eur(v)} EUR"
+        return v
+
+    legible = {k: fmt(v) for k, v in res.items()} if isinstance(res, dict) else res
+
+    partes = [_json.dumps(legible, ensure_ascii=False, default=str)]
+    if regla:
+        partes.append(f"Regla aplicada: {regla}")
+    return "\n".join(partes)
+
+
+def _sin_thinking(texto: str) -> str:
+    """Quita el bloque de razonamiento que Nova Pro antepone.
+
+    Nova devuelve "<thinking>...</thinking>\n\nRespuesta final". El
+    razonamiento no es la respuesta: si se muestra, el usuario ve al LLM
+    pensandose a si mismo ("necesito la renta neta... no puedo calcular").
+    """
+    if not texto:
+        return texto
+    limpio = RE_THINKING.sub("", texto)
+    # A veces el bloque va sin cerrar (lo corta el limite de tokens).
+    if "<thinking>" in limpio.lower():
+        limpio = re.sub(r"<thinking>.*", "", limpio, flags=re.S | re.I)
+    return limpio.strip()
+
+
 class AgenteFinanciero:
     """
     Agente que usa Amazon Bedrock (Converse API) con tool-use.
@@ -670,41 +721,247 @@ class AgenteFinanciero:
         return self._preguntar_bedrock(pregunta, historial or [])
 
     # -- Implementacion real (Bedrock) ------------------------------------
+    def _herramienta_determinista(self, pregunta: str):
+        """Decide la herramienta y calcula con el MOTOR, sin LLM.
+
+        Devuelve (nombre_herramienta, resultado) o (None, None) si la
+        pregunta no es de calculo (y entonces deja que el LLM elija).
+
+        El motor ya sabe ejecutar cada herramienta con el contexto de la
+        empresa (ejecutar_tool). Aqui solo se decide CUAL, con las mismas
+        reglas que usa el router del mock, y se ejecuta.
+        """
+        p = pregunta.lower()
+
+        # "renta" sola cae en el resumen de la regla del mock; pero si la
+        # pregunta es sobre IRPF/CASS, la herramienta fiscal manda.
+        herramienta = None
+        for claves, nombre, _params in self._REGLAS_ROUTER:
+            if any(k in p for k in claves):
+                herramienta = nombre
+                break
+
+        if herramienta is None:
+            return None, None
+
+        # Las herramientas que necesitan un numero que no esta en el
+        # contexto se dejan al LLM (simular_contratacion necesita el
+        # coste del empleado, que sale de la pregunta).
+        try:
+            out = ejecutar_tool(herramienta, self.ctx, self._params_para(herramienta, p))
+            # Si el motor no pudo calcular (le faltaba un dato), se deja
+            # al LLM: no vale la pena forzar una herramienta que va a fallar.
+        except Exception:  # noqa: BLE001
+            # Si el motor falla, mejor que el LLM lo intente que un 500.
+            return None, None
+
+        if not isinstance(out, dict) or "resultado" not in out:
+            return None, None
+
+        # Si el motor no pudo calcular (le faltaba un dato), NO se fuerza la
+        # herramienta: se devuelve el error al LLM para que lo explique, en
+        # vez de inyectar un {"error": ...} como si fuera un resultado.
+        res = out.get("resultado")
+        if isinstance(res, dict) and "error" in res:
+            return None, None
+
+        return herramienta, out
+
+    def _params_para(self, herramienta: str, p: str) -> dict:
+        """Parametros de la herramienta: del CONTEXTO primero, de la pregunta si hace falta.
+
+        Regla: si la empresa ya tiene el dato en el contexto, ese vale. Solo
+        se lee de la pregunta lo que NO esta en el contexto.
+
+        Esto importa: el usuario puede decir "voy a facturar 60000" (ingreso
+        bruto) mientras que la empresa tiene su renta neta real en el
+        contexto. Si la pregunta gana, el motor calcula sobre 60000 cuando
+        la cifra correcta es otra: el numero sale bien formado pero
+        WRONG, y eso es peor que un error.
+        """
+        import re as _re
+
+        params: dict = {}
+        ctx = self.ctx
+
+        # --- renta neta / base general ---
+        # 1) la del contexto (fuente de verdad)
+        # 2) la que el usuario diga EXPLICITAMENTE que es renta neta
+        if ctx.renta_neta_anual is not None:
+            params["renta_neta"] = float(ctx.renta_neta_anual)
+            params["base_general"] = float(ctx.renta_neta_anual)
+        else:
+            m = _re.search(r"renta neta[^0-9]{0,25}([0-9][0-9.]*)", p)
+            if m:
+                v = m.group(1)
+                n = float(v.replace(".", "").replace(",", ".")) if "," in v else float(v)
+                params["renta_neta"] = n
+                params["base_general"] = n
+
+        # --- coste del empleado (simulacion de contratacion) ---
+        # Este SI sale de la pregunta: es lo que se esta simulando.
+        m = _re.search(r"(?:sueldo|coste|coste_mensual_empleado)[^0-9]{0,25}([0-9][0-9.]*)", p)
+        if m:
+            v = m.group(1)
+            params["coste_mensual_empleado"] = float(v.replace(".", "").replace(",", ".")) \
+                if "," in v else float(v)
+
+        # --- horizonte de proyeccion ---
+        m = _re.search(r"([0-9]{1,2})\s*meses", p)
+        if m:
+            params["meses"] = int(m.group(1))
+
+        return params
+
     def _preguntar_bedrock(self, pregunta: str, historial: list[dict]) -> dict:
         brt = self._bedrock()
         mensajes: list[dict] = list(historial)
         contexto_normativa = self._recuperar_contexto(pregunta)
 
         system = SYSTEM_PROMPT
+
+        # ------------------------------------------------------------------
+        # HERRAMIENTA DETERMINISTA: el motor calcula, el LLM redacta.
+        # ------------------------------------------------------------------
+        # Confiar en que el LLM elija la herramienta es frágil: con
+        # toolChoice=auto, Nova a veces decide que no necesita el motor y
+        # responde "dame la renta neta" aunque la empresa ya la tiene en el
+        # contexto. En un pitch, eso es un 500.
+        #
+        # Aqui el motor decide SIEMPRE que herramienta corresponde (es
+        # codigo, no una prediccion) y su resultado se le pasa al LLM como
+        # contexto. El LLM solo redacta y explica la regla. Los numeros
+        # NUNCA salen del LLM.
+        herramienta_fija, resultado_motor = self._herramienta_determinista(pregunta)
+
+
+        # El modelo tiene que saber QUE DATOS hay disponibles. Sin esto, si
+        # la empresa ya tiene la renta neta cargada, el LLM pregunta por los
+        # gastos ("necesito informacion sobre sus gastos deducibles") en
+        # vez de llamar a la herramienta. Es un fallo grave: el motor sabe
+        # calcularlo, pero el chat se hace el tonto.
+        datos = []
+        if self.ctx.renta_neta_anual is not None:
+            datos.append(f"- renta neta anual: {eur(self.ctx.renta_neta_anual)}")
+        if self.ctx.actividad:
+            datos.append(f"- actividad: {self.ctx.actividad}")
+        if self.ctx.margen_bruto is not None:
+            datos.append(f"- margen bruto: {eur(self.ctx.margen_bruto)}")
+        if self.ctx.saldo_actual is not None:
+            datos.append(f"- saldo actual en cuenta: {eur(self.ctx.saldo_actual)}")
+        if datos:
+            # OJO: esta instruccion cambia segun el caso. Si el motor ya
+            # ha calculado, decir "llama a la herramienta" METE CONTRADICCION
+            # con el prompt base y Nova pide los datos que ya tiene.
+            if resultado_motor is not None:
+                instruccion = (
+                    "\n\nREGLAS:"
+                    "\n- El calculo YA ESTA HECHO (ver RESULTADO DEL MOTOR). "
+                    "Redacta con esos numeros."
+                    "\n- NO pidas datos que ya estan aqui."
+                    "\n- NO tienes herramientas disponibles: el calculo ya "
+                    "esta hecho, no busques ninguna."
+                    "\n- Si el usuario menciona una cifra que NO es la renta "
+                    "neta (por ejemplo 'facturo 60000'), esa cifra es INGRESO "
+                    "BRUTO. El motor ha calculado sobre la RENTA NETA del "
+                    "contexto. Si la cifra que da el usuario es la que "
+                    "pregunta, explica la diferencia en una linea: 'sobre una "
+                    "renta neta de X, que es lo que el motor ha usado'."
+                    "\n- No calcules nada tu mismo."
+                )
+            else:
+                instruccion = (
+                    "\n\nREGLAS:"
+                    "\n- Si la pregunta se puede responder con estos datos, "
+                    "LLAMA A LA HERRAMIENTA que corresponda. No respondas de "
+                    "memoria."
+                    "\n- NO pidas datos que ya estan aqui (gastos, renta neta, "
+                    "actividad). Si faltan, dimelo, pero despues de haber "
+                    "usado lo que tienes."
+                    "\n- Si el usuario menciona una cifra que NO es la renta "
+                    "neta (por ejemplo 'facturo 60000'), esa cifra es INGRESO "
+                    "BRUTO: pasa a la herramienta como parametro solo si la "
+                    "herramienta lo pide, y usa el contexto (renta neta) para "
+                    "lo demas."
+                    "\n- No calcules nada tu mismo: los numeros salen de las "
+                    "herramientas."
+                )
+            system += (
+                "\n\nDATOS YA DISPONIBLES DE LA EMPRESA (usalos, NO los pidas):\n"
+                + "\n".join(datos)
+                + instruccion
+            )
+
         if contexto_normativa:
             system += (
                 "\n\nNORMATIVA Y PRODUCTOS RELEVANTES (recuperados de la base de "
                 "conocimiento, cita la fuente):\n" + contexto_normativa
             )
 
+        params_deterministas = self._params_para("", pregunta.lower())
+        if resultado_motor is not None:
+            system += (
+                "\n\nRESULTADO DEL MOTOR (ya calculado, no lo recalcules):\n"
+                + _resultado_legible(resultado_motor)[:4000]
+                + "\n\nRedacta la respuesta usando EXACTAMENTE estos numeros y la "
+                "regla aplicada. No inventes cifras. No llames a ninguna "
+                "herramienta: el calculo ya esta hecho."
+            )
+            # El motor ya ha calculado: el LLM solo redacta. Forzar la
+            # herramienta hacia que el modelo la llamara con parametros
+            # inventados en iteraciones siguientes, asi que se desactiva.
+            tool_choice = {"none": {}}
+        else:
+            tool_choice = {"auto": {}}
+
         mensajes.append({"role": "user", "content": [{"text": pregunta}]})
 
         llamadas: list[dict] = []
 
-        for _ in range(self.MAX_ITERACIONES):
+        for iteracion in range(self.MAX_ITERACIONES):
+            # La herramienta forzada solo en la PRIMERA iteracion. Si se
+            # forzara siempre, el modelo la llamaria en bucle (cada
+            # respuesta vuelve a pedirla) y se agotarian las iteraciones
+            # con un "se ha alcanzado el limite de iteraciones".
+            # Despues, el LLM redacta con el resultado que ya tiene.
+            if herramienta_fija and resultado_motor is not None:
+                # El motor YA ha calculado. El LLM solo redacta y NO
+                # recibe herramientas: si las recibe, puede pedir otra
+                # con parametros inventados (por ejemplo, tomar la
+                # facturacion como si fuera la renta neta) y la respuesta
+                # lleva un numero que no sale del motor.
+                #
+                # OJO: toolChoice={"none": {}} NO existe en la API de
+                # Bedrock (solo auto, any y tool). Para impedir que el
+                # modelo use herramientas hay que QUITAR el toolConfig
+                # entero del request.
+                usar_herramientas = False
+            else:
+                usar_herramientas = True
+
             request = {
                 "modelId": self.model_id,
                 "messages": mensajes,
                 "system": [{"text": system}],
-                "toolConfig": {
-                    "tools": TOOL_SCHEMAS,
-                    "toolChoice": {"auto": {}},
-                },
                 "inferenceConfig": {
                     "temperature": 0.1,     # baja: queremos precision, no creatividad
                     "maxTokens": 1200,
                 },
             }
+            # El toolConfig solo va si el LLM puede (debe) usar
+            # herramientas. Si el motor ya ha calculado, se omite: asi el
+            # modelo redacta y no puede inventarse otra llamada con
+            # parametros erroneos.
+            if usar_herramientas:
+                request["toolConfig"] = {
+                    "tools": TOOL_SCHEMAS,
+                    "toolChoice": {"auto": {}},
+                }
 
             resp = brt.converse(**request)
             stop = resp["stopReason"]
 
-            if stop == "tool_use":
+            if stop == "tool_use" and usar_herramientas:
                 msg = resp["output"]["message"]
                 mensajes.append(msg)
 
@@ -712,7 +969,16 @@ class AgenteFinanciero:
                 for bloque in msg["content"]:
                     if "toolUse" in bloque:
                         tu = bloque["toolUse"]
-                        out = ejecutar_tool(tu["name"], self.ctx, tu.get("input", {}))
+                        # Si esta es la herramienta que EL MOTOR eligio, sus
+                        # parametros los pone el motor, no el LLM: el modelo
+                        # puede inventarse una cifra (por ejemplo, tomar la
+                        # facturacion como si fuera la renta neta).
+                        if herramienta_fija and tu["name"] == herramienta_fija:
+                            out = ejecutar_tool(tu["name"], self.ctx,
+                                                params_deterministas)
+                        else:
+                            out = ejecutar_tool(tu["name"], self.ctx,
+                                                tu.get("input", {}))
                         llamadas.append({
                             "tool": tu["name"],
                             "input": tu.get("input", {}),
@@ -739,9 +1005,29 @@ class AgenteFinanciero:
                 continue
 
             # Respuesta final en texto
+            #
+            # OJO: Nova Pro devuelve un bloque <thinking>...</thinking> con su
+            # razonamiento antes del texto final. Si se muestra en crudo, el
+            # usuario lee "Para calcular la retencion de IRPF... Debo pedir al
+            # usuario..." como si fuera la respuesta final: el LLM se ve
+            # pensando en voz alta y, peor, parece que no sabe calcular.
+            # Se quita el bloque de razonamiento: al usuario le interesa la
+            # respuesta, no el borrador.
             texto = "".join(
                 b["text"] for b in resp["output"]["message"]["content"] if "text" in b
             )
+            texto = _sin_thinking(texto)
+
+            # Si el motor calculo por su cuenta, la traza debe decirlo:
+            # el usuario ve QUE se ha usado y la regla aplicada.
+            if herramienta_fija and not llamadas:
+                llamadas = [{
+                    "tool": herramienta_fija,
+                    "input": params_deterministas,
+                    "resultado": resultado_motor["resultado"],
+                    "regla": resultado_motor.get("regla", ""),
+                }]
+
             return {"respuesta": texto, "herramientas": llamadas, "mock": False}
 
         return {
