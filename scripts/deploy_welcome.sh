@@ -189,6 +189,18 @@ ssh "$DEPLOY_HOST" "chown -R www-data:www-data '$DEPLOY_ROOT' && chmod -R 755 '$
 # --- 4. vhost de nginx ---------------------------------------------------
 echo ""
 echo "==> Configurando nginx"
+# La URL de API Gateway con la barra final NO vale: proxy_pass la usaria
+# como ruta y daria 404 al final del path.
+API_UPSTREAM="${API_URL%/}"
+# El Host que espera API Gateway: sin esquema ni barra final.
+API_HOST="${API_UPSTREAM#https://}"
+API_HOST="${API_HOST#http://}"
+API_HOST="${API_HOST%%/*}"
+if [ -z "$API_UPSTREAM" ]; then
+  # Sin API no hay proxy: el front se queda en modo demo.
+  API_UPSTREAM="http://127.0.0.1:1/api-offline"
+fi
+
 cat > /tmp/welcome_vhost.conf <<EOF
 server {
     listen 80;
@@ -208,6 +220,26 @@ server {
 
     location / {
         try_files \$uri \$uri/ =404;
+    }
+
+    # Proxy a la API en AWS. El front llama a CFG.apiUrl + "/preguntar",
+    # que en este despliegue es "/api". Aqui se reenvia a API Gateway.
+    #
+    # IMPORTANTE: la API key la pone NGINX, no el navegador. Asi la clave
+    # no viaja nunca al cliente ni se puede leer en el codigo fuente de
+    # la web.
+    location /api/ {
+        proxy_pass ${API_UPSTREAM}/;
+        proxy_http_version 1.1;
+        # OJO: el Host tiene que ser el de API Gateway. Con el Host del
+        # dominio propio (welcomeandorra.com), API Gateway responde 403:
+        # no reconoce el dominio como suyo.
+        proxy_set_header Host ${API_HOST};
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header x-api-key "${API_KEY}";
+        proxy_read_timeout 90s;
+        proxy_send_timeout 90s;
     }
 
     # Cache: el HTML se relee siempre, los assets se cachean poco (el front
