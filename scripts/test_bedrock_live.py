@@ -141,9 +141,27 @@ try:
     print(f"     respuesta: {r['respuesta'][:220]}")
 
     # El LLM no puede inventar: el numero debe aparecer en la respuesta.
-    numero_ok = f"{esperado:.2f}" in r["respuesta"] or f"{esperado:.0f}" in r["respuesta"]
+    #
+    # OJO: el front y el agente escriben los importes en formato EUROPEO
+    # (punto de millares, coma decimal): "7.055,40". Comparar solo con
+    # f"{esperado:.2f}" ("7055.40") daria un falso negativo: el numero
+    # esta bien, lo que cambia es la notacion.
+    def variantes(n: float) -> list[str]:
+        """Todas las formas en las que puede aparecer un importe."""
+        return [
+            f"{n:.2f}",                       # 7055.40  (anglosajon)
+            f"{n:,.2f}",                     # 7,055.40  (anglosajon)
+            f"{n:.2f}".replace(".", ","),     # 7055,40   (europeo sin millares)
+            f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+            # 7.055,40 (europeo con punto de millares)
+            f"{n:.2f}".replace(".", ","),
+            f"{n:,.0f}",                     # 7,055
+            f"{n:.0f}",                      # 7055
+        ]
+
+    numero_ok = any(v in r["respuesta"] for v in variantes(float(esperado)))
     check("el numero de la respuesta coincide con el del motor", numero_ok,
-          f"esperado {esperado} €")
+          f"esperado {esperado} € | variantes: {variantes(float(esperado))[:4]}")
 
 except Exception as e:  # noqa: BLE001
     check("Bedrock responde", False, f"{type(e).__name__}: {str(e)[:200]}")

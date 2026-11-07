@@ -720,9 +720,19 @@ class AgenteFinanciero:
                             "regla": out["regla"],
                         })
                         self.trace.append(llamadas[-1])
+                        # OJO: la API de Bedrock exige el bloque "toolResult".
+                        # {"toolUseId":..., "content":[...]} a pelo se rechaza con
+                        # "Invalid number of parameters set for tagged union
+                        # structure messages[N].content[0]" y TODO el chat con
+                        # IA falla. El resultado de la herramienta SIEMPRE va
+                        # envuelto en toolResult.
                         resultados.append({
-                            "toolUseId": tu["toolUseId"],
-                            "content": [{"text": json.dumps(out, ensure_ascii=False, default=str)}],
+                            "toolResult": {
+                                "toolUseId": tu["toolUseId"],
+                                "content": [{
+                                    "text": json.dumps(out, ensure_ascii=False, default=str)
+                                }],
+                            }
                         })
 
                 mensajes.append({"role": "user", "content": resultados})

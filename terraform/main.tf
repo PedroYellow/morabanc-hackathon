@@ -1181,7 +1181,7 @@ resource "aws_opensearchserverless_security_policy" "red" {
         },
       ]
       AllowFromPublic = false
-      SourceServices = ["bedrock.amazonaws.com"]
+      SourceServices  = ["bedrock.amazonaws.com"]
     },
     {
       Description = "Bedrock accede al dashboard de la coleccion"
@@ -1192,7 +1192,7 @@ resource "aws_opensearchserverless_security_policy" "red" {
         },
       ]
       AllowFromPublic = false
-      SourceServices = ["bedrock.amazonaws.com"]
+      SourceServices  = ["bedrock.amazonaws.com"]
     },
   ])
 }

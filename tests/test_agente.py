@@ -253,3 +253,42 @@ if fallos:
     sys.exit(1)
 print("TODOS LOS TESTS PASAN")
 print("=" * 62)
+
+
+# ==========================================================================
+# Regresion: el toolResult de Bedrock
+# ==========================================================================
+# La API de Bedrock exige que el resultado de una herramienta vaya
+# envuelto en {"toolResult": {...}}. Sin esa envoltura, Bedrock responde
+# "Invalid number of parameters set for tagged union structure
+# messages[N].content[0]" y TODO el chat con IA falla con un 500.
+#
+# Este bug solo se ve contra Bedrock real (con el mock, el router
+# devuelve la respuesta sin pasar por la API), asi que el test es
+# ESTRUCTURAL: comprueba la forma del request, no el resultado.
+
+# Ruta ABSOLUTA: el test se ejecuta desde cualquier carpeta, y una ruta
+# relativa haria que open() fallara en silencio.
+import os as _os
+_RAIZ = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+_src_agente = ""
+try:
+    with open(_os.path.join(_RAIZ, "agent", "bedrock_agent.py"), encoding="utf-8") as _f:
+        _src_agente = _f.read()
+except OSError:
+    _src_agente = ""
+
+if _src_agente:
+    _i_resultados = _src_agente.find('resultados.append(')
+    _trozo = _src_agente[_i_resultados:_i_resultados + 600] if _i_resultados != -1 else ""
+
+    # OJO: el check() de este fichero compara "obtenido == esperado", no
+    # un booleano. Por eso compara presencia de texto, no True/False.
+    check("el resultado de la herramienta va envuelto en toolResult",
+          '"toolResult"' in _trozo, True)
+    check("el toolResult lleva el toolUseId",
+          '"toolUseId"' in _trozo, True)
+    check("el toolResult no se envia en plano (toolUseId sin envolver)",
+          bool(re.search(r'resultados\.append\(\{\s*\n\s*"toolUseId"', _src_agente)),
+          False)
+
