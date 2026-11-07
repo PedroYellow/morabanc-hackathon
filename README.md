@@ -365,15 +365,22 @@ así que un desajuste se detecta en local y no en la primera invocación del dí
 
 ## GitLab de MoraBanc (requisito de descalificación)
 
-Las bases obligan a subir el codigo al **GitLab.com** del espacio que crea
+Las bases obligan a subir el codigo al **GitLab.com** del proyecto que crea
 MoraBanc. Este repositorio es el **maestro de trabajo** y se sincroniza al
 GitLab oficial:
 
+- GitLab (oficial del hackathon): https://gitlab.com/pedro322/morabanc-hackathon
+- GitHub (maestro): https://github.com/PedroYellow/morabanc-hackathon
+
 ```bash
-GITLAB_REMOTE=git@gitlab.com:<grupo>/<proyecto>.git \
-  bash scripts/sync_gitlab.sh
+bash scripts/push_gitlab.sh      # publica en GitLab (verifica la suite antes)
 ```
 
 El script **verifica la suite antes de publicar**: si algo esta roto, no
-publica. Pedid el acceso al GitLab el dia 7 a primera hora (+376 884 884) — es
-un requisito de descalificacion, no un detalle.
+publica. Si el push falla con 403, es que el token no tiene el permiso
+`Code: Push` — la solucion esta en `DEPLOY.md` (seccion "Si el push a GitLab
+falla con 403").
+
+> El token de GitLab expira. Revocalo en cuanto entregues. Si expira durante
+> el pitch, GitHub sigue siendo el maestro y el modo demo local funciona sin
+> AWS.
