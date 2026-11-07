@@ -1113,6 +1113,17 @@ resource "aws_cloudfront_function" "inject_api_key" {
   runtime = "cloudfront-js-2.0"
   comment = "Inyecta la x-api-key en las peticiones a la API de MoraBanc"
 
+  # Terraform NO publica la funcion: tras crearla o modificarla queda
+  # en stage DEVELOPMENT, y ahi no se ejecuta. Sin publicar, la API
+  # responde 403 porque la x-api-key no llega al authorizer.
+  #
+  # Este provisioner la publica al terminar. Si falla (por ejemplo, si
+  # la propagacion aun no ha terminado), el apply NO se rompe: el
+  # scripts/publish_cf_function.sh lo reintenta.
+  provisioner "local-exec" {
+    command = "bash ${path.module}/../scripts/publish_cf_function.sh || true"
+  }
+
   # Terraform NO publica la funcion solo: tras crearla o modificarla
   # queda en stage DEVELOPMENT, y ahi no se ejecuta. Sin publicar, la
   # API responde 403 porque no llega la x-api-key al authorizer.

@@ -500,6 +500,26 @@
           fechaConsejo: perfil.fechaConsejo || null,
           csv: null,
         };
+
+        // Los chips de contexto se rellenan con lo mismo. Sin esto, al
+        // elegir un perfil los inputs se rellenaban pero los chips se
+        // quedaban en "—": el usuario veia los campos con numeros y
+        // un "—" debajo, sin entender que ya estaba todo capturado.
+        //
+        // La UI y el motor estan en IIFE separados y no comparten
+        // "state", asi que se avisa por el puente que expone el motor.
+        const slots = {
+          renta: perfil.renta,
+          margen: Math.round(perfil.margen * 100),
+          saldo: perfil.saldo,
+          actividad: perfil.actividad,
+        };
+        if (typeof window.__mbSetSlots === "function") {
+          window.__mbSetSlots(slots);
+        } else {
+          state.slots = Object.assign(state.slots || {}, slots);
+          if (typeof pintarChips === "function") pintarChips();
+        }
       });
     });
 
@@ -1488,6 +1508,16 @@
     { key: "saldo",   label: "Saldo",       unit: "€" },
     { key: "actividad", label: "Actividad", unit: "" },
   ];
+
+  // Puente con el bundle de la UI (que va en otra IIFE y no comparte
+  // "state"). La UI rellena el contexto al elegir un perfil; este setter
+  // lo pasa al state del motor, que es el que leen pintarChips() y el
+  // envio a la API. Sin el, los campos se rellenaban pero los chips
+  // se quedaban en "—".
+  window.__mbSetSlots = function (slots) {
+    Object.assign(state.slots, slots || {});
+    if (typeof pintarChips === "function") pintarChips();
+  };
 
   const state = {
     conv: null,          // sesion de ElevenLabs
