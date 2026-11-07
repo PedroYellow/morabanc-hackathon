@@ -449,6 +449,46 @@ check("el rol de la KB tiene aoss:APIAccessAll",
       "sin APIAccessAll, OpenSearch Serverless devuelve 403")
 
 
+
+# ==========================================================================
+# Regresiones del despliegue del front en el VPS
+# ==========================================================================
+
+_deploy_welcome = ""
+for _candidato in ("scripts/deploy_welcome.sh",):
+    try:
+        _deploy_welcome = open(_candidato, encoding="utf-8").read()
+    except OSError:
+        pass
+
+if _deploy_welcome:
+    # BUG 15: el front usa window.__API_KEY__ (la API esta protegida con
+    # API key), pero deploy_welcome.sh no la inyectaba. Con la API
+    # desplegada, /preguntar responderia 401 en el pitch.
+    check("el despliegue del front inyecta la API key",
+          "__API_KEY__" in _deploy_welcome,
+          "el front envia la clave en x-api-key: sin ella, /preguntar da 401")
+
+    # BUG 16: la config previa solo se quitaba si habia API nueva. Al
+    # desplegar con API y luego sin ella, el front se quedaba con la
+    # URL y la key viejas.
+    _limpieza = re.search(
+        r"# Siempre se limpia la config previa.*?python3", _deploy_welcome, re.S)
+    check("el despliegue limpia la config previa siempre, no solo con API",
+          _limpieza is not None,
+          "si no, una config vieja se queda y el front llama a un endpoint muerto")
+
+    # La config se lee sola de Terraform (no hay que acordarse de exportar).
+    check("el despliegue lee la config de Terraform si no se pasa a mano",
+          "frontend_url_config" in _deploy_welcome)
+
+    # La IP correcta del VPS en los comentarios.
+    check("los comentarios del despliegue tienen la IP correcta del VPS",
+          "179.197.243.234" in _deploy_welcome
+          and "187.127.64.126" not in _deploy_welcome,
+          "187.127.64.126 es OTRO servidor")
+
+
 # ==========================================================================
 
 for o in ["api_url", "front_url", "bucket_datos", "guardrail_id",

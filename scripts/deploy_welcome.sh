@@ -20,7 +20,7 @@
 #                 MODO DEMO (datos precalculados del motor, sin AWS).
 #
 # POR QUE EL DNS LO TIENE QUE CAMBIAR PEDRO
-#   El dominio tiene que apuntar a la IP del servidor (187.127.64.126). El
+#   El dominio tiene que apuntar a la IP del servidor (179.197.243.234). El
 #   nameserver es ns1/ns2.dns-parking.com (panel de Hostinger). Este script
 #   NO toca el DNS: solo publica el front y deja el sitio sirviendo.
 set -euo pipefail
@@ -32,8 +32,48 @@ DEPLOY_HOST="${DEPLOY_HOST:-hvps}"
 DEPLOY_ROOT="${DEPLOY_ROOT:-/var/www/welcomeandorra}"
 DOMAIN="${DOMAIN:-welcomeandorra.com}"
 API_URL="${API_URL:-}"
+API_KEY="${API_KEY:-}"
+COGNITO_DOMAIN="${COGNITO_DOMAIN:-}"
+COGNITO_CLIENT_ID="${COGNITO_CLIENT_ID:-}"
+AWS_REGION="${AWS_REGION:-us-east-1}"
 USE_SSL=1
 [ "${1:-}" = "--no-ssl" ] && USE_SSL=0
+
+# Si no se pasa API_URL a mano, se la pide a Terraform. Asi el front
+# desplegado en el VPS queda con la API real (y la API key) sin que
+# nadie tenga que acordarse de exportar variables.
+#
+# El output "frontend_url_config" es sensitive (lleva la API key), asi
+# que se lee con -json. Si no hay Terraform, o no hay output todavia,
+# el front se queda en MODO DEMO: que es valido y funciona.
+if [ -z "$API_URL" ]; then
+  TF_BIN="${TF_BIN:-terraform}"
+  if command -v "$TF_BIN" >/dev/null 2>&1 || [ -x "$TF_BIN" ]; then
+    if CFG_JSON=$("$TF_BIN" -chdir="$RAIZ/terraform" output -json frontend_url_config 2>/dev/null); then
+      # El output es sensitive (lleva la API key), asi que se lee con -json.
+      eval "$(printf '%s' "$CFG_JSON" | python3 -c "
+import json, shlex, sys
+try:
+    cfg = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for k in ('api_url', 'api_key', 'cognito_domain', 'cognito_client_id', 'region'):
+    v = cfg.get(k) or ''
+    if v:
+        print(f'CFG_{k.upper()}={shlex.quote(str(v))}')
+" 2>/dev/null)" || true
+      API_URL="${API_URL:-$CFG_API_URL}"
+      API_KEY="${API_KEY:-$CFG_API_KEY}"
+      COGNITO_DOMAIN="${COGNITO_DOMAIN:-$CFG_COGNITO_DOMAIN}"
+      COGNITO_CLIENT_ID="${COGNITO_CLIENT_ID:-$CFG_COGNITO_CLIENT_ID}"
+      AWS_REGION="${AWS_REGION:-$CFG_REGION}"
+      if [ -n "$API_URL" ]; then
+        echo "    API detectada en terraform output: $API_URL"
+        [ -n "$API_KEY" ] && echo "    API key presente (x-api-key)"
+      fi
+    fi
+  fi
+fi
 
 echo "==> Despliegue en $DOMAIN"
 echo "    servidor: $DEPLOY_HOST"
@@ -45,19 +85,41 @@ echo "==> Regenerando los datos demo con el motor real (Python)"
 python3 frontend/generar_demo_data.py
 
 # --- 2. Inyectar la config de la API (si la hay) -------------------------
+# IMPORTANTE: siempre se quita la config previa del index.html, haya API o
+# no. Si no, al desplegar una vez con API y luego sin ella, el front se
+# queda con la URL/API key viejas y el chat llama a un endpoint que ya no
+# existe (o con una clave caducada).
+#
+# La API esta protegida con API key: el front tiene que enviar la clave
+# en la cabecera x-api-key, o /preguntar responde 401.
+#
+# OJO: se inyecta la API key en el HTML del front. Es una clave de la
+# cuenta del hackathon y solo controla la CUOTA de Bedrock, no datos
+# sensibles. Para produccion, lo normal seria un token de sesion de
+# Cognito en lugar de una clave estatica en el cliente.
+# Siempre se limpia la config previa (idempotencia).
+python3 <<'PY'
+import re
+p = "frontend/index.html"
+s = open(p, encoding="utf-8").read()
+s = re.sub(r"\n?<script>window\.__API_URL__=.*?</script>", "", s, flags=re.S)
+open(p, "w", encoding="utf-8").write(s)
+PY
+
 if [ -n "$API_URL" ]; then
   echo ""
   echo "==> Inyectando la API: $API_URL"
-  python3 - "$API_URL" <<'PY'
+  python3 - "$API_URL" "$API_KEY" "$COGNITO_DOMAIN" "$COGNITO_CLIENT_ID" "$AWS_REGION" <<'PY'
 import json, re, sys
-api_url = sys.argv[1]
+api_url, api_key, cognito_domain, cognito_client_id, region = sys.argv[1:6]
 p = "frontend/index.html"
 s = open(p, encoding="utf-8").read()
-# Idempotente: quita cualquier config previa antes de inyectar.
-s = re.sub(r"\n?<script>window\.__API_URL__=.*?</script>", "", s, flags=re.S)
-cfg = ('<script>window.__API_URL__=%s;window.__COGNITO_DOMAIN__=%s;'
-       'window.__COGNITO_CLIENT_ID__=%s;window.__AWS_REGION__=%s;</script>'
-       % (json.dumps(api_url), json.dumps(""), json.dumps(""), json.dumps("us-east-1")))
+cfg = ('<script>window.__API_URL__=%s;window.__API_KEY__=%s;'
+       'window.__COGNITO_DOMAIN__=%s;window.__COGNITO_CLIENT_ID__=%s;'
+       'window.__AWS_REGION__=%s;</script>'
+       % (json.dumps(api_url), json.dumps(api_key),
+          json.dumps(cognito_domain), json.dumps(cognito_client_id),
+          json.dumps(region)))
 marker = '<script src="assets/app.js"></script>'
 assert marker in s, "no se encontro el marker app.js"
 open(p, "w", encoding="utf-8").write(s.replace(marker, cfg + "\n" + marker))
