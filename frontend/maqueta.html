@@ -345,7 +345,7 @@ input  { font: inherit; color: inherit; }
 .orb svg { width: 23px; height: 23px; fill: none; stroke: #fff; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 .orb[data-mode="listening"] { background: var(--navy-2); }
 .orb[data-mode="speaking"]  { background: var(--gold); }
-.orb[data-mode="speaking"] svg { stroke: var(--navy); }
+.orb[data-mode="speaking"] svg { display: none; }
 .orb[data-mode="listening"]::after,
 .orb[data-mode="speaking"]::after {
   content: ""; position: absolute; inset: -4px; border-radius: var(--r-pill);
@@ -355,11 +355,39 @@ input  { font: inherit; color: inherit; }
 .orb[data-mode="speaking"]::after { border-color: var(--gold); opacity: .5; }
 @keyframes aura { 0% { transform: scale(.9); opacity:.5 } 100% { transform: scale(1.25); opacity:0 } }
 
+/* Ondas sonoras en el orb cuando habla */
+.orb .ondas { position: absolute; inset: 0; display: none; place-items: center; gap: 2.5px; }
+.orb[data-mode="speaking"] .ondas { display: flex; }
+.orb[data-mode="speaking"] .ondas i {
+  display: block; width: 2.5px; border-radius: var(--r-pill); background: var(--navy);
+  animation: onda 1s ease-in-out infinite;
+}
+.orb[data-mode="speaking"] .ondas i:nth-child(1) { height: 9px;  animation-delay: 0s; }
+.orb[data-mode="speaking"] .ondas i:nth-child(2) { height: 17px; animation-delay: .12s; }
+.orb[data-mode="speaking"] .ondas i:nth-child(3) { height: 24px; animation-delay: .24s; }
+.orb[data-mode="speaking"] .ondas i:nth-child(4) { height: 14px; animation-delay: .36s; }
+.orb[data-mode="speaking"] .ondas i:nth-child(5) { height: 8px;  animation-delay: .48s; }
+@keyframes onda { 0%,100% { transform: scaleY(.45) } 50% { transform: scaleY(1) } }
+
 /* Medidor de nivel */
 .medidor { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--ink-3); padding: 0 2px 8px; }
 .medidor .barra { flex: 1; height: 3px; border-radius: var(--r-pill); background: var(--line); overflow: hidden; }
 .medidor .barra i { display: block; height: 100%; width: 0%; background: var(--gold); transition: width .08s linear; }
 .medidor.activo { color: var(--navy); }
+.medidor.activo #medidorTexto::before {
+  content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--danger); margin-right: 6px; vertical-align: middle;
+  animation: latido-dot 1.4s infinite ease-in-out;
+}
+@keyframes latido-dot { 0%,60%,100% { opacity:.3 } 30% { opacity:1 } }
+
+/* Aviso de que la sesion esta en curso */
+.en-curso {
+  display: none; align-items: center; justify-content: center; gap: 7px;
+  font-size: 11.5px; color: var(--ink-3); padding: 0 2px 8px;
+}
+.en-curso.visible { display: flex; }
+.en-curso .punto { width: 6px; height: 6px; border-radius: 50%; background: var(--danger); animation: latido-dot 1.4s infinite; }
 
 /* ---------- Anotaciones de maqueta ---------- */
 .nota {
@@ -540,8 +568,11 @@ input  { font: inherit; color: inherit; }
         <button>¿Cuándo me sale mejor contratar?</button>
         <button>Repíteme el CASS</button>
       </div>
+      <div class="en-curso" id="enCurso">
+        <span class="punto"></span> Sesión de voz activa · toca el micro para cortarla
+      </div>
       <div class="medidor" id="medidor">
-        <span id="medidorTexto">Toca el micro para hablar</span>
+        <span id="medidorTexto">Toca el micro: el asesor te oirá y te responderá</span>
         <span class="barra"><i id="medidorBarra"></i></span>
       </div>
       <div class="fila">
@@ -551,6 +582,7 @@ input  { font: inherit; color: inherit; }
         <textarea id="entrada" rows="1" placeholder="Escribe o habla…"></textarea>
         <button class="orb" id="orb" data-mode="idle" aria-label="Hablar con el asesor">
           <svg viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0014 0v-1M12 18v4M8 22h8"/></svg>
+          <span class="ondas"><i></i><i></i><i></i><i></i><i></i></span>
         </button>
         <button class="enviar" aria-label="Enviar">
           <svg viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-2.5-6.5L4 12z"/></svg>
@@ -865,56 +897,102 @@ orb.addEventListener('click', function(){
   arrancarVoz();
 });
 
+// ═══════════════════════════════════════════════════════════
+//  Ciclo de voz continuo (habla -> espera -> habla -> ...)
+// ═══════════════════════════════════════════════════════════
+//
+// PATRON UBOTPAY
+//     En Ubot la sesion de ElevenLabs es CONTINUA: el agente habla,
+//     el WebRTC detecta cuando el usuario ha terminado de hablar y le
+//     vuelve a dar el turno. No es "pulsar micro, hablar, pulsar
+//     enviar": es una conversacion en la que solo hay que dejar el
+//     micro abierto.
+//
+//     Aqui se simula con una maquina de estados:
+//       speaking -> (el usuario contesta) -> listening -> (el asesor
+//       reponde) -> speaking -> ...
+//
+//     El ciclo se para solo cuando el asesor ya no tiene nada mas que
+//     preguntar, o cuando el usuario pulsa el orb otra vez.
+
+var guion = [
+  { quien: 'asesor', texto: 'Te escucho. Para empezar: <b>¿cuánto ganas al año después de gastos?</b>' },
+  { quien: 'yo',     texto: 'Facturo <b>30.000</b> al año' },
+  { quien: 'asesor', texto: 'Perfecto. <b>¿Y cuánto tienes en la cuenta ahora mismo?</b>' },
+  { quien: 'yo',     texto: 'Tengo <b>8.500</b> euros' },
+  { quien: 'asesor', texto: 'Ya tengo lo esencial. Un último dato: <b>¿qué margen te queda sobre lo que facturas?</b>' },
+  { quien: 'yo',     texto: 'Un 70%' },
+  { quien: 'asesor', texto: 'Con eso calculo. Te doy un momento.' },
+];
+
+var guionIdx = 0;
+
 function arrancarVoz(){
   // Aqui va la sesion real de ElevenLabs (Conversation.startSession).
-  // En la maqueta se simula el ciclo listening -> speaking.
+  // En la maqueta se simula el ciclo.
   conv = { simulado: true };
-  orb.dataset.mode = 'listening';
   medidor.classList.add('activo');
-  medidorTexto.textContent = 'Escuchando…';
+  document.getElementById('enCurso').classList.add('visible');
+  cicloVoz();
+}
 
-  // Medidor de nivel simulado
-  var t0 = Date.now();
-  (function tick(){
-    if (!conv) return;
-    var t = Date.now() - t0;
-    nivel = Math.min(100, Math.max(6, 30 + Math.sin(t / 180) * 26 + Math.random() * 22));
-    medidorBarra.style.width = nivel + '%';
-    raf = requestAnimationFrame(tick);
-  })();
+function cicloVoz(){
+  if (!conv) return;
 
-  setTimeout(function(){
-    if (!conv) return;
-    // El asistente responde hablando
+  var turno = guion[guionIdx % guion.length];
+
+  if (turno.quien === 'asesor') {
+    // --- EL ASESOR HABLA ---
     orb.dataset.mode = 'speaking';
     medidorTexto.textContent = 'El asesor está hablando…';
-    nivel = 0;
     medidorBarra.style.width = '0%';
+
+    // En real, aqui suena el audio del agente. En la maqueta, la
+    // duracion se estima por el numero de palabras (unos 2,6 palabras
+    // por segundo, que es un ritmo de habla natural).
+    var palabras = turno.texto.replace(/<[^>]+>/g, '').split(/\s+/).length;
+    var dur = Math.min(6000, Math.max(1400, palabras * 380));
 
     var d = añadirEscribiendo();
     setTimeout(function(){
       d.remove();
-      añadirMensaje('Te escucho. Para empezar: <b>¿cuánto ganas al año después de gastos?</b>', 'asesor');
-    }, 900);
+      añadirMensaje(turno.texto, 'asesor');
+    }, 700);
 
     setTimeout(function(){
       if (!conv) return;
-      pararVoz();
-      // Y el micro "oyente" recoge la voz del usuario
-      setTimeout(function(){
-        var d2 = añadirEscribiendo();
-        setTimeout(function(){
-          d2.remove();
-          añadirMensaje('Facturo <b>30.000</b> al año', 'yo');
-          var d3 = añadirEscribiendo();
-          setTimeout(function(){
-            d3.remove();
-            añadirMensaje('Perfecto. <b>¿Y cuánto tienes en la cuenta?</b>', 'asesor');
-          }, 1000);
-        }, 1400);
-      }, 600);
-    }, 3200);
-  }, 1800);
+      guionIdx++;
+      cicloVoz();                     // y vuelve a hablar
+    }, dur);
+
+  } else {
+    // --- EL ASESOR ESCUCHA ---
+    orb.dataset.mode = 'listening';
+    medidorTexto.textContent = 'Escuchando…';
+
+    // Medidor de nivel (como en Ubot: AnalyserNode + requestAnimationFrame)
+    var t0 = Date.now();
+    (function tick(){
+      if (!conv) return;
+      var t = Date.now() - t0;
+      nivel = Math.min(100, Math.max(6, 30 + Math.sin(t / 180) * 26 + Math.random() * 22));
+      medidorBarra.style.width = nivel + '%';
+      raf = requestAnimationFrame(tick);
+    })();
+
+    // En real, el WebRTC entrega la transcripcion del usuario. En la
+    // maqueta, se inyecta la respuesta del guion.
+    var espera = 2600;
+    setTimeout(function(){
+      if (!conv) return;
+      if (raf) cancelAnimationFrame(raf);
+      nivel = 0;
+      medidorBarra.style.width = '0%';
+      añadirMensaje(turno.texto, 'yo');
+      guionIdx++;
+      setTimeout(function(){ if (conv) cicloVoz(); }, 350);
+    }, espera);
+  }
 }
 
 function pararVoz(){
@@ -922,7 +1000,8 @@ function pararVoz(){
   if (raf) cancelAnimationFrame(raf);
   orb.dataset.mode = 'idle';
   medidor.classList.remove('activo');
-  medidorTexto.textContent = 'Toca el micro para hablar';
+  document.getElementById('enCurso').classList.remove('visible');
+  medidorTexto.textContent = 'Toca el micro: el asesor te oirá y te responderá';
   medidorBarra.style.width = '0%';
 }
 
