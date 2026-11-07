@@ -25,7 +25,46 @@
    se mantiene la jerarquia y el ritmo tipografico sin 300 KB de fuentes.
    ============================================================ */
 
+/*
+  SISTEMA DE DISENO — Liferay Lexicon (adaptado a MoraBanc)
+  ------------------------------------------------------------------
+  Se aplica la ESTRUCTURA de Lexicon (design systems one, referencia
+  oficial en design.liferay.com/lexicon):
+    - Escala de espaciado sobre una base de 8px, con sub-unidad de 4px.
+    - Escala tipografica con interlineados 1.25 en titulos y 1.5 en cuerpo.
+    - Radio de 8px por defecto y 16px en tarjetas.
+    - Pila de tipografia nativa del sistema (sin webfonts: pesa 0 KB y
+      evita el "salto de fuente" cuando se proyecta).
+    - Sin sombrasCompiled en reposo: el relieve lo dan los bordes.
+    - Estados con nombres semanticos: ok / warn / danger.
+
+  Se mantiene la IDENTIDAD CORPORATIVA REAL de MoraBanc: el navy
+  #0a3550, el gold #f1c657 y el logo oficial. Lexicon aporta la
+  estructura, no la paleta: un portal de Liferay tiene su propio azul y
+  su propia marca, y este producto es de un banco.
+*/
 :root {
+  /* --- Espaciado: base 8px, sub-unidad 4px (Lexicon) --- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 32px;
+  --space-6: 40px;
+  --space-7: 48px;
+
+  /* --- Escala tipografica (Lexicon) --- */
+  --text-detail-title: 36px;   /* line-height 1.25 */
+  --text-entry-title: 28px;    /* line-height 1.25 */
+  --text-asset-title: 24px;    /* line-height 1.25 */
+  --text-form-title: 20px;     /* line-height 1.25 */
+  --text-page-title: 16px;     /* line-height 1.25 */
+  --text-body: 16px;           /* line-height 1.5 */
+  --text-section-divider: 14px;/* line-height 1.25 */
+
+  --lh-heading: 1.25;
+  --lh-body: 1.5;
+
   /* Navy de marca */
   --navy: #0a3550;
   --navy-2: #114274;
@@ -68,16 +107,22 @@
   --danger-dim: rgba(240, 66, 28, 0.09);
   --link: #64a0d0;
 
-  --radius: 12px;
+  /* Lexicon: radio 8px por defecto, 16px en tarjetas. Las sombras solo
+     aparecen al levantar un elemento (hover), no en reposo. */
+  --radius: 8px;
   --radius-sm: 8px;
+  --radius-card: 16px;
   --shadow-sm: 0 1px 2px rgba(10, 53, 80, 0.06);
   --shadow: 0 2px 12px rgba(10, 53, 80, 0.09);
   --shadow-lg: 0 12px 36px rgba(10, 53, 80, 0.16);
 
-  --font: "Source Sans Pro", -apple-system, BlinkMacSystemFont, "Segoe UI",
-          Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-heading: "Oblik", "Source Sans Pro", -apple-system,
-                  BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  /* Lexicon: pila nativa del sistema. Sin webfonts a proposito: pesa
+     0 KB y en la sala del pitch no hay sorpresas de carga ni salto de
+     fuente al proyectar. */
+  --font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue",
+          Arial, sans-serif;
+  --font-heading: var(--font);
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
@@ -89,8 +134,8 @@ html, body {
   background: var(--bg);
   color: var(--txt);
   font-family: var(--font);
-  font-size: 16px;
-  line-height: 1.6;
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -106,7 +151,8 @@ body {
 h1, h2, h3 {
   margin: 0;
   font-family: var(--font-heading);
-  line-height: 1.22;
+  /* Lexicon: 1.25 en titulos, 1.5 en cuerpo. */
+  line-height: var(--lh-heading);
   letter-spacing: -0.012em;
   color: var(--txt-navy);
   font-weight: 600;
@@ -129,14 +175,17 @@ a { color: var(--link); }
 }
 .topbar-inner {
   max-width: 1180px; margin: 0 auto;
-  padding: 10px 20px;
-  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  /* Retícula de 8px (Lexicon). */
+  padding: var(--space-2) var(--space-4);
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--space-2);
 }
 /* El logo de marca va a su propia fila: en movil (390 px) el logo real +
    el titulo + el selector de idioma no caben en una sola linea y se
    solapaban. Con dos filas, cada elemento respira. */
 .brand {
-  display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1 1 auto;
+  display: flex; align-items: center; gap: var(--space-3);
+  min-width: 0; flex: 1 1 auto;
 }
 .brand-mark { display: flex; flex-shrink: 0; align-items: center; }
 .brand-logo { height: 20px; width: auto; display: block; }
@@ -194,30 +243,37 @@ a { color: var(--link); }
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
   padding: 24px;
-  margin-bottom: 18px;
-  box-shadow: var(--shadow-sm);
+  /* Lexicon: radio de 16px en tarjetas y SIN sombra en reposo. El
+     relieve lo dan el borde y el fondo; la sombra solo al levantar. */
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-card);
 }
 .card-title {
-  font-family: var(--font-heading); font-size: 17px; font-weight: 600;
-  margin-bottom: 6px; color: var(--txt-navy);
+  font-family: var(--font-heading); font-size: var(--text-form-title);
+  font-weight: 600;
+  margin-bottom: var(--space-1); color: var(--txt-navy);
 }
-.card-hint { font-size: 13.5px; color: var(--dim); margin-bottom: 18px; }
+.card-hint {
+  font-size: var(--text-section-divider); color: var(--dim);
+  margin-bottom: var(--space-4);
+}
 .card-head {
   display: flex; align-items: baseline; justify-content: space-between;
-  gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+  gap: var(--space-3); margin-bottom: var(--space-3); flex-wrap: wrap;
 }
 .card-head .card-title { margin-bottom: 0; }
 
 /* ============================================================
    OPCIONES DE INICIO
    ============================================================ */
-.opciones { display: grid; gap: 10px; }
+/* Grid de Lexicon: una columna en movil, el hueco es multiplo de 8. */
+.opciones { display: grid; gap: var(--space-2); }
 .opcion {
-  display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
-  padding: 15px 16px; border: 1px solid var(--line-soft);
-  border-radius: var(--radius-sm);
+  display: flex; align-items: center; gap: var(--space-3);
+  width: 100%; text-align: left;
+  padding: var(--space-3); border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
   background: var(--surface);
-  box-shadow: var(--shadow-sm);
   transition: border-color .18s, box-shadow .18s, transform .12s, background .18s;
 }
 .opcion:hover {
@@ -237,7 +293,8 @@ a { color: var(--link); }
 .file-drop-icon { color: var(--azul-fuerte); }
 .opcion-body { min-width: 0; }
 .opcion-body strong {
-  display: block; font-family: var(--font-heading); font-size: 15px;
+  display: block; font-family: var(--font-heading);
+  font-size: var(--text-page-title);
   font-weight: 600; color: var(--txt-navy);
 }
 .opcion-body small { font-size: 13px; color: var(--dim); margin-top: 2px; line-height: 1.45; }
@@ -282,9 +339,9 @@ a { color: var(--link); }
 }
 
 input[type="text"], input[type="number"], input[type="email"], select {
-  width: 100%; padding: 11px 13px;
+  width: 100%; padding: var(--space-2) var(--space-3);
   background: var(--surface); color: var(--txt);
-  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  border: 1px solid var(--line); border-radius: var(--radius);
   transition: border-color .18s, box-shadow .18s;
 }
 input:focus {
@@ -297,11 +354,13 @@ input::placeholder { color: #b0b0b0; }
    BOTONES
    ============================================================ */
 .btn-primary {
-  display: flex; align-items: center; justify-content: center; gap: 9px;
-  width: 100%; padding: 14px 22px;
+  display: flex; align-items: center; justify-content: center;
+  gap: var(--space-2);
+  width: 100%; padding: var(--space-3) var(--space-4);
   background: var(--gold); color: var(--navy);
-  border-radius: var(--radius-sm);
-  font-family: var(--font-heading); font-weight: 600; font-size: 15.5px;
+  border-radius: var(--radius);
+  font-family: var(--font-heading); font-weight: 600;
+  font-size: var(--text-page-title);
   transition: transform .12s, opacity .18s, box-shadow .18s, background .18s;
   box-shadow: 0 2px 14px rgba(241, 198, 87, .28);
 }
@@ -316,9 +375,10 @@ input::placeholder { color: #b0b0b0; }
 .btn-lg { padding: 16px 24px; font-size: 16px; }
 
 .btn-ghost {
-  width: 100%; padding: 12px; margin-top: 20px;
-  color: var(--dim); font-size: 14px; font-weight: 600;
-  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  width: 100%; padding: var(--space-3); margin-top: var(--space-4);
+  color: var(--dim); font-size: var(--text-section-divider);
+  font-weight: 600;
+  border: 1px solid var(--line); border-radius: var(--radius);
   transition: color .18s, border-color .18s, background .18s;
 }
 .btn-ghost:hover { color: var(--txt-navy); border-color: var(--azul); background: var(--surface-azul); }
@@ -329,8 +389,10 @@ input::placeholder { color: #b0b0b0; }
 .verdict-card {
   background: var(--navy);
   border: 1px solid var(--navy-3);
-  border-radius: var(--radius);
-  padding: 26px 24px; margin-bottom: 20px;
+  /* Lexicon: radio de 16px en las superficies grandes. */
+  border-radius: var(--radius-card);
+  padding: var(--space-5) var(--space-4);
+  margin-bottom: var(--space-4);
   position: relative; overflow: hidden;
   box-shadow: var(--shadow-lg);
 }
@@ -342,30 +404,39 @@ input::placeholder { color: #b0b0b0; }
 .verdict-card.warn::before { background: linear-gradient(90deg, var(--warn), #f2b985); }
 
 .verdict-label {
-  font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
-  color: var(--gold); font-weight: 700; margin-bottom: 9px;
+  font-size: var(--space-2); letter-spacing: .14em; text-transform: uppercase;
+  color: var(--gold); font-weight: 700; margin-bottom: var(--space-2);
 }
 .verdict-card.ok .verdict-label { color: #5fd0a0; }
 .verdict-card.warn .verdict-label { color: #f0a95f; }
 .verdict-title {
-  font-family: var(--font-heading); font-size: 22px; font-weight: 600;
-  color: #fff; margin-bottom: 8px; line-height: 1.25;
+  font-family: var(--font-heading); font-size: var(--text-asset-title);
+  font-weight: 600;
+  color: #fff; margin-bottom: var(--space-2); line-height: var(--lh-heading);
 }
-.verdict-text { font-size: 14.5px; margin: 0; color: rgba(255, 255, 255, 0.76); }
+.verdict-text {
+  font-size: var(--text-section-divider); margin: 0;
+  color: rgba(255, 255, 255, 0.76); line-height: var(--lh-body);
+}
 
 .verdict-metrics {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
-  gap: 14px; margin-top: 22px;
-  padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, 0.14);
+  gap: var(--space-3); margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
 }
 .metric-label {
-  font-size: 11px; color: rgba(255, 255, 255, 0.58);
-  text-transform: uppercase; letter-spacing: .07em; margin-bottom: 4px;
+  font-size: var(--space-2); color: rgba(255, 255, 255, 0.58);
+  text-transform: uppercase; letter-spacing: .07em; margin-bottom: var(--space-1);
 }
 .metric-value {
-  font-family: var(--font-heading); font-size: 20px; font-weight: 600;
-  color: #fff; letter-spacing: -0.02em; line-height: 1.2;
+  font-family: var(--font-heading); font-size: var(--text-form-title);
+  font-weight: 600;
+  color: #fff; letter-spacing: -0.02em; line-height: var(--lh-heading);
   font-variant-numeric: tabular-nums;
+  /* Los numeros con su unidad no deben partirse en dos lineas: en el
+     modo presentacion (proyector) "587,95 €/mes" cortado se ve fatal. */
+  white-space: nowrap;
 }
 .metric-value.pos { color: #5fd0a0; }
 .metric-value.neg { color: #ff8a6b; }
@@ -374,11 +445,13 @@ input::placeholder { color: #b0b0b0; }
 /* ============================================================
    HALLAZGOS
    ============================================================ */
-.hallazgos { display: grid; gap: 10px; margin-bottom: 20px; }
+.hallazgos { display: grid; gap: var(--space-2); margin-bottom: var(--space-4); }
 .hallazgo {
-  display: flex; gap: 11px; align-items: flex-start; width: 100%; text-align: left;
-  padding: 14px 15px; border: 1px solid var(--line-soft); border-radius: var(--radius-sm);
-  background: var(--surface); box-shadow: var(--shadow-sm);
+  display: flex; gap: var(--space-3); align-items: flex-start;
+  width: 100%; text-align: left;
+  padding: var(--space-3); border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--surface);
   transition: border-color .18s, transform .12s, background .18s;
 }
 .hallazgo:hover { border-color: var(--azul-claro); background: var(--surface-azul); transform: translateY(-1px); }
@@ -397,12 +470,14 @@ input::placeholder { color: #b0b0b0; }
 .hallazgo-body { flex: 1 1 auto; min-width: 0; }
 .hallazgo-titulo {
   display: block;
-  font-size: 14.5px; font-weight: 600; margin-bottom: 4px; line-height: 1.35;
+  font-size: var(--text-section-divider); font-weight: 600;
+  margin-bottom: var(--space-1); line-height: var(--lh-heading);
   color: var(--txt-navy);
 }
 .hallazgo-desc {
   display: block;
-  font-size: 13px; color: var(--muted); line-height: 1.5;
+  font-size: var(--text-section-divider); color: var(--muted);
+  line-height: var(--lh-body);
   white-space: pre-line;   /* respeta los saltos de linea del texto del motor */
 }
 .hallazgo-amount {
@@ -446,11 +521,21 @@ input::placeholder { color: #b0b0b0; }
   border-color: var(--azul); background: var(--surface-azul); color: var(--azul-fuerte);
 }
 
-.chat { border-top: 1px solid var(--line-soft); padding-top: 16px; }
-.chat-messages { display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; }
+.chat {
+  border-top: 1px solid var(--line-soft); padding-top: var(--space-3);
+}
+.chat-messages {
+  display: flex; flex-direction: column; gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
 .chat-messages:empty { display: none; }
 
-.msg { max-width: 88%; padding: 12px 15px; border-radius: 14px; font-size: 14.5px; line-height: 1.6; }
+/* Radio de 8px en las burbujas (Lexicon). */
+.msg {
+  max-width: 88%; padding: var(--space-3);
+  border-radius: var(--radius); font-size: var(--text-section-divider);
+  line-height: var(--lh-body);
+}
 .msg.user {
   align-self: flex-end; background: var(--navy); color: #fff;
   font-weight: 500; border-bottom-right-radius: 4px;
@@ -467,7 +552,7 @@ input::placeholder { color: #b0b0b0; }
 }
 .msg.bot .regla b { color: var(--azul-hondo); font-weight: 600; }
 
-.chat-input { display: flex; gap: 9px; }
+.chat-input { display: flex; gap: var(--space-2); }
 .chat-input input {
   flex: 1; padding: 12px 15px; border: 1px solid var(--line);
   border-radius: 99px; background: var(--surface); font-size: 14.5px;
@@ -537,9 +622,11 @@ input::placeholder { color: #b0b0b0; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .modal {
   background: var(--surface); border: 1px solid var(--line-soft);
-  border-radius: var(--radius) var(--radius) 0 0;
+  /* Radio de 8px arriba, 16px en el resto (Lexicon). */
+  border-radius: var(--radius) var(--radius-card) var(--radius-card) var(--radius-card);
   width: 100%; max-width: 560px; max-height: 85dvh; overflow-y: auto;
-  padding: 28px 24px calc(28px + env(safe-area-inset-bottom));
+  padding: var(--space-5) var(--space-4)
+           calc(var(--space-5) + env(safe-area-inset-bottom));
   position: relative; animation: slideUp .28s cubic-bezier(.2,.8,.3,1);
   box-shadow: var(--shadow-lg);
 }
@@ -645,22 +732,29 @@ body.presentacion-activa .topbar { display: none; }
 }
 .presentacion-metrics {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: var(--space-3);
 }
 .presentacion-metric {
   background: var(--surface); border: 1px solid var(--line-soft);
-  border-radius: var(--radius); padding: 18px 20px;
-  box-shadow: var(--shadow-sm);
+  /* Lexicon: radio de 16px en las tarjetas. */
+  border-radius: var(--radius-card); padding: var(--space-4);
 }
 .presentacion-metric-label {
-  font-size: 12px; font-weight: 700; letter-spacing: .08em;
-  text-transform: uppercase; color: var(--dim); margin-bottom: 7px;
+  font-size: var(--space-2); font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--dim); margin-bottom: var(--space-2);
 }
 .presentacion-metric-value {
   font-family: var(--font-heading);
-  font-size: clamp(24px, 2.9vw, 40px); font-weight: 600;
-  color: var(--txt-navy); line-height: 1.05;
+  /* El "vw" tiene en cuenta el ancho de la ventana, pero lo que manda
+     aqui es el ancho de la CARD (media pantalla menos los huecos). Con
+     2.7vw el texto de CASS se sale de la tarjeta; 2.1vw lo hace caber
+     en una linea sin partirse. */
+  font-size: clamp(20px, 2.1vw, 34px); font-weight: 600;
+  color: var(--txt-navy); line-height: var(--lh-heading);
   font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+  /* "587,95 €/mes" no puede partirse: en el proyector, un numero
+     partido en dos lineas parece un error de formato. */
+  white-space: nowrap;
 }
 .presentacion-metric.pos .presentacion-metric-value { color: var(--ok); }
 .presentacion-metric.neg .presentacion-metric-value { color: var(--danger); }

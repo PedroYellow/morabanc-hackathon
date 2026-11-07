@@ -1,0 +1,82 @@
+{
+  "total_audio": 192.408,
+  "duracion_video": 192.96,
+  "frames": [
+    {
+      "archivo": "/data/projects/morabanc_hackathon/pitch/recz/v001.png",
+      "duracion": 10.608
+    },
+    {
+      "archivo": "/data/projects/morabanc_hackathon/pitch/recz/v002.png",
+      "duracion": 10.872
+    },
+    {
+      "archivo": "/data/projects/morabanc_hackathon/pitch/recz/v003.png",
+      "duracion": 11.064
+    },
+    {
+      "archivo": "/data/projects/morabanc_hackathon/pitch/recz/v004.png",
+      "duracion": 9.312
+    },
+    {
+      "archivo": "/data/projects/morabanc_hackathon/pitch/recz/v005.png",
+      "duracion": 12.816
+    },
+    {
+      "archivo": "/data/projects/morabanc_hackathon/pitch/recz/v006.png",
+      "duracion": 21.792
+    },
+    {
+      "archivo": "/data/projects/morabanc_hackathon/pitch/recz/v007.png",
+      "duracion": 5.568
+    },
+    {
+      "archivo": "/data/projects/morabanc_hackathon/pitch/recz/v008.png",
+      "duracion": 13.728
+    },
+    {
+      "archivo": "/data/projects/morabanc_hackathon/pitch/recz/v009.png",
+      "duracion": 5.52
+    },
+    {
+      "archivo": "/data/projects/morabanc_hackathon/pitch/recz/v010.png",
+      "duracion": 13.224
+    },
+    {
+      "archivo": "/data/projects/morabanc_hackathon/pitch/recz/v011.png",
+      "duracion": 6.936
+    },
+    {
+      "archivo": "/data/projects/morabanc_hackathon/pitch/recz/v012.png",
+      "duracion": 4.431807692307692
+    },
+    {
+      "archivo": "/data/projects/morabanc_hackathon/pitch/recz/v013.png",
+      "duracion": 3.830884615384616
+    },
+    {
+      "archivo": "/data/projects/morabanc_hackathon/pitch/recz/v014.png",
+      "duracion": 5.333192307692308
+    },
+    {
+      "archivo": "/data/projects/morabanc_hackathon/pitch/recz/v015.png",
+      "duracion": 2.0281153846153845
+    },
+    {
+      "archivo": "/data/projects/morabanc_hackathon/pitch/recz/v016.png",
+      "duracion": 9.504
+    },
+    {
+      "archivo": "/data/projects/morabanc_hackathon/pitch/recz/v017.png",
+      "duracion": 15.168
+    },
+    {
+      "archivo": "/data/projects/morabanc_hackathon/pitch/recz/v018.png",
+      "duracion": 9.288
+    },
+    {
+      "archivo": "/data/projects/morabanc_hackathon/pitch/recz/v019.png",
+      "duracion": 10.992
+    }
+  ]
+}

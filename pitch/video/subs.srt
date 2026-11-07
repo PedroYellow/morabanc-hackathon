@@ -1,0 +1,80 @@
+1
+00:00:00,000 --> 00:00:11,158
+Hola. Soy el asesor financiero de MoraBanc.
+Pedro me ha construido en dos días.
+
+2
+00:00:10,608 --> 00:00:22,030
+Todo el mundo te dice que el IRPF es 0%, 5% o 10%.
+Es una simplificación de marketing. Y es falsa.
+
+3
+00:00:21,480 --> 00:00:33,094
+La bonificación real es la mitad del 10%, con un tope de 800 €.
+Ese tope se alcanza exactamente en 40.000 € de base.
+
+4
+00:00:32,544 --> 00:00:42,406
+Mira esta tabla. Con 30.000 € de base,
+tu tipo efectivo es del 1%. No del 5%.
+
+5
+00:00:41,856 --> 00:00:55,222
+Pasas de 40.000 € y el tope se congela, el IRPF acelera
+y la CASS salta del 100% al 125%.
+
+6
+00:00:54,672 --> 00:01:17,014
+Subes el extracto del banco. Yo calculo. Te lo explico
+con la regla aplicada: el artículo, el tramo, el cálculo.
+
+7
+00:01:16,464 --> 00:01:22,582
+Y esto es lo más importante de todo.
+Yo no hago aritmética.
+
+8
+00:01:22,032 --> 00:01:36,310
+El modelo elige la herramienta y redacta.
+Cada cifra sale de código. No puedo inventarme un número.
+
+9
+00:01:35,760 --> 00:01:41,830
+Y hay una cosa más que no tiene nadie.
+Me evalúo a mí mismo.
+
+10
+00:01:41,280 --> 00:01:55,054
+Te doy un consejo en enero y en junio miro si lo cumpliste.
+Este freelance siguió 2 de 4: ahorró 23,98 €/mes.
+
+11
+00:01:54,504 --> 00:02:01,990
+Mira. Este es el caso de verdad.
+30.000 € de ingresos.
+
+12
+00:02:01,440 --> 00:02:17,614
+Detecto que su caja se agota en el mes 9 y le digo por qué.
+El flujo se va a -4.267,05 € al mes.
+
+13
+00:02:17,064 --> 00:02:27,118
+Y si no sabes qué preguntarme, es normal.
+Pregúntame en lenguaje natural. Yo traduzco.
+
+14
+00:02:26,568 --> 00:02:42,286
+Siempre te devuelvo tres cosas: la cifra,
+la regla que la produce, y qué deberías hacer.
+
+15
+00:02:41,736 --> 00:02:51,574
+Soy el asesor financiero de MoraBanc.
+La IA es el interfaz. La norma es el producto.
+
+16
+00:02:51,024 --> 00:03:02,566
+Un asesor fiscal no debería explicarte porcentajes.
+Debería explicarte decisiones. Pruébalo en welcomeandorra.com.
+

@@ -1,0 +1,9 @@
+{
+  "inicio": 1,
+  "perfil_cargado": 2,
+  "analizando": 3,
+  "resultado": 4,
+  "veredicto": 5,
+  "presentacion": 6,
+  "fugas": 7
+}

@@ -240,6 +240,81 @@ function check(nombre, ok, extra) {
   check("sin scroll horizontal en desktop",
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
 
+
+  console.log("\n=== SISTEMA DE DISENO (Lexicon) ===");
+  // Se aplica la ESTRUCTURA de Lexicon (design systems one / design.liferay.com)
+  // manteniendo la identidad corporativa real de MoraBanc (navy + gold).
+  const estilos = await page.evaluate(() => {
+    const cs = getComputedStyle(document.documentElement);
+    const card = document.querySelector(".card");
+    const opcion = document.querySelector(".opcion");
+    const input = document.querySelector('input[type="text"]');
+    return {
+      space1: cs.getPropertyValue("--space-1").trim(),
+      space3: cs.getPropertyValue("--space-3").trim(),
+      space4: cs.getPropertyValue("--space-4").trim(),
+      space5: cs.getPropertyValue("--space-5").trim(),
+      radius: cs.getPropertyValue("--radius").trim(),
+      radiusCard: cs.getPropertyValue("--radius-card").trim(),
+      textBody: cs.getPropertyValue("--text-body").trim(),
+      textSectionDivider: cs.getPropertyValue("--text-section-divider").trim(),
+      lhBody: cs.getPropertyValue("--lh-body").trim(),
+      lhHeading: cs.getPropertyValue("--lh-heading").trim(),
+      cardRadius: card ? getComputedStyle(card).borderRadius : "",
+      cardShadow: card ? getComputedStyle(card).boxShadow : "",
+      opcionRadius: opcion ? getComputedStyle(opcion).borderRadius : "",
+      opcionShadow: opcion ? getComputedStyle(opcion).boxShadow : "",
+      inputRadius: input ? getComputedStyle(input).borderRadius : "",
+      fontFamily: getComputedStyle(document.body).fontFamily,
+    };
+  });
+
+  // Espaciado sobre una base de 8px, con sub-unidad de 4px.
+  check("el espaciado usa una base de 8px con sub-unidad de 4px",
+    estilos.space1 === "4px" && estilos.space3 === "16px" &&
+    estilos.space4 === "24px" && estilos.space5 === "32px",
+    `${estilos.space1}/${estilos.space3}/${estilos.space4}/${estilos.space5}`);
+  check("el radio por defecto es de 8px", estilos.radius === "8px", estilos.radius);
+  check("el radio de tarjeta es de 16px", estilos.radiusCard === "16px", estilos.radiusCard);
+  check("la escala tipografica de Lexicon esta aplicada",
+    estilos.textBody === "16px" && estilos.textSectionDivider === "14px",
+    `${estilos.textBody}/${estilos.textSectionDivider}`);
+  check("los interlineados son 1.25 en titulos y 1.5 en cuerpo",
+    estilos.lhHeading === "1.25" && estilos.lhBody === "1.5",
+    `${estilos.lhHeading}/${estilos.lhBody}`);
+
+  // Lexicon: sin sombra en reposo, el relieve lo dan los bordes.
+  check("las tarjetas no tienen sombra en reposo",
+    estilos.cardShadow === "none", estilos.cardShadow);
+  check("las opciones no tienen sombra en reposo",
+    estilos.opcionShadow === "none", estilos.opcionShadow);
+
+  // Radios aplicados en los componentes reales.
+  check("las tarjetas usan el radio de 16px",
+    estilos.cardRadius.includes("16px"), estilos.cardRadius);
+  check("las opciones usan el radio de 16px",
+    estilos.opcionRadius.includes("16px"), estilos.opcionRadius);
+  check("los campos de texto usan el radio de 8px",
+    estilos.inputRadius.includes("8px"), estilos.inputRadius);
+
+  // Pila nativa del sistema: sin webfonts (pesa 0 KB y sin salto de fuente).
+  check("la tipografia es la pila nativa del sistema",
+    estilos.fontFamily.includes("system-ui") && !estilos.fontFamily.includes("Source Sans"),
+    estilos.fontFamily.slice(0, 80));
+
+  // La IDENTIDAD de MoraBanc se mantiene: Lexicon aporta estructura, no paleta.
+  const identidad = await page.evaluate(() => {
+    const cs = getComputedStyle(document.documentElement);
+    return {
+      navy: cs.getPropertyValue("--navy").trim(),
+      gold: cs.getPropertyValue("--gold").trim(),
+    };
+  });
+  check("se mantiene la identidad corporativa de MoraBanc (navy y gold)",
+    identidad.navy === "#0a3550" && identidad.gold === "#f1c657",
+    `${identidad.navy}/${identidad.gold}`);
+
+
   console.log("\n=== ERRORES JS ===");
   check("ningun error de JavaScript", erroresJS.length === 0,
     erroresJS.slice(0, 3).join(" | "));
@@ -251,6 +326,41 @@ function check(nombre, ok, extra) {
   await page.waitForSelector("#stepResultado:not([hidden])", { timeout: 15000 });
   await page.waitForTimeout(700);
   await page.screenshot({ path: path.join(process.env.FRONT_SHOT_DIR || "/tmp", "frontend_desktop.png"), fullPage: true });
+
+  console.log("\n=== MODO PRESENTACION ===");
+  await page.click("#btnPresentacion");
+  await page.waitForTimeout(1200);
+  const vistaPres = await page.evaluate(() => {
+    const cont = document.querySelector(".presentacion");
+    const r = cont ? cont.getBoundingClientRect() : null;
+    const vals = Array.from(document.querySelectorAll(".presentacion-metric-value"));
+    return {
+      top: r ? Math.round(r.top) : null,
+      bottom: r ? Math.round(r.bottom) : null,
+      ventana: window.innerHeight,
+      metricas: vals.map((v) => ({
+        texto: v.textContent.trim(),
+        ancho: Math.round(v.getBoundingClientRect().width),
+        scroll: v.scrollWidth,
+      })),
+    };
+  });
+  check("la vista de presentacion ocupa exactamente la pantalla",
+    vistaPres.top === 0 && vistaPres.bottom <= vistaPres.ventana + 2,
+    `${vistaPres.top}-${vistaPres.bottom} en ${vistaPres.ventana}`);
+  check("las metricas de presentacion no se salen de su tarjeta",
+    vistaPres.metricas.every((m) => m.scroll <= m.ancho + 1),
+    JSON.stringify(vistaPres.metricas.map((m) => `${m.texto}:${m.scroll}/${m.ancho}`)));
+  check("hay 4 metricas en la presentacion",
+    vistaPres.metricas.length === 4,
+    `${vistaPres.metricas.length} metricas`);
+  // La vista de presentacion es position:fixed y TAPA el boton, asi que
+  // no se puede cerrar con un click: se cierra con Escape.
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(600);
+  check("Escape cierra la vista de presentacion",
+    await page.evaluate(() => !document.body.classList.contains("presentacion-activa")));
+
 
   await browser.close();
 
