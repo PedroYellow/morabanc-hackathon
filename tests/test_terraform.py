@@ -585,16 +585,18 @@ check("la delegacion a CloudFront es una statement propia",
       re.search(r'Sid\s*=\s*"AllowCloudFrontToDecrypt"', SRC) is not None)
 
 # BUG 16: el sync de S3 con --delete borraba el corpus normativo, que
-# publica terraform y necesita la KB. El sync esta en deploy_front.sh.
+# publica terraform y necesita la KB. El sync lo hace
+# scripts/sync_front_s3.py (deploy_front.sh lo llama).
 try:
-    _deploy_front = open(os.path.join(_raiz, "scripts", "deploy_front.sh"),
-                          encoding="utf-8").read()
+    _sync_s3 = open(os.path.join(_raiz, "scripts", "sync_front_s3.py"),
+                     encoding="utf-8").read()
 except OSError:
-    _deploy_front = ""
+    _sync_s3 = ""
 check("el sync de S3 excluye el corpus normativo",
-      '--exclude "normativa/*"' in _deploy_front
-      or "--exclude 'normativa/*'" in _deploy_front,
+      "normativa/" in _sync_s3,
       "con --delete, el RAG se queda sin normativa")
+check("el sync de S3 excluye tambien assets/mb/",
+      "assets/mb/" in _sync_s3)
 
 # BUG 17: el output sensitive es un STRING JSON dentro del JSON. Sin
 # desempaquetarlo dos veces, el front se queda en modo demo.
@@ -613,6 +615,19 @@ if deploy_front:
 check("el limite de aoss en la cuenta del workshop esta documentado",
       "DenyAllOutsideAllowedRegions" in SRC and "aoss" in SRC,
       "es lo que impide crear la KB de Bedrock en esa cuenta")
+
+
+
+# BUG 18: el front de CloudFront llama a "/api/preguntar" (asi lo inyecta
+# deploy_front.sh), pero API Gateway solo exponia "/preguntar": desde
+# CloudFront el chat devolvia 404.
+check("la API expone tambien la ruta POST /api/preguntar",
+      re.search(r'route_key\s*=\s*"POST /api/preguntar"', SRC) is not None,
+      "sin ella, el front de CloudFront no puede llamar a la API")
+check("la ruta /api/preguntar va al mismo integration y con el mismo authorizer",
+      re.search(r'route_key\s*=\s*"POST /api/preguntar".*?integrations/\$\{aws_apigatewayv2_integration\.api\.id\}', SRC, re.S) is not None
+      and re.search(r'route_key\s*=\s*"POST /api/preguntar".*?authorizer_id\s*=\s*aws_apigatewayv2_authorizer\.key\.id', SRC, re.S) is not None,
+      "la proteccion con API key tiene que aplicarse tambien a esta ruta")
 
 
 # ==========================================================================

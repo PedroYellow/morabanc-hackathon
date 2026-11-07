@@ -113,12 +113,34 @@ if command -v aws >/dev/null 2>&1 && aws sts get-caller-identity >/dev/null 2>&1
     # El portal de empresas (mb-login.html, mb-empresas.html,
     # assets/mb-portal.*, assets/mb-login.*, data/mb_escenarios.json)
     # SI se publica: son parte del front.
-    aws s3 sync frontend/ "s3://$BUCKET/" \
-      --exclude "generar_demo_data.py" \
-      --exclude "normativa/*" \
-      --exclude "assets/mb/*" \
-      --delete
+    # OJO: aws s3 sync NO infiere el Content-Type. Sin --content-type,
+    # los .html y .js se quedan como application/octet-stream y el
+    # navegador los DESCARGA en vez de mostrarlos (por eso el portal
+    # de empresas se abria como descarga y no como pagina).
+    # Por eso se sube fichero a fichero con su tipo.
+    python3 scripts/sync_front_s3.py "$BUCKET"
     echo "    publicado en s3://$BUCKET/"
+
+    # La CloudFront Function se queda en stage DEVELOPMENT si no se
+    # publica. Sin publicar, no inyecta la x-api-key y la API
+    # responde 403. Terraform no lo hace solo.
+    FN_ETAG=$(aws cloudfront describe-function --name mora-inject-api-key \
+                 --query ETag --output text 2>/dev/null || true)
+    if [ -n "$FN_ETAG" ] && [ "$FN_ETAG" != "None" ]; then
+      aws cloudfront publish-function --name mora-inject-api-key \
+        --if-match "$FN_ETAG" >/dev/null 2>&1 && \
+        echo "    CloudFront Function publicada (LIVE)" || \
+        echo "    AVISO: no se pudo publicar la CloudFront Function"
+    fi
+
+    # Invalidar la cache de CloudFront: si no, el front servido sigue
+    # siendo el anterior durante hasta 5 minutos.
+    DIST_ID=$(terraform -chdir=terraform output -raw cloudfront_distribution_id 2>/dev/null || echo "")
+    if [ -n "$DIST_ID" ] && [ "$DIST_ID" != "" ]; then
+      aws cloudfront create-invalidation --distribution-id "$DIST_ID" \
+        --paths "/*" >/dev/null 2>&1 && \
+        echo "    cache de CloudFront invalidada" || true
+    fi
   fi
 else
   echo "    (sin credenciales AWS: se publica con terraform apply)"

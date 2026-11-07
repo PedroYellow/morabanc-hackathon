@@ -790,6 +790,25 @@ resource "aws_apigatewayv2_route" "preguntar" {
   authorizer_id      = aws_apigatewayv2_authorizer.key.id
 }
 
+# La misma ruta con el prefijo "/api".
+#
+# POR QUE: el front desplegado en CloudFront llama a "/api/preguntar"
+# (asi lo inyecta deploy_front.sh, porque el behavior de CloudFront
+# enruta "/api/*" a la API). Y el front del VPS llama a "/api/preguntar"
+# a traves del proxy de nginx. Pero API Gateway solo expone
+# "/preguntar", asi que desde CloudFront el chat devolvia 404.
+#
+# Con esta ruta, las dos URLs de la API funcionan:
+#   https://<api-gateway>/preguntar
+#   https://<api-gateway>/api/preguntar
+resource "aws_apigatewayv2_route" "api_preguntar" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "POST /api/preguntar"
+  target             = "integrations/${aws_apigatewayv2_integration.api.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.key.id
+}
+
 resource "aws_apigatewayv2_route" "salud" {
   api_id    = aws_apigatewayv2_api.api.id
   route_key = "GET /salud"
@@ -913,6 +932,123 @@ resource "aws_cloudfront_origin_access_control" "s3" {
   signing_protocol                  = "sigv4"
 }
 
+# ---------------------------------------------------------------------------
+# CloudFront Function: inyecta la x-api-key en las peticiones a la API.
+#
+# POR QUE ESTA Y NO EN EL BUNDLE
+#     El front llama a "/api/preguntar" (mismo origen). La Lambda del motor
+#     exige la cabecera x-api-key, y el authorizer de API Gateway la
+#     comprueba. Si la clave fuera en el HTML, cualquiera que abrase el
+#     codigo fuente la leeria y podria gastar la cuota de Bedrock.
+#     Con esta funcion, la clave se anade EN EL EDGE: el navegador pide
+#     "/api/preguntar" sin cabeceras especiales y CloudFront las pone.
+#
+# NOTA: las CloudFront Functions no pueden leer Secrets Manager ni SSM
+# (no tienen permisos de IAM), asi que la clave va en el codigo de la
+# funcion. Para un hackathon es aceptable; en produccion habria que
+# mover la validacion al Lambda (que ya lee API_KEY del entorno) y
+# quitar el authorizer de API Gateway.
+resource "aws_cloudfront_function" "inject_api_key" {
+  name    = "mora-inject-api-key"
+  runtime = "cloudfront-js-2.0"
+  comment = "Inyecta la x-api-key en las peticiones a la API de MoraBanc"
+
+  # Terraform NO publica la funcion solo: tras crearla o modificarla
+  # queda en stage DEVELOPMENT, y ahi no se ejecuta. Sin publicar, la
+  # API responde 403 porque no llega la x-api-key al authorizer.
+  # Se publica con la CLI despues del apply.
+
+  code = <<-EOT
+function handler(event) {
+  var request = event.request;
+  var uri = request.uri;
+
+  if (uri.startsWith('/api/') || uri === '/preguntar' || uri === '/salud') {
+    request.headers['x-api-key'] = { value: '${random_password.api_key.result}' };
+  }
+  return request;
+}
+  EOT
+}
+
+# ---------------------------------------------------------------------------
+# Origin request policy: reenvia la x-api-key al origen.
+# Sin esto, CloudFront la quita antes de llegar al API Gateway y el
+# authorizer responde 401.
+resource "aws_cloudfront_origin_request_policy" "api_headers" {
+  name    = "mora-forward-api-key"
+  comment = "Reenvia la x-api-key al origen para que el authorizer la valide"
+
+  headers_config {
+    header_behavior = "whitelist"
+    headers {
+      items = ["x-api-key", "content-type", "accept", "origin", "referer", "user-agent"]
+    }
+  }
+
+  query_strings_config {
+    query_string_behavior = "none"
+  }
+
+  cookies_config {
+    cookie_behavior = "none"
+  }
+}
+
+# Cache policy sin cache: la respuesta de la API depende del contexto.
+resource "aws_cloudfront_cache_policy" "api_no_cache" {
+  name        = "mora-api-no-cache"
+  comment     = "La API nunca se cachea: cada respuesta depende del contexto"
+  min_ttl     = 0
+  default_ttl = 0
+  max_ttl     = 0
+
+  parameters_in_cache_key_and_forwarded_to_origin {
+    enable_accept_encoding_gzip = false
+
+    headers_config {
+      header_behavior = "none"
+    }
+
+    cookies_config {
+      cookie_behavior = "none"
+    }
+
+    query_strings_config {
+      query_string_behavior = "none"
+    }
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Certificado del dominio para CloudFront.
+#
+# CloudFront necesita un certificado en us-east-1 (la region de la
+# distribucion) con su SAN. El de Let's Encrypt del VPS no sirve: es
+# de otro proveedor y de otra region.
+#
+# La validacion es por DNS: hay que crear en la zona los dos CNAME que
+# indica `aws acm describe-certificate` (uno para el dominio y otro
+# para www). Si se recrea el certificado, esos CNAME cambian.
+resource "aws_acm_certificate" "dominio" {
+  domain_name               = var.dominio_cloudfront
+  subject_alternative_names = ["www.${var.dominio_cloudfront}"]
+  validation_method         = "DNS"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+variable "dominio_cloudfront" {
+  description = <<-EOT
+    Dominio que sirve CloudFront (solo prod). Debe estar validado en ACM
+    con los CNAME de validacion puestos en la zona DNS.
+  EOT
+  type        = string
+  default     = ""
+}
+
 resource "aws_cloudfront_distribution" "web" {
   enabled             = true
   is_ipv6_enabled     = true
@@ -920,7 +1056,11 @@ resource "aws_cloudfront_distribution" "web" {
   default_root_object = "index.html"
   price_class         = "PriceClass_100"
 
-  aliases = var.environment == "prod" && var.dominio_principal != "" ? ["${local.name}.${var.dominio_principal}"] : []
+  # El alias del dominio real: welcomeandorra.com y www. Son los dos
+  # nombres que el certificado de ACM cubre.
+  aliases = var.dominio_cloudfront != "" ? [var.dominio_cloudfront, "www.${var.dominio_cloudfront}"] : (
+    var.environment == "prod" && var.dominio_principal != "" ? ["${local.name}.${var.dominio_principal}"] : []
+  )
 
   # Origen 1: el front estatico en S3
   origin {
@@ -977,17 +1117,34 @@ resource "aws_cloudfront_distribution" "web" {
     cached_methods         = ["GET", "HEAD"]
     compress               = true
 
-    forwarded_values {
-      query_string = true
-      cookies {
-        forward = "all"
-      }
-      headers = ["x-api-key", "content-type"]
-    }
+    # La CloudFront Function anade la x-api-key en el edge, y la origin
+    # request policy la reenvia al API Gateway. Sin la policy, la
+    # cabecera se pierde antes de llegar al authorizer y responde 401.
+    cache_policy_id            = aws_cloudfront_cache_policy.api_no_cache.id
+    origin_request_policy_id   = aws_cloudfront_origin_request_policy.api_headers.id
 
-    min_ttl     = 0
-    default_ttl = 0
-    max_ttl     = 0
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.inject_api_key.arn
+    }
+  }
+
+  # Health check del front por la misma ruta que usa el motor ("/api/...").
+  ordered_cache_behavior {
+    path_pattern           = "/api/salud"
+    target_origin_id       = "api-${aws_apigatewayv2_api.api.id}"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["HEAD", "GET", "OPTIONS"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = true
+
+    cache_policy_id          = aws_cloudfront_cache_policy.api_no_cache.id
+    origin_request_policy_id = aws_cloudfront_origin_request_policy.api_headers.id
+
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.inject_api_key.arn
+    }
   }
 
   ordered_cache_behavior {
@@ -1005,17 +1162,13 @@ resource "aws_cloudfront_distribution" "web" {
     cached_methods = ["GET", "HEAD"]
     compress       = true
 
-    forwarded_values {
-      query_string = false
-      headers      = ["Origin"]
-      cookies {
-        forward = "none"
-      }
-    }
+    cache_policy_id          = aws_cloudfront_cache_policy.api_no_cache.id
+    origin_request_policy_id = aws_cloudfront_origin_request_policy.api_headers.id
 
-    min_ttl     = 0
-    default_ttl = 0
-    max_ttl     = 0
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.inject_api_key.arn
+    }
   }
 
   ordered_cache_behavior {
@@ -1026,16 +1179,13 @@ resource "aws_cloudfront_distribution" "web" {
     cached_methods         = ["GET", "HEAD"]
     compress               = true
 
-    forwarded_values {
-      query_string = false
-      cookies {
-        forward = "none"
-      }
-    }
+    cache_policy_id          = aws_cloudfront_cache_policy.api_no_cache.id
+    origin_request_policy_id = aws_cloudfront_origin_request_policy.api_headers.id
 
-    min_ttl     = 0
-    default_ttl = 0
-    max_ttl     = 0
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.inject_api_key.arn
+    }
   }
 
   custom_error_response {
@@ -1050,8 +1200,13 @@ resource "aws_cloudfront_distribution" "web" {
     }
   }
 
+  # Con alias hace falta un certificado propio (ACM en us-east-1). Sin
+  # dominio configurado se usa el certificado por defecto de CloudFront.
   viewer_certificate {
-    cloudfront_default_certificate = true
+    acm_certificate_arn      = var.dominio_cloudfront != "" ? aws_acm_certificate.dominio.arn : null
+    ssl_support_method       = var.dominio_cloudfront != "" ? "sni-only" : null
+    minimum_protocol_version = "TLSv1.2_2021"
+    cloudfront_default_certificate = var.dominio_cloudfront == ""
   }
 
   tags = local.tags
@@ -1718,7 +1873,12 @@ output "frontend_url_config" {
     bucket_extractos = aws_s3_bucket.datos.id
     # La clave de la API. El front la envia en la cabecera x-api-key.
     # El output "api_key" de este mismo modulo es sensitive; aqui va dentro
-    # de un jsonencode para que deploy_front.sh lo lea de una vez.
+    # de un jsonencode para que deploy_front.sh lo lea de una vez. para que deploy_front.sh lo lea de una vez.
     api_key = random_password.api_key.result
   })
+}
+
+output "cloudfront_distribution_id" {
+  description = "ID de la distribucion de CloudFront (para invalidar cache tras publicar)"
+  value       = aws_cloudfront_distribution.web.id
 }
