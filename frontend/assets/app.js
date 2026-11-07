@@ -31,6 +31,16 @@
       saldo: 8500, renta: 30000, margen: 0.70,
       actividad: "Freelance de servicios",
     },
+    // Usuario normal: asalariado. No lleva contabilidad; su "ingreso" es
+    // la nomina. El motor lo calcula sin actividad economica: sin IGI y
+    // sin CASS por cuenta propia. Es el caso de "tengo una cuenta y no
+    // entiendo por que no me llega a fin de mes".
+    empleado: {
+      etiqueta: "Treballador per compte d'altri",
+      csv: "data/demo_empleado.csv",
+      saldo: 3400, renta: 23281, margen: 0,
+      actividad: "Treballador per compte d'altri",
+    },
     contratar: {
       etiqueta: "Freelancer con nómina",
       csv: "data/demo_freelancer_contratar.csv",
@@ -55,6 +65,14 @@
   };
 
   const SUGERENCIAS = {
+    // El asalariado no lleva contabilidad: lo que quiere saber es por
+    // que no le llega a fin de mes, no la CASS.
+    empleado: [
+      "¿Por qué no me llega a fin de mes?",
+      "¿Cuánto me queda después de pagar?",
+      "¿Hay algo que esté pagando de más?",
+      "¿Cuánto tenho ahorrado este año?",
+    ],
     freelance: [
       "¿Cuánto se me está escapando cada mes?",
       "¿Cuántos meses me aguanto en caja?",

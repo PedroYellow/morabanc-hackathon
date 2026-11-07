@@ -184,6 +184,67 @@ def gen_freelancer_cierre() -> list[dict]:
     return m
 
 
+
+# --------------------------------------------------------------------------
+# 5. USUARIO NORMAL — asalariado sin actividad economica
+# --------------------------------------------------------------------------
+# Un empleado de empresa no lleva contabilidad: no tiene factura de
+# ingresos, sino una nomina. El caso sirve para:
+#   - Mostrar que el asesor tambien habla con quien no es autonomo.
+#   - Probar el caso "renta de wages": el IRPF ya viene retenido y lo
+#     que se calcula es la IRPF complementaria y el IRNR si trabaja
+#     para una empresa de fuera.
+#   - Ver el caso "sin actividad economica": sin IGI, sin CASS propia.
+#
+# Perfil: empleado de una empresa andorriana, 2.400 brutos/mes.
+# Lo que ve el motor es una nomina limpia, un alquiler, luz, comida y
+# suscripciones: el caso tipico de "tengo una cuenta y no entiendo por
+# que no me llega a fin de mes".
+
+def gen_empleado() -> list[dict]:
+    m = []
+    inicio = date(2025, 10, 1)
+    fin = date(2026, 9, 30)
+
+    # Nomina mensual: 2.400 brutos, IRPF retenido
+    for mes in range(12):
+        anyo = 2025 if mes < 3 else 2026
+        mes_num = (10 + mes - 1) % 12 + 1
+        f = date(anyo, mes_num, 28)
+        if f < inicio or f > fin:
+            continue
+        # El neto que entra en la cuenta (bruto menos IRPF y CASS del
+        # empleado). Con 2.400 brutos el neto ronda 1.940.
+        m.append({"fecha": f, "concepto": "NOMINA TRABAJADORS ALTORDA SA",
+                  "importe": 1940.12})
+
+        # Gastos del mes
+        for concepto, importe in [
+            ("Lloguer pis", 950.00),
+            ("Electricitat ENDESA", random.randint(58, 105)),
+            ("Aigua SMA", random.randint(18, 34)),
+            ("Internet i mobil ORANGE", 59.90),
+            ("Gasolina REPSOL", random.randint(45, 95)),
+            ("Compres i supermercat", random.randint(320, 480)),
+            ("Restaurant i superficies", random.randint(120, 260)),
+            ("Farmacia", random.randint(15, 70)),
+            ("Gimnas", 45.00),
+            ("Streaming NETFLIX", 12.99),
+            ("Spotify Premium", 10.99),
+            ("Targeta credit comissions", 2.50),
+        ]:
+            df = date(anyo, mes_num, random.randint(1, 27))
+            if inicio <= df <= fin:
+                m.append({"fecha": df, "concepto": concepto, "importe": -abs(importe)})
+
+    # Un ingreso extra: devolucion de la garantia del alquiler
+    m.append({"fecha": date(2026, 7, 15),
+              "concepto": "DEVOLUCIO GARANTIA LLOGUER",
+              "importe": 950.00})
+
+    return m
+
+
 # --------------------------------------------------------------------------
 # Escritura
 # --------------------------------------------------------------------------
@@ -204,6 +265,7 @@ PERFILES = {
     "demo_comercio.csv": gen_comercio,
     "demo_freelancer_contratar.csv": gen_freelancer_contratar,
     "demo_freelancer_cierre.csv": gen_freelancer_cierre,
+    "demo_empleado.csv": gen_empleado,
 }
 
 

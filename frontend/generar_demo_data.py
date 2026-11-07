@@ -58,6 +58,14 @@ PERFILES = {
         # Fecha del consejo: 1 de julio de 2026 (ver data/generar_demo.py).
         "fecha_consejo": "2026-07-01",
     },
+    # Usuario normal: asalariado. No lleva contabilidad; su "ingreso" es
+    # la nomina. El motor lo trata sin actividad economica: sin IGI y
+    # sin CASS por cuenta propia, que es justo lo que hay que explicar.
+    "empleado": {
+        "csv": "demo_empleado.csv",
+        "saldo": D("3400"), "renta": D("23281"), "margen": D("0"),
+        "actividad": "Treballador per compte d'altri",
+    },
 }
 
 
