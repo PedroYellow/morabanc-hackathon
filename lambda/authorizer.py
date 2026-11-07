@@ -25,7 +25,22 @@ import json
 import os
 
 API_KEY = os.environ.get("API_KEY", "")
-REGION = os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "eu-west-1"))
+
+# La region del API Gateway. En Lambda la pone la plataforma (AWS_REGION),
+# pero en local puede venir en AWS_DEFAULT_REGION.
+#
+# El default es us-east-1, NO eu-west-1: es la region donde esta
+# desplegado el proyecto (la cuenta del workshop tiene una policy
+# "DenyAllOutsideAllowedRegions" que solo permite us-east-1).
+#
+# Con el default equivocado, el authorizer construia el ARN de la ruta
+# con una region que no es la del API Gateway, la policy no casaba con
+# la ruta y API Gateway respondia 403 Forbidden (con la clave correcta).
+REGION = (
+    os.environ.get("AWS_REGION")
+    or os.environ.get("AWS_DEFAULT_REGION")
+    or "us-east-1"
+)
 ACCOUNT = os.environ.get("MB_ACCOUNT_ID", "")
 
 # El ARN de la ruta NO se guarda aqui a proposito: si el authorizer lo
@@ -97,8 +112,24 @@ def handler(event, context):
     else:
         route_arn = f"arn:aws:execute-api:{REGION}:{ACCOUNT}:{api_id}/{metodo}{camino}"
 
-    if not route_arn or "None" in route_arn:
+    # OJO: si el ARN construido sale MAL FORMADO (sin api_id, sin cuenta
+    # o con "None" dentro), NO sirve: la policy no autorizaria la ruta y
+    # API Gateway responderia 403 Forbidden aunque la clave sea correcta.
+    #
+    # En ese caso se usa el "routeArn" del evento, que es el ARN real de
+    # la ruta y el que API Gateway espera. Antes el fallback solo se
+    # disparaba con el ARN VACIO, no con uno mal formado, asi que un
+    # evento sin requestContext producia
+    # "arn:aws:execute-api:us-east-1::/POST" y el 403.
+    if not route_arn or "None" in route_arn or not api_id or not camino:
         route_arn = event.get("routeArn", "") or ""
+    if not route_arn or "None" in route_arn:
+        # Sin ARN no se puede autorizar la invocacion. Se devuelve la
+        # policy con el recurso que API Gateway espera cuando el
+        # authorizer no puede determinar la ruta: "arn:aws:execute-api:
+        # <region>:*" no vale; lo correcto es un "*" de api, que es lo
+        # que hace un authorizer REQUEST sin ruta conocida.
+        route_arn = f"arn:aws:execute-api:{REGION}:{ACCOUNT}:*"
 
     print("AUTH", metodo, camino, "->", route_arn)
 

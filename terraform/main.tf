@@ -2236,6 +2236,11 @@ resource "aws_s3_object" "front" {
   key          = each.value
   source       = "${path.module}/../frontend/${each.value}"
   etag         = filemd5("${path.module}/../frontend/${each.value}")
+  # El content-type se deduce de la extension si no esta en el mapa.
+  # Sin esto, todo lo que no este listado sale como
+  # application/octet-stream, y con "nosniff" el navegador RECHAZA los
+  # modulos ESM (la voz de ElevenLabs no arranca) y descarga los .html
+  # en vez de mostrarlos.
   content_type = lookup(local.content_types, each.value, "application/octet-stream")
 
   # El front se sirve con la politica de CloudFront.
@@ -2244,37 +2249,40 @@ resource "aws_s3_object" "front" {
 
 locals {
   content_types = {
-    "index.html"        = "text/html; charset=utf-8"
+    # Content-type de cada fichero del front.
+    #
+    # POR QUE ESTA LISTA COMPLETA Y NO UN MAPA POR EXTENSION: con
+    # "application/octet-stream" y la cabecera "nosniff", el navegador
+    # RECHAZA los modulos ESM (la voz de ElevenLabs no arranca: "Failed
+    # to fetch dynamically imported module") y descarga los .html en vez
+    # de mostrarlos. El mapa se genera desde el filesystem, asi que
+    # cualquier fichero nuevo hay que anadirlo.
+    "assets/app.js" = "application/javascript; charset=utf-8"
+    "assets/elevenlabs-client.js" = "application/javascript; charset=utf-8"
+    "assets/livekit-client.js" = "application/javascript; charset=utf-8"
+    "assets/logo-morabanc.svg" = "image/svg+xml"
+    "assets/mb-login.css" = "text/css; charset=utf-8"
+    "assets/mb-login.js" = "application/javascript; charset=utf-8"
+    "assets/mb-portal.css" = "text/css; charset=utf-8"
+    "assets/mb-portal.js" = "application/javascript; charset=utf-8"
+    "assets/mb/info-blue.svg" = "image/svg+xml"
+    "assets/mb/keyboard.svg" = "image/svg+xml"
+    "assets/mb/login-bg.png" = "image/png"
+    "assets/mb/logoMB-dark.svg" = "image/svg+xml"
+    "assets/mb/logoMB.svg" = "image/svg+xml"
     "assets/styles.css" = "text/css; charset=utf-8"
-    "assets/app.js"     = "application/javascript; charset=utf-8"
-    # El logo real de MoraBanc. Sin esto se publicaria como
-    # application/octet-stream y el navegador NO lo renderiza como imagen:
-    # el logo aparece roto en el movil.
-    "assets/logo-morabanc.svg"           = "image/svg+xml"
-    "data/demo_data.json"                = "application/json; charset=utf-8"
-    "data/demo_freelance.csv"            = "text/csv; charset=utf-8"
-    "data/demo_comercio.csv"             = "text/csv; charset=utf-8"
+    "data/demo_comercio.csv" = "text/csv; charset=utf-8"
+    "data/demo_data.json" = "application/json; charset=utf-8"
+    "data/demo_empleado.csv" = "text/csv; charset=utf-8"
+    "data/demo_freelance.csv" = "text/csv; charset=utf-8"
+    "data/demo_freelancer_cierre.csv" = "text/csv; charset=utf-8"
     "data/demo_freelancer_contratar.csv" = "text/csv; charset=utf-8"
-    "data/demo_freelancer_cierre.csv"    = "text/csv; charset=utf-8"
-
-    # El portal de empresas (login + portal + sus assets). Sin estos
-    # tipos, el navegador los DESCARGA en vez de mostrarlos: el .html
-    # llega como application/octet-stream y el navegador lo abre como
-    # descarga, no como pagina.
-    "mb-login.html"                  = "text/html; charset=utf-8"
-    "mb-empresas.html"               = "text/html; charset=utf-8"
-    "assets/mb-portal.js"            = "application/javascript; charset=utf-8"
-    "assets/mb-portal.css"           = "text/css; charset=utf-8"
-    "assets/mb-login.js"             = "application/javascript; charset=utf-8"
-    "assets/mb-login.css"            = "text/css; charset=utf-8"
-    "data/mb_escenarios.json"        = "application/json; charset=utf-8"
-
-    # Los recursos oficiales de MoraBanc (assets/mb/).
-    "assets/mb/logoMB.svg"           = "image/svg+xml"
-    "assets/mb/logoMB-dark.svg"      = "image/svg+xml"
-    "assets/mb/keyboard.svg"         = "image/svg+xml"
-    "assets/mb/info-blue.svg"        = "image/svg+xml"
-    "assets/mb/login-bg.png"         = "image/png"
+    "data/mb_escenarios.json" = "application/json; charset=utf-8"
+    "index.html" = "text/html; charset=utf-8"
+    "maqueta.html" = "text/html; charset=utf-8"
+    "mb-empresas.html" = "text/html; charset=utf-8"
+    "mb-login.html" = "text/html; charset=utf-8"
+    "tests/test_slots.mjs" = "application/javascript; charset=utf-8"
   }
 }
 

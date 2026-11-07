@@ -48,6 +48,14 @@ def bloque(recurso):
 with open(TF, encoding="utf-8") as f:
     SRC = f.read()
 
+# El codigo sin comentarios (ni de una linea ni de bloque).
+#
+# Los checks sobre referencias a recursos condicionales tienen que mirar
+# solo el CODIGO: un "[0]" dentro de un comentario (por ejemplo, el
+# comando de "terraform import" que se documenta) no hace fallar el plan.
+SRC_SIN_COMENTARIOS = re.sub(r"/\*.*?\*/", "", SRC, flags=re.S)
+SRC_SIN_COMENTARIOS = re.sub(r"\s*#.*$", "", SRC_SIN_COMENTARIOS, flags=re.M)
+
 
 # ==========================================================================
 print("\n=== 1. HANDLER DE LAS LAMBDA ===")
@@ -121,9 +129,9 @@ check("existe la variable enable_guardrails", 'variable "enable_guardrails"' in 
 # Con enable_kb=false los recursos condicionales tienen count=0 y las
 # referencias usan one()/splat: sin eso, el plan falla con "Invalid index".
 check("las referencias a recursos condicionales no usan [0] a secas",
-      not re.search(r'aws_iam_role\.bedrock_kb\[0\]', SRC)
-      and not re.search(r'aws_opensearchserverless_collection\.vector\[0\]', SRC)
-      and not re.search(r'aws_bedrockagent_knowledge_base\.normativa\[0\]', SRC),
+      not re.search(r'aws_iam_role\.bedrock_kb\[0\]', SRC_SIN_COMENTARIOS)
+      and not re.search(r'aws_opensearchserverless_collection\.vector\[0\]', SRC_SIN_COMENTARIOS)
+      and not re.search(r'aws_bedrockagent_knowledge_base\.normativa\[0\]', SRC_SIN_COMENTARIOS),
       "con count=0, [0] es un error: hay que usar one() o el splat")
 
 
@@ -323,9 +331,9 @@ check("la security policy se declara antes que la coleccion",
 
 # BUG 5: con count=0, referenciar [0] es un error de plan.
 check("las referencias condicionales no usan [0]",
-      not re.search(r"aws_iam_role\.bedrock_kb\[0\]", SRC)
-      and not re.search(r"aws_opensearchserverless_collection\.vector\[0\]", SRC)
-      and not re.search(r"aws_bedrockagent_knowledge_base\.normativa\[0\]", SRC),
+      not re.search(r"aws_iam_role\.bedrock_kb\[0\]", SRC_SIN_COMENTARIOS)
+      and not re.search(r"aws_opensearchserverless_collection\.vector\[0\]", SRC_SIN_COMENTARIOS)
+      and not re.search(r"aws_bedrockagent_knowledge_base\.normativa\[0\]", SRC_SIN_COMENTARIOS),
       "con count=0 el plan falla con 'Invalid index': usar one() o splat")
 
 

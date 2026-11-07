@@ -2130,7 +2130,7 @@
     // despliegue no lo incluye todavia).
     var Conversation = null;
     try {
-      var mod = await import("./elevenlabs-client.js?v=20261107b");
+      var mod = await import("./elevenlabs-client.js?v=20261107e");
       Conversation = mod.Conversation;
     } catch (e1) {
       console.warn("[MoraBanc] SDK local no disponible, se usa el CDN:", e1 && e1.message);
@@ -2461,7 +2461,15 @@
     const saludo = t("vozSaludo");
     const guia = t("vozGuiaInicial");
     aviso(guia);
-    // El saludo se dice por voz Y se muestra resumido en la barra.
+    // Si la voz con ElevenLabs esta viva, el PROPIO agente saluda
+    // (tiene un mensaje de bienvenida configurado): si ademas se
+    // pide por la API, el usuario oye el saludo dos veces y la API
+    // responde "Sesion no valida" cuando el visitante no ha entrado
+    // en el portal.
+    if (state.conv) {
+      return;
+    }
+    // Sin voz, el saludo se pide al motor por texto.
     if (!decirAlAgente(saludo)) {
       aviso(saludo);
     }
@@ -2513,7 +2521,12 @@
         return;
       } catch (e) {
         console.warn("[MoraBanc] ElevenLabs no disponible:", e && e.message);
-        aviso("Voz en modo texto: la conexión con el agente de voz no está disponible en este entorno.");
+        // Si la sesion ha quedado viva pese al error (el agente
+        // arranca y lo que falla es el audio), no se cae al modo
+        // texto: se sigue con la voz.
+        if (!state.conv) {
+          aviso("Voz en modo texto: la conexión con el agente de voz no está disponible en este entorno.");
+        }
         // Se sigue con SpeechRecognition, que ya tiene el permiso.
       }
     }

@@ -69,7 +69,14 @@ check("la cabecera se lee sin distinguir mayusculas",
 # --- Clave correcta -------------------------------------------------------
 # El ARN de la ruta lo manda API Gateway en el evento (no en el entorno: si
 # el authorizer lo leyera de ROUTE_ARN, Terraform crearia un ciclo).
-ARN_RUTA = "arn:aws:execute-api:eu-west-1:123456789012:abc/api/POST/preguntar"
+#
+# OJO: la region la toma del ENTORNO (AWS_REGION / AWS_DEFAULT_REGION), y
+# el proyecto esta en us-east-1. Antes el test traia "eu-west-1" fijo, que
+# ya no correspondia a nada: el ARN construido salia con la region
+# equivocada y el test fallaba por un motivo que no era un fallo del
+# authorizer.
+REGION = os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
+ARN_RUTA = f"arn:aws:execute-api:{REGION}:123456789012:abc/api/POST/preguntar"
 r = mod.handler(
     {"headers": {"x-api-key": "clave-buena-de-32-caracteres"}, "routeArn": ARN_RUTA},
     None,
