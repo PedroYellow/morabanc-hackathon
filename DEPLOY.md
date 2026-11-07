@@ -547,3 +547,54 @@ prototipo en AWS que no llega a tiempo.** No sacrifiques el motor por el cloud.
 
 **Documento preparado el 24 de octubre de 2026.** Estado verificado:
 489 asserts en verde, Terraform validado, front probado en Chromium real.
+
+---
+
+## `welcomeandorra.com`: que falta para que funcione
+
+El front **ya esta publicado** en el VPS y responde 200. Lo que falta es el
+DNS, y eso lo cambia Pedro en el panel de Hostinger (la API de Hostinger
+devuelve `530 / error code: 1016` desde el entorno del hackathon: el WAF
+bloquea por IP de origen).
+
+### Los registros que tiene ahora mismo
+
+| Tipo | Nombre | Valor | Accion |
+|------|--------|-------|--------|
+| A | `@` | `148.251.93.9` | **CAMBIAR a `179.197.243.234`** |
+| AAAA | `@` | (no existe) | dejar |
+| MX | `@` | `5 mail.welcomeandorra.com.` | dejar |
+| TXT | `@` | `v=spf1 +a +mx +ip4:148.251.93.9 ~all` | cambiar `148.251.93.9` por `179.197.243.234` |
+| CNAME | `www` | `welcomeandorra.com` | dejar (ya va bien) |
+
+El A record es lo unico **imprescindible**: sin el, el navegador da
+`ERR_CONNECTION_REFUSED` porque la IP antigua ya no tiene nada.
+
+### La IP del VPS
+
+```
+179.197.243.234
+```
+
+(Ojo: `187.127.64.126` es OTRO servidor. El de este proyecto es
+`179.197.243.234`, que es el que devuelve `ip -4 addr show scope global`
+en el servidor `hvps`.)
+
+### En cuanto cambie el DNS
+
+```bash
+bash scripts/esperar_dns.sh
+```
+
+El script espera la propagacion y, en cuanto el DNS apunta al servidor,
+sube el front, configura nginx y emite el certificado de Let's Encrypt
+con HTTPS automatico. No hay que hacer nada mas.
+
+Comprobar:
+
+```bash
+curl -sI https://welcomeandorra.com/ | head -3
+```
+
+El TTL del registro es de 30 s, asi que propaga casi al instante.
+
