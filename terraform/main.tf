@@ -2265,6 +2265,9 @@ locals {
     "assets/app.js" = "application/javascript; charset=utf-8"
     "assets/elevenlabs-client.js" = "application/javascript; charset=utf-8"
     "assets/livekit-client.js" = "application/javascript; charset=utf-8"
+    # El worklet de libsamplerate (lo carga el SDK de ElevenLabs como
+    # modulo para procesar el audio).
+    "assets/libsamplerate.worklet.js" = "application/javascript; charset=utf-8"
     "assets/logo-morabanc.svg" = "image/svg+xml"
     "assets/mb-login.css" = "text/css; charset=utf-8"
     "assets/mb-login.js" = "application/javascript; charset=utf-8"

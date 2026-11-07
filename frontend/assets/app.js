@@ -16,7 +16,11 @@
   const CFG = {
     // Se inyecta al desplegar (ver terraform output frontend_url_config).
     apiUrl: window.__API_URL__ || "",
-    apiKey: window.__API_KEY__ || "",
+    // La clave de la API la inyecta el edge (la CloudFront Function)
+    // en cada peticion. El navegador nunca la ve: por eso aqui no hay
+    // ninguna. Es lo unico que evita que la cuota de Bedrock la gaste
+    // cualquiera con la URL.
+    apiKey: "",
     cognitoDomain: window.__COGNITO_DOMAIN__ || "",
     cognitoClientId: window.__COGNITO_CLIENT_ID__ || "",
     region: window.__AWS_REGION__ || "eu-west-1",
