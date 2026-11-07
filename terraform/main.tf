@@ -227,16 +227,16 @@ resource "aws_kms_key" "main" {
         Sid    = "AllowBedrockAndServices"
         Effect = "Allow"
         Principal = {
-          # OJO: "aoss.amazonaws.com" NO es un service principal valido de
-          # KMS. KMS responde "Policy contains a statement with one or more
-          # invalid service principals". Para OpenSearch Serverless la usa
-          # la propia coleccion a traves de la security policy, asi que no
-          # hace falta delegar aqui.
-          Service = [
-            "bedrock.amazonaws.com",
-            "bedrock-agent.amazonaws.com",
-            "s3.amazonaws.com",
-          ]
+          # OJO: solo "bedrock.amazonaws.com" es un service principal valido
+          # para la KMS. Estos NO lo son y KMS los rechaza con
+          # "Policy contains a statement with one or more invalid service
+          # principals":
+          #   - "bedrock-agent.amazonaws.com"  (no existe)
+          #   - "aoss.amazonaws.com"            (no existe)
+          #   - "s3.amazonaws.com"              (rechazado junto a los otros)
+          # OpenSearch Serverless usa la clave a traves de su security
+          # policy, no necesita delegacion aqui.
+          Service = "bedrock.amazonaws.com"
         }
         Action = [
           "kms:Encrypt*",
