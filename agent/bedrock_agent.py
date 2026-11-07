@@ -310,6 +310,48 @@ def _tool_igi(ctx: ContextoEmpresa, base_imponible: Optional[float] = None, **_)
     }
 
 
+def _tool_resumen_carga_fiscal(ctx: ContextoEmpresa, renta_neta: Optional[float] = None, **_) -> dict:
+    """Resumen de la carga fiscal anual: CASS + IRPF + el TOTAL.
+
+    Existe porque el LLM no puede sumar: si le das la cuota anual de la
+    CASS (7.055,40) y la del IRPF (300,00) y le preguntas "cuanto te
+    queda", se inventa un total (3.955,40). El total lo calcula el motor.
+
+    OJO: si no hay renta neta en el contexto, el motor NO puede calcular y
+    esta herramienta devuelve un error, que el agente detecta y no inyecta.
+    """
+    r = Decimal(str(renta_neta)) if renta_neta is not None else ctx.renta_neta_anual
+    if r is None:
+        return {"resultado": {"error": "Falta la renta neta"}, "regla": "n/a"}
+
+    t = tramo_cass_para(r)
+    cuota_cass = cass_anual(t)
+    i = irpf(base_general=r)
+    cuota_irpf = i.cuota_total
+
+    # El redondeo a 2 decimales lo hace el propio motor (Decimal.quantize),
+    # no _r2 (que es privado del motor fiscal y no se importa aqui).
+    total = (cuota_cass + cuota_irpf).quantize(Decimal("0.01"))
+    return {
+        "resultado": {
+            "renta_neta_anual": eur(r),
+            "cass_cuota_anual": eur(cuota_cass),
+            "cass_cuota_mensual": eur(t.cuota_mensual),
+            "cass_tramo": t.nombre,
+            "irpf_cuota_anual": eur(cuota_irpf),
+            "irpf_base_imponible": eur(i.base_general),
+            "irpf_bonificacion_art_46": eur(i.bonificacion_actividades),
+            "total_carga_fiscal_anual": eur(total),
+            "neto_despues_de_impuestos": eur((r - total).quantize(Decimal("0.01"))),
+        },
+        "regla": (
+            f"CASS {t.nombre} (Decret 28/2026, base {eur(t.base)}). "
+            f"IRPF 10% con minimo personal 24.000 EUR y bonificacion art. 46 "
+            f"del 50% con tope 800 EUR (Llei 5/2014)."
+        ),
+    }
+
+
 def _tool_crossover(ctx: ContextoEmpresa, renta_neta: Optional[float] = None, **_) -> dict:
     r = Decimal(str(renta_neta)) if renta_neta is not None else ctx.renta_neta_anual
     if r is None:
@@ -393,6 +435,27 @@ def _tool_comparar_escenarios(
 # --------------------------------------------------------------------------
 
 TOOL_SCHEMAS: list[dict] = [
+    {
+        "toolSpec": {
+            "name": "resumen_carga_fiscal",
+            "description": (
+                "Resumen de la carga fiscal anual de la empresa: cuota anual de "
+                "CASS, cuota anual de IRPF y el TOTAL de las dos, con la regla "
+                "aplicada. Usala cuando la pregunta pida el total, 'cuanto me "
+                "queda' o 'cuanto pago en impuestos'. El total lo calcula el "
+                "motor: no lo calcules tu."
+            ),
+            "inputSchema": {
+                "json": {
+                    "type": "object",
+                    "properties": {
+                        "renta_neta": {"type": "number", "description": "Renta neta anual en euros"}
+                    },
+                    "required": [],
+                }
+            },
+        }
+    },
     {
         "toolSpec": {
             "name": "analizar_tesoreria",
@@ -567,6 +630,7 @@ TOOL_IMPLS = {
     "punto_optimo_facturacion": _tool_punto_optimo,
     "comparar_escenarios": _tool_comparar_escenarios,
     "cerrar_ciclo": _tool_cerrar_ciclo,
+    "resumen_carga_fiscal": _tool_resumen_carga_fiscal,
 }
 
 
@@ -740,37 +804,66 @@ class AgenteFinanciero:
 
         # "renta" sola cae en el resumen de la regla del mock; pero si la
         # pregunta es sobre IRPF/CASS, la herramienta fiscal manda.
-        herramienta = None
+        # Todas las herramientas que apliquen, no solo la primera.
+        #
+        # OJO: si la pregunta es "Cuanto me queda de IRPF y CASS?" y solo se
+        # calcula el tramo de CASS, el LLM se inventa el IRPF (calculando
+        # 30.000 x 10% a mano). Eso es justo lo que el proyecto promete que
+        # no pasa: "la IA es el interfaz, la norma es el producto".
+        #
+        # Con varias herramientas, se calculan TODAS y se le pasan al LLM.
+        herramientas = []
         for claves, nombre, _params in self._REGLAS_ROUTER:
             if any(k in p for k in claves):
-                herramienta = nombre
-                break
+                if nombre not in herramientas:
+                    herramientas.append(nombre)
 
-        if herramienta is None:
+        # "IRPF y CASS" es la combinacion clasica: si el router solo ha
+        # cogido una de las dos, se anade la otra (si la menciona la
+        # pregunta).
+        if len(herramientas) == 1:
+            if herramientas[0] == "tramo_cass" and ("irpf" in p or "impuesto" in p):
+                herramientas.append("calcular_irpf")
+            elif herramientas[0] == "calcular_irpf" and ("cass" in p or "cotizacion" in p):
+                herramientas.append("tramo_cass")
+
+        # El resumen de carga fiscal ya trae CASS + IRPF + total: si esta
+        # en la lista, las cuotas sueltas sobran (y hacen que el LLM los
+        # mezcle).
+        if "resumen_carga_fiscal" in herramientas:
+            herramientas = ["resumen_carga_fiscal"]
+
+        if not herramientas:
             return None, None
 
-        # Las herramientas que necesitan un numero que no esta en el
-        # contexto se dejan al LLM (simular_contratacion necesita el
-        # coste del empleado, que sale de la pregunta).
-        try:
-            out = ejecutar_tool(herramienta, self.ctx, self._params_para(herramienta, p))
-            # Si el motor no pudo calcular (le faltaba un dato), se deja
-            # al LLM: no vale la pena forzar una herramienta que va a fallar.
-        except Exception:  # noqa: BLE001
-            # Si el motor falla, mejor que el LLM lo intente que un 500.
+        # Se calculan TODAS las herramientas que apliquen: si la pregunta
+        # es "Cuanto me queda de IRPF y CASS?" y solo se calcula el tramo de
+        # CASS, el LLM se inventa el IRPF (30.000 x 10% a mano). Eso es
+        # justo lo que el proyecto promete que no pasa.
+        resultados = []
+        for nombre in herramientas:
+            try:
+                out = ejecutar_tool(nombre, self.ctx, self._params_para(nombre, p))
+            except Exception:  # noqa: BLE001
+                # Si el motor falla con una, mejor que lo intente el LLM
+                # que devolver un 500.
+                continue
+
+            if not isinstance(out, dict) or "resultado" not in out:
+                continue
+
+            # Si el motor no pudo calcular (le faltaba un dato), NO se
+            # inyecta un {"error": ...} como si fuera un resultado.
+            res = out.get("resultado")
+            if isinstance(res, dict) and "error" in res:
+                continue
+
+            resultados.append((nombre, out))
+
+        if not resultados:
             return None, None
 
-        if not isinstance(out, dict) or "resultado" not in out:
-            return None, None
-
-        # Si el motor no pudo calcular (le faltaba un dato), NO se fuerza la
-        # herramienta: se devuelve el error al LLM para que lo explique, en
-        # vez de inyectar un {"error": ...} como si fuera un resultado.
-        res = out.get("resultado")
-        if isinstance(res, dict) and "error" in res:
-            return None, None
-
-        return herramienta, out
+        return [n for n, _ in resultados], resultados
 
     def _params_para(self, herramienta: str, p: str) -> dict:
         """Parametros de la herramienta: del CONTEXTO primero, de la pregunta si hace falta.
@@ -837,7 +930,12 @@ class AgenteFinanciero:
         # codigo, no una prediccion) y su resultado se le pasa al LLM como
         # contexto. El LLM solo redacta y explica la regla. Los numeros
         # NUNCA salen del LLM.
-        herramienta_fija, resultado_motor = self._herramienta_determinista(pregunta)
+        herramientas_fijas, resultados_motor = self._herramienta_determinista(pregunta)
+        # Compatibilidad: el resto del codigo usa estos dos nombres.
+        herramienta_fija = herramientas_fijas[0] if herramientas_fijas else None
+        resultado_motor = resultados_motor[0][1] if resultados_motor else None
+        # Todos los resultados del motor, para inyectarlos en el prompt.
+        todos_los_resultados = {n: o for n, o in (resultados_motor or [])}
 
 
         # El modelo tiene que saber QUE DATOS hay disponibles. Sin esto, si
@@ -905,12 +1003,36 @@ class AgenteFinanciero:
 
         params_deterministas = self._params_para("", pregunta.lower())
         if resultado_motor is not None:
+            _bloques = []
+            for _n, _o in (resultados_motor or []):
+                _bloques.append(_resultado_legible(_o))
+            # OJO: el LLM no puede hacer aritmetica con los numeros. Si el
+            # motor da la cuota ANUAL y la MENSUAL de la CASS, el modelo se
+            # liaba y se inventa un descuento ("7.055,40 - 587,95 - 587,95
+            # - 587,95 - 587,95 = 4.603,60"): un total que NO sale del
+            # motor y que el jurado puede sumar en dos segundos.
+            #
+            # Se le pasan solo las cifras del motor y se le prohibe
+            # sumar o restar: si hace falta un total, que lo pida al motor.
             system += (
                 "\n\nRESULTADO DEL MOTOR (ya calculado, no lo recalcules):\n"
-                + _resultado_legible(resultado_motor)[:4000]
+                + "\n".join(_bloques)[:6000]
                 + "\n\nRedacta la respuesta usando EXACTAMENTE estos numeros y la "
-                "regla aplicada. No inventes cifras. No llames a ninguna "
-                "herramienta: el calculo ya esta hecho."
+                "regla aplicada."
+                "\n- NO hagas aritmetica: no sumes, no restes, no multiplyes "
+                "ni calcules totales que no esten en el resultado. Si te "
+                "piden un total y no lo tienes, di el importe que te han "
+                "dado y el periodo."
+                "\n- Cita las cifras tal cual te las han dado, con su "
+                "etiqueta (anual, mensual, base...)."
+                "\n- Si la pregunta es sobre IRPF, CASS, impuestos o "
+                "'cuanto me queda', la respuesta DEBE incluir las tres "
+                "cifras del motor: total_carga_fiscal_anual (el total), "
+                "neto_despues_de_impuestos (lo que queda) y las cuotas "
+                "anuales. Son las cifras que te ha dado el motor: no las "
+                "calcules tu."
+                "\n- No inventes cifras. No llames a ninguna herramienta: el "
+                "calculo ya esta hecho."
             )
             # El motor ya ha calculado: el LLM solo redacta. Forzar la
             # herramienta hacia que el modelo la llamara con parametros
@@ -1025,13 +1147,13 @@ class AgenteFinanciero:
 
             # Si el motor calculo por su cuenta, la traza debe decirlo:
             # el usuario ve QUE se ha usado y la regla aplicada.
-            if herramienta_fija and not llamadas:
+            if herramientas_fijas and not llamadas:
                 llamadas = [{
-                    "tool": herramienta_fija,
+                    "tool": _n,
                     "input": params_deterministas,
-                    "resultado": resultado_motor["resultado"],
-                    "regla": resultado_motor.get("regla", ""),
-                }]
+                    "resultado": _o["resultado"],
+                    "regla": _o.get("regla", ""),
+                } for _n, _o in (resultados_motor or [])]
 
             return {"respuesta": texto, "herramientas": llamadas, "mock": False}
 
@@ -1064,6 +1186,15 @@ class AgenteFinanciero:
         # tramo es de crossover, no de cuota.
         (("salta", "salto", "umbral", "crossover", "a partir de cuando", "punto"),
          "detectar_crossover_fiscal", []),
+        # El TOTAL de la carga fiscal va antes que las cuotas sueltas: si
+        # la pregunta pide "cuanto me queda" o "cuanto pago en total", el
+        # motor tiene que devolver el total. Si solo se calcula el tramo
+        # de CASS, el LLM suma (o resta) por su cuenta y se inventa un
+        # total que NO sale del motor.
+        (("cuanto me queda", "cuanto queda", "cuanto pago", "cuanto pago en total",
+          "total de impuestos", "total de impuestos", "cuanto me cuesta",
+          "carga fiscal", "cuanto se va", "cuanto me llevo"),
+         "resumen_carga_fiscal", []),
         (("cotizo", "cotizacion", "cotización", "cass", "seguridad social", "cuota mensual"),
          "tramo_cass", []),
         # El cierre del bucle va ANTES de "fuga"/"suscripcion": si la pregunta

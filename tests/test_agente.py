@@ -257,6 +257,67 @@ print("=" * 62)
 
 # ==========================================================================
 # Regresion: el toolResult de Bedrock
+
+# ==========================================================================
+# Regresion: varias herramientas en la misma pregunta
+# ==========================================================================
+# Si la pregunta es "Cuanto me queda de IRPF y CASS?" y el motor solo
+# calcula el tramo de CASS, el LLM se inventa el IRPF (30.000 x 10% a
+# mano = 2.200 EUR, cuando el motor dice 300 EUR). Eso es exactamente lo
+# que el proyecto promete que no pasa.
+
+try:
+    with open(os.path.join(RAIZ, "agent", "bedrock_agent.py"), encoding="utf-8") as _f:
+        _src = _f.read()
+    _tiene_bucle = "for nombre in herramientas:" in _src
+    _tiene_irpf = 'herramientas.append("calcular_irpf")' in _src
+    _tiene_cass = 'herramientas.append("tramo_cass")' in _src
+except OSError:
+    _tiene_bucle = _tiene_irpf = _tiene_cass = False
+
+check("el motor calcula TODAS las herramientas que apliquen",
+      _tiene_bucle, True)
+check("la combinacion IRPF+CASS se resuelve juntas",
+      _tiene_irpf and _tiene_cass, True)
+
+# ==========================================================================
+# La herramienta de resumen: el total lo calcula el motor
+# ==========================================================================
+# Si el LLM recibe la cuota anual de la CASS (7.055,40) y la del IRPF
+# (300,00) y le preguntas "cuanto me queda", se inventa un total: se
+# vio pasar de 7.355,40 a 3.755,40. El total lo da el motor.
+
+from agent.bedrock_agent import (  # noqa: E402
+    TOOL_IMPLS,
+    TOOL_SCHEMAS,
+    ContextoEmpresa,
+    _tool_resumen_carga_fiscal,
+)
+
+_ctx = ContextoEmpresa(renta_neta_anual=D("30000"), actividad="servicios")
+_res = _tool_resumen_carga_fiscal(_ctx, None)["resultado"]
+
+check("la herramienta de resumen esta registrada",
+      "resumen_carga_fiscal" in TOOL_IMPLS, True)
+check("la herramienta de resumen esta en el esquema de Bedrock",
+      any(t["toolSpec"]["name"] == "resumen_carga_fiscal" for t in TOOL_SCHEMAS),
+      True)
+check("el total de carga fiscal lo calcula el motor",
+      _res.get("total_carga_fiscal_anual"), "7.355,40")
+check("el neto despues de impuestos lo calcula el motor",
+      _res.get("neto_despues_de_impuestos"), "22.644,60")
+check("la cuota anual de CASS del resumen",
+      _res.get("cass_cuota_anual"), "7.055,40")
+check("la cuota anual de IRPF del resumen",
+      _res.get("irpf_cuota_anual"), "300,00")
+
+# La regla del router: "cuanto me queda" -> resumen (no las cuotas sueltas)
+_h, _r = AgenteFinanciero(_ctx)._herramienta_determinista(
+    "Cuanto me queda de IRPF y CASS este ano?")
+check("'cuanto me queda' usa la herramienta de resumen",
+      _h, ["resumen_carga_fiscal"])
+
+
 # ==========================================================================
 # La API de Bedrock exige que el resultado de una herramienta vaya
 # envuelto en {"toolResult": {...}}. Sin esa envoltura, Bedrock responde
@@ -270,17 +331,20 @@ print("=" * 62)
 # Ruta ABSOLUTA: el test se ejecuta desde cualquier carpeta, y una ruta
 # relativa haria que open() fallara en silencio.
 import os as _os
-_RAIZ = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
 _src_agente = ""
 try:
-    with open(_os.path.join(_RAIZ, "agent", "bedrock_agent.py"), encoding="utf-8") as _f:
+    with open(os.path.join(RAIZ, "agent", "bedrock_agent.py"), encoding="utf-8") as _f:
         _src_agente = _f.read()
 except OSError:
     _src_agente = ""
 
 if _src_agente:
-    _i_resultados = _src_agente.find('resultados.append(')
-    _trozo = _src_agente[_i_resultados:_i_resultados + 600] if _i_resultados != -1 else ""
+    # El bloque del toolResult es el que tiene "toolResult" dentro. No se
+    # busca por "resultados.append(" porque ese patron ya lo usa otra
+    # parte del agente (el router determinista).
+    _i_resultados = _src_agente.find('"toolResult"')
+    _trozo = (_src_agente[max(0, _i_resultados - 400):_i_resultados + 400]
+              if _i_resultados != -1 else "")
 
     # OJO: el check() de este fichero compara "obtenido == esperado", no
     # un booleano. Por eso compara presencia de texto, no True/False.

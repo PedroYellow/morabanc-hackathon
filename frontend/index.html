@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0a3550">
-<meta name="description" content="Motor de decisiones financieras para autonomos y pymes de Andorra. MoraBanc IA + Finanzas.">
-<title>Asesor Financiero IA · MoraBanc</title>
+<meta name="description" content="PlanificAND: motor de decisiones financieras para autonomos y pymes de Andorra. MoraBanc IA + Finanzas.">
+<title>PlanificAND · Asesor financiero para Andorra</title>
 <link rel="stylesheet" href="assets/styles.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%230a3550'/><path d='M30 52 L44 66 L70 34' fill='none' stroke='%23f1c657' stroke-width='11' stroke-linecap='round' stroke-linejoin='round'/></svg>">
 </head>
@@ -21,7 +21,7 @@
       </div>
       <div class="brand-divider" aria-hidden="true"></div>
       <div class="brand-text">
-        <strong>Asesor Financiero IA</strong>
+        <strong>PlanificAND</strong>
         <span class="brand-sub">Autónomos y pymes · Andorra</span>
       </div>
     </div>
@@ -37,6 +37,53 @@
 <main class="app">
 
   <section class="step" id="stepContexto" data-step="1">
+
+    <!--
+      Voz y captura conversacional.
+
+      Este bloque va ANTES del formulario a proposito: el objetivo es
+      que el usuario pueda HABLAR sus datos en vez de escribirlos en
+      cuatro casillas. El formulario queda como atajo para quien ya
+      sabe lo que quiere poner, y se rellena solo con lo que el
+      usuario dice.
+
+      El chat de abajo (paso 2) es el mismo: aqui solo aparece el
+      acceso rapido a la voz y el resumen de lo capturado.
+    -->
+    <div class="card voice-card" id="voiceCard">
+      <h2 class="card-title">Cuéntamelo hablando</h2>
+      <p class="card-hint">
+        Pulsa el micro y di tu situación: el asesor la entiende, la
+        anota y calcula. También puedes escribirla.
+      </p>
+
+      <div class="voice-bar" id="voiceBarStep1">
+        <button class="voice-orb" id="voiceOrbStep1" type="button" aria-label="Hablar con el asesor">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
+            <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/>
+            <path d="M18 11a6 6 0 0 1-12 0H4a8 8 0 0 0 7 7.93V22h2v-3.07A8 8 0 0 0 20 11Z" opacity=".85"/>
+          </svg>
+        </button>
+        <div class="voice-meter" id="voiceMeterStep1"><i id="voiceLevelStep1"></i></div>
+        <div class="voice-status" id="voiceStatusStep1" data-state="idle">
+          <span class="dot"></span><span id="voiceStatusTextStep1">Toca para hablar</span>
+        </div>
+        <select class="voice-device" id="voiceDeviceStep1" hidden aria-label="Micrófono"></select>
+      </div>
+
+      <div class="voice-notice" id="voiceNoticeStep1" hidden></div>
+
+      <form class="chat-input" id="voiceFormStep1">
+        <input type="text" id="voiceInputStep1" placeholder="O escribe aquí tu situación…" autocomplete="off" maxlength="200">
+        <button type="submit" class="btn-send" aria-label="Enviar">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 12 L20 4 L14 20 L12 13 Z" fill="currentColor"/></svg>
+        </button>
+      </form>
+
+      <!-- Lo que el asesor ha entendido hasta ahora -->
+      <div class="context-chips" id="contextChipsStep1"></div>
+    </div>
+
     <div class="step-head">
       <span class="step-num">1</span>
       <div>
@@ -89,13 +136,27 @@
       <!-- Zona de subida (oculta por defecto) -->
       <div class="upload-zone" id="uploadZone" hidden>
         <label class="file-drop" for="fileInput">
-          <input type="file" id="fileInput" accept=".csv,text/csv" hidden>
+          <!-- Se aceptan CSV (el formato del motor) y tambien PDF, imagen y
+               XLSX: el navegador los adjunta a la conversacion y el
+               asistente puede leerlos. El motor sigue trabajando con el
+               CSV, que es la fuente de verdad de los numeros. -->
+          <input type="file" id="fileInput" multiple
+                 accept=".csv,text/csv,.pdf,application/pdf,.png,.jpg,.jpeg,image/*,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
           <span class="file-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17 V4"/><path d="M7 9 L12 4 L17 9"/><path d="M4 20 H20"/></svg></span>
-          <strong id="fileDropTitle">Arrastra tu extracto o haz clic</strong>
-          <small>CSV con columnas: fecha, concepto, importe</small>
+          <strong id="fileDropTitle">Arrastra tus archivos o haz clic</strong>
+          <small>CSV de tu banca (fecha, concepto, importe) · también PDF, Excel o imágenes</small>
         </label>
         <div class="upload-privacy">
-          🔒 Tu extracto se procesa en la cuenta AWS aislada del equipo y se borra a los 30 días.
+          🔒 Tus archivos se procesan en la cuenta AWS aislada del equipo y se borran a los 30 días.
+        </div>
+      </div>
+
+      <!-- Arrastre sobre toda la pagina: suelta el archivo donde estes -->
+      <div class="drop-overlay" id="dropOverlay" hidden aria-hidden="true">
+        <div class="drop-overlay-inner">
+          <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17 V4"/><path d="M7 9 L12 4 L17 9"/><path d="M4 20 H20"/></svg>
+          <strong>Suelta aquí tu extracto</strong>
+          <span>CSV, PDF, Excel o imágenes</span>
         </div>
       </div>
     </div>
@@ -103,7 +164,7 @@
     <!-- Datos fiscales -->
     <div class="card" id="cardDatos">
       <h2 class="card-title">Tus datos fiscales</h2>
-      <p class="card-hint">Con esto calculamos tu CASS, tu IRPF y tu IGI con la normativa andorrana.</p>
+      <p class="card-hint">Con esto calculamos tu CASS, tu IRPF y tu IGI con la normativa andorrana. Si ya lo has contado, está relleno.</p>
 
       <div class="form-grid">
         <label class="field">
@@ -182,9 +243,39 @@
       <div class="sugerencias" id="sugerencias"></div>
 
       <div class="chat" id="chat">
+        <!--
+          Contexto capturado en vivo. Se rellena solo con lo que el
+          usuario dice (o escribe). Es la pieza que convierte el chat
+          en una captura de datos: el motor recibe un contexto completo.
+        -->
+        <div class="context-chips" id="contextChips"></div>
+
+        <!-- Barra de voz: se despliega al pulsar el microfono -->
+        <div class="voice-bar" id="voiceBar" hidden>
+          <button class="voice-orb" id="voiceOrb" type="button" aria-label="Hablar con el asesor">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
+              <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/>
+              <path d="M18 11a6 6 0 0 1-12 0H4a8 8 0 0 0 7 7.93V22h2v-3.07A8 8 0 0 0 20 11Z" opacity=".85"/>
+            </svg>
+          </button>
+          <div class="voice-meter" id="voiceMeter"><i id="voiceLevel"></i></div>
+          <div class="voice-status" id="voiceStatus" data-state="idle">
+            <span class="dot"></span><span id="voiceStatusText">Toca para hablar</span>
+          </div>
+          <select class="voice-device" id="voiceDevice" hidden aria-label="Micrófono"></select>
+        </div>
+
+        <div class="voice-notice" id="voiceNotice" hidden></div>
+
         <div class="chat-messages" id="chatMessages"></div>
         <form class="chat-input" id="chatForm">
-          <input type="text" id="chatInput" placeholder="Escribe tu pregunta…" autocomplete="off" maxlength="200">
+          <button type="button" class="btn-mic" id="btnMic" aria-label="Hablar con el asesor">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+              <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/>
+              <path d="M18 11a6 6 0 0 1-12 0H4a8 8 0 0 0 7 7.93V22h2v-3.07A8 8 0 0 0 20 11Z" opacity=".85"/>
+            </svg>
+          </button>
+          <input type="text" id="chatInput" placeholder="Escribe o habla con el asesor…" autocomplete="off" maxlength="200">
           <button type="submit" class="btn-send" aria-label="Enviar">
             <svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 12 L20 4 L14 20 L12 13 Z" fill="currentColor"/></svg>
           </button>
@@ -241,7 +332,7 @@
         <svg id="presGrafico" class="chart" viewBox="0 0 640 240" preserveAspectRatio="none"></svg>
       </div>
       <div class="presentacion-foot">
-        <span class="presentacion-brand">MoraBanc · Asesor Financiero IA</span>
+        <span class="presentacion-brand">PlanificAND · MoraBanc</span>
         <span class="presentacion-hint">Pulsa Esc para volver</span>
       </div>
     </div>
@@ -249,6 +340,7 @@
 <!-- ============ TOAST ============ -->
 <div class="toast" id="toast" hidden></div>
 
+<script>window.__API_URL__="/api";window.__COGNITO_DOMAIN__="morabanc-hackathon-d-fc90d7df";window.__COGNITO_CLIENT_ID__="6rfhsa6sbqk1hqqqd762inuclu";window.__AWS_REGION__="us-east-1";</script>
 <script src="assets/app.js"></script>
 </body>
 </html>

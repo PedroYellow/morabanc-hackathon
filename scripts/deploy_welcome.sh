@@ -51,26 +51,58 @@ if [ -z "$API_URL" ]; then
   if command -v "$TF_BIN" >/dev/null 2>&1 || [ -x "$TF_BIN" ]; then
     if CFG_JSON=$("$TF_BIN" -chdir="$RAIZ/terraform" output -json frontend_url_config 2>/dev/null); then
       # El output es sensitive (lleva la API key), asi que se lee con -json.
+      # OJO: el output "frontend_url_config" es sensitive, y Terraform lo
+      # devuelve como un STRING JSON dentro del JSON ({"value": "{...}"}).
+      # Por eso hay que desempaquetar dos veces: si lo que sale de json.load
+      # es un string, se vuelve a parsear.
+      #
+      # Y OJO: aunque se parsee bien, la API key sale ENMASCARADA por el
+      # CLI de Terraform ("0XRCHu...E4Y9"), porque el valor es sensitive.
+      # Por eso la key se lee de la LAMBDA, que si la tiene en claro.
       eval "$(printf '%s' "$CFG_JSON" | python3 -c "
 import json, shlex, sys
 try:
     cfg = json.load(sys.stdin)
 except Exception:
     sys.exit(0)
-for k in ('api_url', 'api_key', 'cognito_domain', 'cognito_client_id', 'region'):
+if isinstance(cfg, str):
+    try:
+        cfg = json.loads(cfg)
+    except Exception:
+        sys.exit(0)
+if not isinstance(cfg, dict):
+    sys.exit(0)
+# OJO: los nombres son los del output "frontend_url_config":
+# api_url, api_key, cognito_client (NO cognito_client_id), cognito_domain, region
+for k in ('api_url', 'api_key', 'cognito_domain', 'cognito_client', 'region'):
     v = cfg.get(k) or ''
     if v:
         print(f'CFG_{k.upper()}={shlex.quote(str(v))}')
 " 2>/dev/null)" || true
-      API_URL="${API_URL:-$CFG_API_URL}"
-      API_KEY="${API_KEY:-$CFG_API_KEY}"
-      COGNITO_DOMAIN="${COGNITO_DOMAIN:-$CFG_COGNITO_DOMAIN}"
-      COGNITO_CLIENT_ID="${COGNITO_CLIENT_ID:-$CFG_COGNITO_CLIENT_ID}"
-      AWS_REGION="${AWS_REGION:-$CFG_REGION}"
+      # OJO: ${VAR:-} y no ${VAR-$X}: con "set -u", referenciar una variable
+      # que no existe ABORTA el script ("unbound variable") y el despliegue
+      # se queda a medias sin avisar.
+      API_URL="${API_URL:-${CFG_API_URL:-}}"
+      API_KEY="${API_KEY:-${CFG_API_KEY:-}}"
+      COGNITO_DOMAIN="${COGNITO_DOMAIN:-${CFG_COGNITO_DOMAIN:-}}"
+      COGNITO_CLIENT_ID="${COGNITO_CLIENT_ID:-${CFG_COGNITO_CLIENT:-}}"
+      AWS_REGION="${AWS_REGION:-${CFG_REGION:-us-east-1}}"
       if [ -n "$API_URL" ]; then
         echo "    API detectada en terraform output: $API_URL"
-        [ -n "$API_KEY" ] && echo "    API key presente (x-api-key)"
       fi
+
+      # La API key: terraform la enmascara (es sensitive), asi que se lee
+      # del entorno de la Lambda, que si la tiene en claro.
+      if [ -z "$API_KEY" ] || [ "$API_KEY" != "${API_KEY%%\.\.\.*}" ]; then
+        _key_lambda=$(aws lambda get-function-configuration \
+          --function-name "${FUNCION_API:-morabanc-hackathon-dev-api}" \
+          --query 'Environment.Variables.API_KEY' --output text 2>/dev/null || true)
+        if [ -n "$_key_lambda" ] && [ "$_key_lambda" != "None" ]; then
+          API_KEY="$_key_lambda"
+          echo "    API key leida de la Lambda (terraform la enmascara)"
+        fi
+      fi
+      [ -n "$API_KEY" ] && echo "    API key presente (x-api-key)"
     fi
   fi
 fi

@@ -473,11 +473,39 @@ resource "aws_iam_role_policy" "api" {
   role = aws_iam_role.api.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = ["lambda:InvokeFunction"]
-      Resource = aws_lambda_function.motor.arn
-    }]
+    Statement = [
+      {
+        # Invocar el motor (la lambda que envuelve el motor determinista).
+        Effect   = "Allow"
+        Action   = ["lambda:InvokeFunction"]
+        Resource = aws_lambda_function.motor.arn
+      },
+      {
+        # OJO: la lambda de API es la que llama a Bedrock (el agente vive
+        # en el mismo zip). Sin este permiso, /preguntar responde 500:
+        # "AccessDeniedException: User: ...morabanc-hackathon-dev-api is not
+        # authorized to perform: bedrock:InvokeModel on resource:
+        # arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0
+        # because no identity-based policy allows the bedrock:InvokeModel
+        # action".
+        Effect = "Allow"
+        Action = [
+          "bedrock:InvokeModel",
+          "bedrock:InvokeModelWithResponseStream",
+        ]
+        Resource = [
+          "arn:aws:bedrock:${var.aws_region}::foundation-model/${var.bedrock_model_id}",
+          "arn:aws:bedrock:${var.aws_region}::foundation-model/*",
+        ]
+      },
+      {
+        # Consultar la Knowledge Base (RAG). Opcional: si no hay KB, este
+        # permiso no hace falta, pero no molesta.
+        Effect   = "Allow"
+        Action   = ["bedrock:Retrieve", "bedrock:RetrieveAndGenerate"]
+        Resource = "*"
+      },
+    ]
   })
 }
 
@@ -633,7 +661,15 @@ resource "random_password" "api_key" {
 resource "aws_lambda_function" "authorizer" {
   function_name = "${local.name}-authorizer"
   role          = aws_iam_role.lambda.arn
-  handler       = "lambda.authorizer.handler"
+  # OJO: el zip del authorizer tiene el modulo EN LA RAIZ (source_dir =
+  # ../lambda), no dentro de una carpeta "lambda/". Con el handler
+  # "lambda.authorizer.handler" la Lambda no encuentra el modulo y TODAS
+  # las peticiones dan 500:
+  #   "Unable to import module 'lambda.authorizer': No module named
+  #    'lambda'"
+  # El nombre de la carpeta del zip NO puede ser "lambda": ademas es una
+  # palabra reservada de Python y el import por paquete es fragil.
+  handler       = "authorizer.handler"
   runtime       = "python3.12"
   architectures = ["arm64"]
   filename      = data.archive_file.authorizer.output_path

@@ -57,15 +57,21 @@ handlers = re.findall(r'handler\s*=\s*"([^"]+)"', SRC)
 check("hay 3 handlers definidos (motor, api y authorizer)", len(handlers) == 3, handlers)
 
 # El motor y la api comparten el mismo modulo empaquetado.
-handlers_motor_api = [h for h in handlers if h != "lambda.authorizer.handler"]
+handlers_motor_api = [h for h in handlers if h != "authorizer.handler"]
 check("el motor y la api usan 'lambda.handler.lambda_handler'",
       len(handlers_motor_api) == 2
       and all(h == "lambda.handler.lambda_handler" for h in handlers_motor_api),
       set(handlers_motor_api))
 
 # El authorizer es su propia Lambda: valida la clave de la API.
-check("el authorizer usa 'lambda.authorizer.handler'",
-      "lambda.authorizer.handler" in handlers, set(handlers))
+# El authorizer usa "authorizer.handler", NO "lambda.authorizer.handler":
+# su zip tiene el modulo EN LA RAIZ (source_dir = ../lambda), asi que con
+# el prefijo "lambda." la Lambda no encuentra el modulo y TODAS las
+# peticiones dan 500:
+#   "Unable to import module 'lambda.authorizer': No module named 'lambda'"
+check("el authorizer usa 'authorizer.handler' (el zip lo tiene en la raiz)",
+      "authorizer.handler" in handlers
+      and "lambda.authorizer.handler" not in handlers, set(handlers))
 
 check("lambda/__init__.py existe en el repo",
       os.path.isfile(os.path.join(RAIZ, "lambda", "__init__.py")))
@@ -517,7 +523,7 @@ check("el authorizer desactiva simple responses (devuelve policy IAM)",
 # La region por defecto del agente es us-east-1 (la cuenta del workshop solo
 # permite crear ahi), no eu-west-1.
 try:
-    with open(os.path.join(_RAIZ, "agent", "bedrock_agent.py"), encoding="utf-8") as _f:
+    with open(os.path.join(RAIZ, "agent", "bedrock_agent.py"), encoding="utf-8") as _f:
         _src_ag = _f.read()
     check("el agente lee BEDROCK_REGION",
           'os.environ.get("BEDROCK_REGION")' in _src_ag)
@@ -527,6 +533,26 @@ try:
 except OSError:
     check("el agente lee BEDROCK_REGION", False, "no se pudo leer el agente")
     check("el default de region del agente es us-east-1", False, "no se pudo leer el agente")
+
+
+
+# BUG 18: la lambda de API es la que llama a Bedrock (el agente vive en su
+# zip). Sin bedrock:InvokeModel en su IAM, /preguntar responde 500:
+# "AccessDeniedException: User: ...morabanc-hackathon-dev-api is not
+# authorized to perform: bedrock:InvokeModel".
+_m = re.search(r'resource "aws_iam_role_policy" "api" \{.*?\n\}\n', SRC, re.S)
+if _m:
+    _pol_api = _m.group(0)
+    check("la policy de la lambda de API permite bedrock:InvokeModel",
+          "bedrock:InvokeModel" in _pol_api,
+          "sin esto, /preguntar responde 500 en AWS")
+    check("la policy de la lambda de API permite invocar la lambda del motor",
+          "lambda:InvokeFunction" in _pol_api)
+else:
+    check("la policy de la lambda de API permite bedrock:InvokeModel", False,
+          "no se encontro el recurso")
+    check("la policy de la lambda de API permite invocar la lambda del motor",
+          False, "no se encontro el recurso")
 
 
 # ==========================================================================

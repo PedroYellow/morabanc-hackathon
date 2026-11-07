@@ -864,3 +864,245 @@ body.presentacion-activa .topbar { display: none; }
   .brand-text span { display: none; }
   .brand-logo { height: 18px; }
 }
+
+/* ============================================================
+   VOZ — Asistente conversacional (voz a texto + confirmacion)
+   ============================================================
+   El objetivo: que el usuario NUNCA tenga que rellenar un formulario
+   numerico para arrancar. La voz (o el texto) rellena el contexto y
+   el motor calcula. El formulario sigue existiendo como atajo para
+   quien ya sabe lo que quiere escribir.
+   ============================================================ */
+
+/* --- Orbe de estado de voz --------------------------------- */
+.voice-orb {
+  width: 54px; height: 54px; flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--navy);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  position: relative;
+  transition: border-color .18s, background .18s, transform .12s, box-shadow .18s;
+}
+.voice-orb:hover { border-color: var(--azul); background: var(--surface-azul); }
+.voice-orb svg { width: 22px; height: 22px; }
+
+/* Halo pulsante cuando esta escuchando: el usuario ve de un vistazo
+   que el micro esta abierto, sin leer nada. */
+.voice-orb.listening {
+  background: var(--navy); color: #fff; border-color: var(--navy);
+}
+.voice-orb.listening::after {
+  content: ""; position: absolute; inset: -6px;
+  border-radius: 50%; border: 2px solid var(--azul);
+  animation: voice-pulse 1.6s ease-out infinite;
+}
+.voice-orb.speaking {
+  background: var(--gold); color: var(--navy); border-color: var(--gold);
+}
+.voice-orb.speaking::after {
+  content: ""; position: absolute; inset: -6px;
+  border-radius: 50%; border: 2px solid var(--gold);
+  animation: voice-pulse .9s ease-out infinite;
+}
+@keyframes voice-pulse {
+  0%   { transform: scale(.85); opacity: .9; }
+  100% { transform: scale(1.45); opacity: 0; }
+}
+
+/* --- Medidor de nivel de voz ------------------------------ */
+.voice-meter {
+  width: 56px; height: 5px; border-radius: 99px;
+  background: var(--line-soft); overflow: hidden;
+  display: none;
+}
+.voice-meter.on { display: block; }
+.voice-meter > i {
+  display: block; height: 100%; width: 0%;
+  background: var(--gold); border-radius: 99px;
+  transition: width .08s linear;
+}
+
+/* --- Barra de herramientas de voz ------------------------- */
+.voice-bar {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-azul);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  margin-bottom: var(--space-3);
+  flex-wrap: wrap;
+}
+.voice-status {
+  font-size: 12.5px; color: var(--azul-hondo); font-weight: 600;
+  display: flex; align-items: center; gap: 6px;
+}
+.voice-status .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--dim); flex-shrink: 0;
+}
+.voice-status[data-state="listening"] .dot { background: var(--ok); }
+.voice-status[data-state="speaking"] .dot { background: var(--warn); }
+.voice-status[data-state="error"] .dot { background: var(--danger); }
+
+/* Selector de microfono: solo aparece si hay mas de uno. */
+.voice-device {
+  font-size: 12px; padding: 4px var(--space-2); border-radius: var(--radius-sm);
+  border: 1px solid var(--line); background: var(--surface); color: var(--txt);
+  max-width: 170px;
+}
+
+/* --- Transcripcion en vivo ------------------------------- */
+.live-caption {
+  align-self: flex-start;
+  max-width: 92%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  border: 1px dashed var(--azul);
+  background: var(--surface);
+  color: var(--txt-navy);
+  font-size: 14px;
+  line-height: 1.5;
+  font-style: italic;
+}
+.live-caption .caret {
+  display: inline-block; width: 2px; height: 1em;
+  background: var(--azul); vertical-align: text-bottom;
+  animation: blink 1s step-end infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* --- Resumen de contexto capturado ------------------------ */
+.context-chips {
+  display: flex; flex-wrap: wrap; gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.context-chips:empty { display: none; }
+.ctx-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px var(--space-2);
+  border-radius: 99px;
+  border: 1px solid var(--line-soft);
+  background: var(--surface);
+  font-size: 12.5px; color: var(--txt-navy);
+}
+.ctx-chip b { font-weight: 600; color: var(--navy); }
+.ctx-chip.pending { border-style: dashed; color: var(--dim); }
+.ctx-chip.filled { border-color: rgba(4, 170, 109, .45); background: var(--ok-dim); }
+.ctx-chip .ctx-ok { color: var(--ok); font-weight: 700; }
+
+/* --- Sugerencias como opciones de una sola pulsacion ------- */
+.sugerencia {
+  cursor: pointer; text-align: left; width: 100%;
+  font: inherit;
+}
+.sugerencia.used { opacity: .45; pointer-events: none; }
+
+/* --- Boton de voz junto al input de chat ------------------- */
+.chat-input .btn-mic {
+  width: 44px; height: 44px; flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface); color: var(--navy);
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color .18s, background .18s, transform .12s;
+}
+.chat-input .btn-mic:hover { border-color: var(--azul); background: var(--surface-azul); }
+.chat-input .btn-mic.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+.chat-input .btn-mic svg { width: 20px; height: 20px; }
+
+/* --- Aviso de permiso de microfono ------------------------ */
+.voice-notice {
+  font-size: 12.5px; line-height: 1.5;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--warn-dim);
+  border: 1px solid rgba(231, 137, 28, .35);
+  color: #7a4a08;
+  margin-bottom: var(--space-3);
+}
+.voice-notice[hidden] { display: none; }
+
+/* En movil el boton de microfono grande del chat se mantiene: es el
+   punto de entrada natural al modo voz. */
+
+/* ---------------------------------------------------------------
+   Arrastre de archivos sobre toda la pagina
+   ---------------------------------------------------------------
+   Al arrastrar un fichero sobre la ventana aparece un overlay con
+   el borde dorado de marca: es la señal de "suelta aqui".
+   --------------------------------------------------------------- */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  background: rgba(10, 53, 80, 0.72);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: dropIn 0.16s ease-out;
+}
+
+.drop-overlay[hidden] { display: none; }
+
+.drop-overlay-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-7) var(--space-7);
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-card, 16px);
+  background: var(--white, #fff);
+  color: var(--navy, #0a3550);
+  text-align: center;
+  box-shadow: 0 24px 60px rgba(10, 53, 80, 0.35);
+}
+
+.drop-overlay-inner svg { color: var(--accent); }
+.drop-overlay-inner strong { font-size: 20px; letter-spacing: -0.01em; }
+.drop-overlay-inner span { font-size: 14px; color: var(--gray-500, #898989); }
+
+/* While dragging, the page must not scroll or select text. */
+body.dragging-file { user-select: none; cursor: copy; }
+body.dragging-file * { cursor: copy !important; }
+
+@keyframes dropIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Chip de archivo adjuntado en el chat. */
+.chat-msg.con-archivo {
+  font-style: normal;
+  border-style: dashed;
+}
+
+@media (max-width: 560px) {
+  .voice-orb { width: 48px; height: 48px; }
+  .live-caption { max-width: 100%; }
+}
+
+/* La tarjeta de voz del paso 1: es la via principal, no un extra.
+   Se coloca ANTES del formulario para que el usuario vea el micro
+   antes que las casillas. */
+.voice-card {
+  border-color: var(--azul);
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-azul) 100%);
+}
+.voice-card .card-title { margin-bottom: var(--space-1); }
+.voice-card .card-hint { margin-bottom: var(--space-3); }
+
+/* La barra de voz del paso 1 no lleva borde propio (ya esta dentro
+   de una tarjeta con borde): solo el fondo suave. */
+#voiceBarStep1 { margin-bottom: var(--space-2); background: transparent; border: 0; padding: 0; }
+
+/* El formulario de la tarjeta de voz: input mas ancho, sin borde
+   duplicado. */
+#voiceFormStep1 { margin-bottom: var(--space-3); }
+
+/* Los chips de contexto dentro de la tarjeta de voz. */
+#contextChipsStep1 { margin-bottom: 0; }

@@ -101,6 +101,15 @@
       reglaAplicada: "Regla aplicada",
       cargando: "Analizando tu situación…",
       errorDemo: "No se pudo cargar la demo. ¿Pruebas con la cuenta de demostración?",
+      vozSaludo: "Hola, soy PlanificAND. Te escucho: cuéntame tu situación financiera y yo la calculo con la normativa andorrana.",
+      vozSaludoCorto: "Hola, soy PlanificAND.",
+      vozGuiaInicial: "Por ejemplo: «Facturo 40.000 euros al año, tengo 8.500 en la cuenta y un margen del 70%».",
+      vozFaltaRenta: "Necesito tu renta neta anual: lo que te queda tras gastos, antes de impuestos y CASS.",
+      vozFaltaSaldo: "¿Cuánto dinero tienes hoy en la cuenta?",
+      vozFaltaActividad: "¿A qué te dedicas? Por ejemplo: servicios, comercio,-hostelería.",
+      vozListo: "Perfecto, ya tengo lo que necesito. Pulsa Analizar y te digo cuánto te queda.",
+      vozConfirmado: "Anotado: {dato}.",
+      vozArchivos: "He adjuntado un archivo. Lo reviso antes de continuar.",
     },
     ca: {
       tituloContexto: "La teva situació financera",
@@ -117,6 +126,15 @@
       reglaAplicada: "Regla aplicada",
       cargando: "Analitzant la teva situació…",
       errorDemo: "No s'ha pogut carregar la demo. Proves amb el compte de demostració?",
+      vozSaludo: "Hola, soc PlanificAND. t'escolto: explica'm la teva situació financera i jo la calculo amb la normativa andorrena.",
+      vozSaludoCorto: "Hola, soc PlanificAND.",
+      vozGuiaInicial: "Per exemple: «Facturo 40.000 euros l'any, tinc 8.500 al compte i un marge del 70%».",
+      vozFaltaRenta: "Necessito la teva renda neta anual: el que et queda després de despeses, abans d'impostos i CASS.",
+      vozFaltaSaldo: "Quants diners tens avui al compte?",
+      vozFaltaActividad: "A què et dediques? Per exemple: serveis, comerç, hostaleria.",
+      vozListo: "Perfecte, ja tinc el que necessito. Prem Analitzar i et dic quant te'n queda.",
+      vozConfirmado: "Anotat: {dato}.",
+      vozArchivos: "He adjuntat un fitxer. El reviso abans de continuar.",
     },
     en: {
       tituloContexto: "Your financial situation",
@@ -133,6 +151,15 @@
       reglaAplicada: "Rule applied",
       cargando: "Analysing your situation…",
       errorDemo: "Couldn't load the demo. Try the demo account?",
+      vozSaludo: "Hi, I'm PlanificAND. I'm listening: tell me your financial situation and I'll work it out with Andorran tax rules.",
+      vozSaludoCorto: "Hi, I'm PlanificAND.",
+      vozGuiaInicial: 'For example: "I bill 40,000 a year, I have 8,500 in the account and a 70% margin".',
+      vozFaltaRenta: "I need your annual net income: what's left after expenses, before taxes and CASS.",
+      vozFaltaSaldo: "How much money do you have in the account right now?",
+      vozFaltaActividad: "What do you do? For example: services, retail, hospitality.",
+      vozListo: "Perfect, I have everything I need. Hit Analyse and I'll tell you what you keep.",
+      vozConfirmado: "Noted: {dato}.",
+      vozArchivos: "I've attached a file. Let me go through it first.",
     },
   };
 
@@ -476,15 +503,104 @@
       });
     });
 
-    $("#fileInput").addEventListener("change", async (e) => {
-      const file = e.target.files && e.target.files[0];
-      if (!file) return;
-      const texto = await file.text();
+    $("#fileInput").addEventListener("change", (e) => {
+      const files = Array.from(e.target.files || []);
+      if (files.length) recibirArchivos(files);
+    });
+
+    // --- Arrastre de archivos sobre toda la pagina -------------------
+    // Se puede soltar el extracto en cualquier punto de la pantalla, no
+    // solo en la zona de subida. Aparece un overlay que dice que va a
+    // pasar y, al soltar, se procesa igual que con el selector.
+    const overlay = $("#dropOverlay");
+    let dragProfundidad = 0;
+
+    function mostrarOverlay(on) {
+      if (!overlay) return;
+      overlay.hidden = !on;
+      document.body.classList.toggle("dragging-file", on);
+    }
+
+    window.addEventListener("dragenter", (e) => {
+      if (!e.dataTransfer || !Array.from(e.dataTransfer.types || []).includes("Files")) return;
+      e.preventDefault();
+      dragProfundidad++;
+      mostrarOverlay(true);
+    });
+    window.addEventListener("dragover", (e) => {
+      if (!e.dataTransfer || !Array.from(e.dataTransfer.types || []).includes("Files")) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+    });
+    window.addEventListener("dragleave", (e) => {
+      dragProfundidad = Math.max(0, dragProfundidad - 1);
+      if (dragProfundidad === 0) mostrarOverlay(false);
+    });
+    window.addEventListener("drop", (e) => {
+      if (!e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files.length) return;
+      e.preventDefault();
+      dragProfundidad = 0;
+      mostrarOverlay(false);
+      recibirArchivos(Array.from(e.dataTransfer.files));
+    });
+  }
+
+  /**
+   * Recibe uno o varios ficheros arrastrados o seleccionados.
+   *
+   * El CSV es el que el motor entiende: se guarda como contexto y es la
+   * fuente de verdad de los numeros. Los demas (PDF, Excel, imagenes) se
+   * adjuntan a la conversacion para que el asistente pueda mirarlos, y
+   * se le avisa al usuario de cual es cual.
+   */
+  async function recibirArchivos(files) {
+    const zona = $("#uploadZone");
+    if (zona && zona.hidden) zona.hidden = false;
+
+    const csvs = files.filter((f) => /\.csv$/i.test(f.name) || f.type === "text/csv");
+    const otros = files.filter((f) => csvs.indexOf(f) === -1);
+
+    for (const f of csvs) {
+      const texto = await f.text();
       state.perfil = "subido";
       state.contexto = Object.assign(state.contexto || {}, { csv: texto });
-      $("#fileDropTitle").textContent = file.name;
-      toast("Extracto cargado: " + num(file.size / 1024, 1) + " KB", "ok");
-    });
+    }
+
+    if (otros.length) {
+      // Se guardan en el estado para poder mandarlos con la pregunta.
+      state.archivos = (state.archivos || []).concat(otros);
+      // El chat del paso 2 es donde se escriben las preguntas: si ya esta
+      // visible, se dejan ahi; si no, se abren para que se vean.
+      const mensajes = $("#chatMessages");
+      if (mensajes) {
+        for (const f of otros) {
+          const div = document.createElement("div");
+          div.className = "chat-msg user con-archivo";
+          div.textContent = "\u{1F4CE} " + f.name + " (" + num(f.size / 1024, 1) + " KB)";
+          mensajes.appendChild(div);
+        }
+        mensajes.scrollTop = mensajes.scrollHeight;
+      }
+    }
+
+    const titulo = $("#fileDropTitle");
+    if (titulo) {
+      const nombres = files.map((f) => f.name);
+      titulo.textContent = nombres.length > 1
+        ? nombres.length + " archivos cargados"
+        : nombres[0];
+    }
+
+    if (csvs.length) {
+      toast("Extracto cargado: " + num(csvs[0].size / 1024, 1) + " KB", "ok");
+    }
+    if (otros.length) {
+      toast(otros.length + " archivo(s) adjuntado(s) a la conversación", "ok");
+      // El asistente debe saber que hay material nuevo que mirar.
+      if (typeof aviso === "function") {
+        aviso(t("vozArchivos") || "");
+      }
+    }
   }
 
   // ---------------------------------------------------------------
@@ -558,7 +674,23 @@
         }
         ctx.csv = csv;
 
-        for (const p of preguntas) {
+        // OJO: en modo real tambien hace falta el FLUJO y el TRAMO CASS:
+        // la pantalla los usa para dos de sus cuatro metricas ("Flujo
+        // anual" y "CASS"). Con solo las tres preguntas de arriba, esas
+        // dos metricas no se pintaban.
+        //
+        // Se pregunetan aqui, con el MISMO contexto, para que el motor
+        // calcule sobre los mismos numeros.
+        const preguntasReal = preguntas.concat([
+          // OJO: la palabra clave tiene que ser una de las que usa el
+          // router del backend ("categoria", "donde se va", "resumen",
+          // "renta"): con "flujo" el agente elegia proyectar_caja y la
+          // metrica "Flujo anual" no se pintaba nunca.
+          "¿Cuál es el resumen de ingresos y gastos y el flujo de caja en el periodo analizado?",
+          "¿Cuánto cotizo a la CASS y en qué tramo estoy?",
+        ]);
+
+        for (const p of preguntasReal) {
           const r = await preguntar(p, ctx);
           resultados.push({ pregunta: p, ...r });
         }
@@ -1289,6 +1421,1018 @@
 
     if (CFG.modoDemo) {
       console.info("[MoraBanc] Modo demo: datos precalculados por el motor real (Python).");
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();
+
+/* ============================================================
+   VOZ + CAPTURA DE CONTEXTO
+   ============================================================
+   Dos piezas que cierran el bucle de "no me hagas填 un formulario":
+
+   1. VOZ. Si hay microfono, el usuario habla y el texto aparece en el
+      chat. La ruta preferida es ElevenLabs Conversations (WebRTC), la
+      misma que usa Ubot: el agente conversa y ademas devuelve la
+      transcripcion. Si no hay clave de ElevenLabs o el navegador no
+      soporta WebRTC, caemos al SpeechRecognition nativo del
+      navegador (Chrome/Edge/Safari), que es solo transcripcion: el
+      texto entra por el mismo camino que si se hubiera escrito.
+
+   2. CAPTURA DE SLOTS. Cada mensaje (hablado o escrito) pasa por un
+      extractor que reconoce renta, margen, saldo y actividad. Lo que
+      se reconoce se pinta en una fila de chips y se guarda en el
+      contexto que se manda al motor. Asi, al preguntar, el motor ya
+      recibe un contexto aunque el usuario NUNCA haya tocado un input.
+
+   El extractor NO inventa numeros: solo reconoce los que el usuario
+   dice y, cuando la unidad es ambigua (30.000 puede ser renta o
+   facturacion), pide confirmacion en vez de suponer.
+   ============================================================ */
+(function () {
+  "use strict";
+
+  const $ = (s) => document.querySelector(s);
+
+  // ---------------------------------------------------------------
+  // Config
+  // ---------------------------------------------------------------
+  // El id publico del agente. Es el MISMO esquema que usa Ubot: un id
+  // de agente publico (a que agente hablar), no una credencial. Si no
+  // se inyecta, el modulo funciona igual con SpeechRecognition.
+  const ELEVENLABS_AGENT_ID =
+    (window.__ELEVENLABS_AGENT_ID__ || "").trim() || null;
+
+  const SLOTS = [
+    { key: "renta",   label: "Renta neta",  unit: "€" },
+    { key: "margen",  label: "Margen",      unit: "%" },
+    { key: "saldo",   label: "Saldo",       unit: "€" },
+    { key: "actividad", label: "Actividad", unit: "" },
+  ];
+
+  const state = {
+    conv: null,          // sesion de ElevenLabs
+    recog: null,         // SpeechRecognition nativo
+    stream: null,        // MediaStream para el medidor de nivel
+    audioCtx: null,
+    rafId: 0,
+    on: false,
+    recogiendo: false,   // estamos capturando transcripcion
+    slots: {},           // { renta, margen, saldo, actividad }
+    confirmando: null,   // slot pendiente de confirmacion
+    silencioTemporizador: 0,
+  };
+
+  // ---------------------------------------------------------------
+  // Extraccion de slots
+  // ---------------------------------------------------------------
+  // "30.000 euros de renta" -> 30000
+  // "un margen del 70%"    -> 70
+  // "tengo 8.500 en cuenta" -> 8500
+  //
+  // Se normaliza el numero: en Catalan/Frances el separador de
+  // millares puede ser punto o espacio, y la voz a texto escribe
+  // "8.500" o "8500 euros" indistintamente.
+  // ---------------------------------------------------------------
+  // Formato de numeros
+  // ---------------------------------------------------------------
+  // "30.000" -> 30000 (punto de millares), "30,5" -> 30.5 (coma
+  // decimal), "8.500,50" -> 8500.50 (formato es). La voz a texto
+  // escribe los tres indistintamente.
+  function normalizarNumero(bruto) {
+    if (!bruto) return null;
+    let s = String(bruto).trim();
+    s = s.replace(/[€$£\s ]/g, "");
+    // Formato es: 8.500,50
+    if (/^\d{1,3}(\.\d{3})+,\d+$/.test(s)) s = s.replace(/\./g, "").replace(",", ".");
+    // Millares con punto: 30.000
+    else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, "");
+    // Decimal con coma: 30,5
+    else if (/^\d+,\d+$/.test(s)) s = s.replace(",", ".");
+    const n = parseFloat(s);
+    return isFinite(n) ? n : null;
+  }
+
+  function fmt(n, dec) {
+    if (n === null || n === undefined || isNaN(n)) return "";
+    const neg = n < 0;
+    const abs = Math.abs(n);
+    const s = dec === 0
+      ? Math.round(abs).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".")
+      : abs.toFixed(dec).replace(".", ",");
+    return (neg ? "-" : "") + s;
+  }
+
+  // ---------------------------------------------------------------
+  // Extraccion de slots
+  // ---------------------------------------------------------------
+  // En vez de un bloque por variable (que se robaban las cifras entre
+  // si), se hace UN SOLO escaneo: se localizan todas las cifras del
+  // texto y se clasifica cada una segun la palabra que la rodea.
+  //
+  // La palabra clave de cada cifra es la mas cercana por delante o
+  // por detras (en un radio corto). Con eso:
+  //   "facturo 30.000 al año"        -> 30000 renta (al año = anual)
+  //   "tengo 8500 en cuenta"         -> 8500 saldo (en cuenta = dinero)
+  //   "un margen del 70%"            -> 70 margen (margen + %)
+  //   "3 clientes al mes"            -> nada (clientes no es dinero)
+  // ---------------------------------------------------------------
+
+  // Palabras que SI son dinero.
+  const RE_DINERO = /(?:€|eur|euros?)/i;
+  // Palabras que NUNCA son dinero: son unidades de negocio.
+  const UNIDADES_NO_DINERO = [
+    "cliente", "clientes", "empleado", "empleados", "persona",
+    "personas", "hora", "horas", "dia", "dias", "día", "días",
+    "semana", "semanas", "mes", "meses", "ano", "años", "año",
+    "factura", "facturas", "pedido", "pedidos", "contrato",
+    "contratos", "proyecto", "proyectos", "coche", "coches",
+    "productos", "unidades", "trabajadores", "empleados",
+  ];
+
+  // Pistas de RENTA (palabra -> la cifra que va detras, normalmente).
+  const PISTAS_RENTA = [
+    "renta neta", "renta", "ganancia neta", "beneficio neto",
+    "ingreso neto", "ingresos netos", "salario neto", "neto anual",
+    "beneficio", "ganancia", "ingreso", "ingresos", "facturo",
+    "gano", "facturado",
+  ];
+  // Pistas de SALDO. "tengo" va incluida porque "tengo 8500 euros" es
+  // como lo dice la gente; la cifra solo cuenta si lleva euros o va
+  // seguida de "en cuenta" (que implica euros).
+  const PISTAS_SALDO = [
+    "saldo actual", "saldo en cuenta", "saldo de cuenta", "saldo",
+    "liquidado", "en caja", "en el banco", "en cuenta", "de cuenta",
+    "tengo en cuenta", "tengo en el banco", "tengo en caja",
+    "reserva", "ahorrado", "ahorro", "tengo",
+  ];
+  // Pistas que implican euros por si mismas: la cifra que las sigue
+  // es dinero aunque no se diga "euros" ("mi saldo es 7.500",
+  // "en el banco tengo 12.300", "ganancia neta 32000").
+  const PISTAS_IMPLICAN_EUROS = [
+    "saldo actual", "saldo en cuenta", "saldo de cuenta", "saldo",
+    "liquidado", "en caja", "en el banco", "en cuenta", "de cuenta",
+    "tengo en cuenta", "tengo en el banco", "tengo en caja",
+    "reserva", "ahorrado", "ahorro",
+    "renta neta", "ganancia neta", "beneficio neto", "ingreso neto",
+    "ingresos netos", "salario neto", "neto anual",
+    // "facturo 25.000": facturar es hablar de euros, aunque no se
+    // diga la palabra.
+    "facturo", "facturado",
+  ];
+  // Pistas de renta inequivocas: la cifra pegada a ellas es la
+  // renta, sin duda.
+  const PISTAS_RENTA_FUERTES = [
+    "renta neta", "ganancia neta", "beneficio neto", "ingreso neto",
+    "ingresos netos", "salario neto", "neto anual",
+    // "facturo 25.000": facturar es hablar de euros, aunque no se
+    // diga la palabra.
+    "facturo", "facturado",
+  ];
+  // Pistas de MARGEN.
+  const PISTAS_MARGEN = ["margen", "rentabilidad", "beneficio neto sobre", "por ciento"];
+
+  function extraerSlots(texto) {
+    if (!texto) return {};
+    const t = " " + String(texto).toLowerCase() + " ";
+    const out = {};
+
+    // --- Todas las cifras del texto, con su posicion --------------
+    const cifras = [];
+    const reCifra = /(\d[\d.,\s]*)/g;
+    let m;
+    while ((m = reCifra.exec(t)) !== null) {
+      const n = normalizarNumero(m[1]);
+      if (n === null || n <= 0 || n >= 100000000) continue;
+      // Ignora los numeros que son parte de otro ("30.000" se lee
+      // como uno solo, no como "30" y "000").
+      cifras.push({
+        n,
+        ini: m.index,
+        fin: m.index + m[0].length,
+        pos: m.index + m[0].length / 2,
+      });
+    }
+    if (!cifras.length) {
+      // Sin cifras solo puede quedar la actividad.
+      const soloAct = detectarActividad(t);
+      if (soloAct) out.actividad = soloAct;
+      return out;
+    }
+
+    // --- Palabras clave y su posicion ---------------------------
+    // Se guardan como {palabra, ini, fin} para saber a que cifra
+    // estan pegadas.
+    const palabras = [];
+    const anadirPalabras = (lista) => {
+      for (const p of lista) {
+        const re = new RegExp("\\b" + p.replace(/\s+/g, "\\s+") + "\\b", "g");
+        let mm;
+        while ((mm = re.exec(t)) !== null) {
+          palabras.push({ p, ini: mm.index, fin: mm.index + mm[0].length });
+        }
+      }
+    };
+    anadirPalabras(PISTAS_RENTA);
+    anadirPalabras(PISTAS_SALDO);
+    anadirPalabras(PISTAS_MARGEN);
+
+    // Para cada cifra se busca la palabra clave mas cercana (por
+    // delante o por detras) y se clasifica con ella.
+    //
+    // La asignacion es GLOBAL: cada cifra se queda con UNA palabra
+    // clave (la mas cercana) y cada palabra clave es la que decide
+    // de que slot es la cifra. Asi, en "facturo 30000 al año y tengo
+    // 8500 en cuenta", el 30000 se queda con "facturo" (renta) y el
+    // 8500 con "tengo"/"en cuenta" (saldo): no se pisan.
+    const candidatos = [];
+    for (const c of cifras) {
+      let mejor = null;
+      let mejorDist = Infinity;
+      for (const pal of palabras) {
+        // Distancia entre la cifra y la palabra, sin contar los
+        // espacios intermedios.
+        let dist;
+        if (pal.fin <= c.ini) dist = c.ini - pal.fin;
+        else if (pal.ini >= c.fin) dist = pal.ini - c.fin;
+        else dist = 0;
+        if (dist > 40) continue;
+        // A igual distancia, manda la palabra mas larga (mas
+        // especifica): "renta neta" sobre "renta".
+        if (dist < mejorDist || (dist === mejorDist && mejor && pal.p.length > mejor.p.length)) {
+          mejor = pal;
+          mejorDist = dist;
+        }
+      }
+      if (!mejor) continue;
+
+      const slot = PISTAS_MARGEN.includes(mejor.p) ? "margen"
+                 : PISTAS_RENTA.includes(mejor.p) ? "renta"
+                 : PISTAS_SALDO.includes(mejor.p) ? "saldo"
+                 : null;
+      if (!slot) continue;
+
+      // --- Reglas de unidad por slot -----------------------------
+      const antes = t.slice(Math.max(0, c.ini - 18), c.ini);
+      const despues = t.slice(c.fin, c.fin + 26);
+      const palabraAntes = (antes.match(/([a-zñáéíóú]+)\s*$/i) || [, ""])[1].toLowerCase();
+      const palabraDespues = (despues.match(/^\s*([a-zñáéíóú%€]+)/i) || [, ""])[1].toLowerCase();
+      const esPorcentaje = /%|por\s*ciento/i.test(despues.slice(0, 12)) || /%|por\s*ciento/i.test(antes);
+
+      if (slot === "margen") {
+        // El margen solo es un porcentaje.
+        if (!esPorcentaje) continue;
+        if (c.n > 100) continue;
+        if (palabraAntes && UNIDADES_NO_DINERO.includes(palabraAntes)) continue;
+      } else {
+        // Renta y saldo tienen que ser dinero.
+        if (esPorcentaje) continue;
+        const unidadNegra = UNIDADES_NO_DINERO.includes(palabraDespues) || UNIDADES_NO_DINERO.includes(palabraAntes);
+        if (unidadNegra) continue;
+        // "en cuenta" / "en el banco" implican euros.
+        const implicaDinero = RE_DINERO.test(despues.slice(0, 12)) || RE_DINERO.test(antes) ||
+                              /\b(en\s+cuenta|en\s+el\s+banco|en\s+caja|de\s+cuenta)\b/i.test(despues.slice(0, 22)) ||
+                              PISTAS_IMPLICAN_EUROS.includes(mejor.p) ||
+                              // Una cifra anual ("al año", "anual") es
+                              // una magnitud de dinero: "gano 28.500
+                              // al año" no necesita decir "euros".
+                              /(al\s*año|a\s*l?año|anual|por\s*año|\/\s*año)/i.test(despues.slice(0, 22));
+        if (!implicaDinero) {
+          // La palabra mas cercana puede no implicar dinero ("tengo")
+          // mientras que otra de la misma frase si ("en el banco"
+          // en "en el banco tengo 12.300"). Se mira la frase entera.
+          const frase = t.slice(Math.max(0, c.ini - 34), c.fin + 26);
+          if (!PISTAS_IMPLICAN_EUROS.some((p) =>
+                new RegExp("\\b" + p.replace(/\s+/g, "\\s+") + "\\b").test(frase))) continue;
+          // Y no se admite si hay una pista de RENTA fuerte cerca:
+          // entonces esta cifra es la renta, no el saldo. Las
+          // palabras sueltas ("facturo", "gano") no cuentan: en
+          // "soy autonomo y facturo 25.000" la cifra es del saldo y
+          // en "tengo 8500 en cuenta" no hay ninguna pista fuerte.
+          if (palabras.some((pal) =>
+                PISTAS_RENTA_FUERTES.includes(pal.p) &&
+                Math.abs(pal.fin <= c.ini ? c.ini - pal.fin : pal.ini - c.fin) < 14)) continue;
+        }
+      }
+
+      candidatos.push({ slot, n: c.n, dist: mejorDist, cifra: c });
+    }
+
+    // --- Resolucion de conflictos --------------------------------
+    // Dos slots pueden querer la misma cifra ("facturo 30000 al año
+    // y tengo 8500 en cuenta": el 30000 esta a 2 chars de "tengo" y
+    // el 8500 a 8 de "en cuenta"). Se resuelve por proximidad: cada
+    // cifra se queda con el slot cuya palabra clave esta mas cerca,
+    // y el otro slot busca su siguiente candidato.
+    const resolver = (slot, ocupadas) => {
+      const opts = candidatos.filter((x) => x.slot === slot && !ocupadas.has(x.cifra.ini));
+      if (!opts.length) return null;
+      opts.sort((a, b) => a.dist - b.dist);
+      return opts[0];
+    };
+    // El slot con la coincidencia mas cercana se resuelve primero: es
+    // el que mas probablemente asigna su cifra.
+    const ocupadas = new Set();
+    const ordenSlots = ["renta", "saldo", "margen"].sort((a, b) => {
+      const da = Math.min(...candidatos.filter((x) => x.slot === a).map((x) => x.dist), 1e9);
+      const db = Math.min(...candidatos.filter((x) => x.slot === b).map((x) => x.dist), 1e9);
+      return da - db;
+    });
+    const mejorPorSlot = { renta: null, saldo: null, margen: null };
+    for (const slot of ordenSlots) {
+      const el = resolver(slot, ocupadas);
+      if (!el) continue;
+      ocupadas.add(el.cifra.ini);
+      mejorPorSlot[slot] = { valor: el.cifra.n, dist: el.dist, cifra: el.cifra };
+    }
+
+    // --- Reglas especificas de la renta --------------------------
+    if (mejorPorSlot.renta) {
+      const c = cifras.find((x) => x.n === mejorPorSlot.renta.valor);
+      if (c) {
+        const despues = t.slice(c.fin, c.fin + 26);
+        const esMensual = /(al\s*mes|a\s*l?mes|mensual|\/\s*mes)/i.test(despues);
+        const esAnual = /(al\s*año|a\s*l?año|anual|por\s*año|\/\s*año)/i.test(despues);
+        const pista = PISTAS_RENTA.find((p) => {
+          const re = new RegExp("\\b" + p.replace(/\s+/g, "\\s+") + "\\b");
+          const idx = t.indexOf(re);
+          return idx !== -1 && idx < c.fin && idx + p.length >= c.ini - 30;
+        });
+        // "facturo 8500 al mes" es mensual: la renta neta ANUAL no es
+        // ese numero, asi que se descarta.
+        const ctxAntes = t.slice(Math.max(0, c.ini - 18), c.ini);
+        if (esMensual) {
+          mejorPorSlot.renta = null;
+        } else if (!esAnual) {
+          // Sin unidad temporal solo se acepta con cifra tipica de
+          // renta anual de un autonomo (>= 3.000). "facturo 500"
+          // casi nunca es renta neta anual.
+          const enEuros = RE_DINERO.test(despues.slice(0, 12)) || RE_DINERO.test(ctxAntes);
+          if (mejorPorSlot.renta.valor < 3000 && !enEuros) {
+            mejorPorSlot.renta = null;
+          }
+        }
+      }
+    }
+
+    if (mejorPorSlot.renta) out.renta = mejorPorSlot.renta.valor;
+    if (mejorPorSlot.saldo) out.saldo = mejorPorSlot.saldo.valor;
+    if (mejorPorSlot.margen) out.margen = mejorPorSlot.margen.valor;
+
+    // --- Actividad ------------------------------------------------
+    const act = detectarActividad(t);
+    if (act) out.actividad = act;
+
+    return out;
+  }
+
+  // Detecta la actividad economica a partir del texto.
+  function detectarActividad(t) {
+    // "soy freelance", "tengo una tienda", "trabajo en una tienda"...
+    // OJO: "tengo un margen del 70%" NO es una actividad. Por eso se
+    // excluyen las palabras que solo pueden describir magnitudes.
+    const NO_ACTIVIDAD = [
+      "margen", "saldo", "beneficio", "ingreso", "ingresos", "renta",
+      "por ciento", "clientes", "gente", "tiempo", "dinero", "ahorro",
+      "reserva", "mes", "meses", "ano", "años", "semana", "semanas",
+      "cuenta", "banco", "caja",
+    ];
+    const mAct = t.match(/\b(?:soy|trabajo como|soy\s+un[ao]?|tengo\s+una?|mi\s+empresa\s+es|trabajo\s+en\s+una?)\s+([a-zñáéíóú][a-zñáéíóú\s\-]{2,60})/i);
+    if (mAct) {
+      let act = mAct[1].trim().replace(/\s{2,}/g, " ");
+      // Quita el articulo inicial: "soy una consultora" -> "consultora".
+      act = act.replace(/^(una?|unos?|los?|las?)\s+/i, "");
+      // Si solo queda un articulo ("mi empresa es una 株式会社"), el
+      // articulo no es una actividad: se descarta el match.
+      if (/^(una?|unos?|los?|las?|de|del)$/i.test(act)) act = "";
+      // La actividad se corta en la primera conjuncion o cifra:
+      // "autonomo y facturo 25.000" -> "Autonomo", no "Autonomo y
+      // facturo" (que se comia la renta). NO se corta en "de":
+      // "tienda de ropa" y "freelance de diseño" son actividades
+      // completas, con la preposicion dentro.
+      const corte = act.search(/(\s+y\s|\s+o\s|\s+pero\s|\s+que\s|\d)/i);
+      const actividad = corte > 0 ? act.slice(0, corte).trim() : act;
+      // "Margen del" viene de "tengo un margen del 70%": se descarta
+      // si la frase habla de una magnitud y no de un negocio.
+      const esMagnitud = NO_ACTIVIDAD.some((w) => actividad.toLowerCase().includes(w));
+      const hayCantidad = /\d/.test(t.slice(mAct.index, mAct.index + mAct[0].length + 12));
+      if (actividad.length >= 3 && !esMagnitud) {
+        return actividad.charAt(0).toUpperCase() + actividad.slice(1);
+      }
+      if (actividad.length >= 3 && esMagnitud && !hayCantidad) {
+        return actividad.charAt(0).toUpperCase() + actividad.slice(1);
+      }
+      return null;
+    }
+    // "freelance", "consultor", "restaurante", "e-commerce"...
+    const profesiones = [
+      "freelance", "autonomo", "autónomo", "consultor", "consultora",
+      "diseñador", "diseñadora", "programador", "programadora",
+      "restaurante", "ecommerce", "e-commerce", "tienda", "bar",
+      "cafeteria", "cafetería", "hotel", "agencia", "fotografo",
+      "fotógrafo", "traductor", "traductora", "abogado", "abogada",
+      "gestor", "gestora", "arquitecto", "arquitecta", "editor",
+      "community manager", "marketer", "panadero", "panadera",
+      "pastelero", "pastelera", "enfermer", "profesor", "profesora",
+    ];
+    for (const p of profesiones) {
+      if (t.includes(p)) return p.charAt(0).toUpperCase() + p.slice(1);
+    }
+    return null;
+  }
+
+  function pintarChips() {
+    const conts = porVariante("#contextChips");
+    if (!conts.length) return;
+    const partes = [];
+    for (const s of SLOTS) {
+      const v = state.slots[s.key];
+      if (v !== undefined && v !== null && v !== "") {
+        const val = s.key === "margen" ? fmt(v, 0) + " %"
+                  : s.key === "actividad" ? String(v)
+                  : fmt(v, 0) + " €";
+        partes.push(
+          '<span class="ctx-chip filled"><span class="ctx-ok">✓</span> ' +
+          '<b>' + s.label + ":</b> " + escapar(val) + "</span>"
+        );
+      } else {
+        partes.push(
+          '<span class="ctx-chip pending">' + escapar(s.label) + ": —</span>"
+        );
+      }
+    }
+    const html = partes.join("");
+    conts.forEach((c) => { c.innerHTML = html; });
+  }
+
+  function escapar(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  // ---------------------------------------------------------------
+  // Integracion con el contexto que consume el motor
+  // ---------------------------------------------------------------
+  // El contexto real vive en el IIFE principal, que no expone nada
+  // al exterior. Para no reescribir ese modulo, el puente funciona por
+  // DOM: escribimos en los inputs del formulario y lanzamos el evento
+  // "input" para que la app lo vea. Los campos son la fuente de
+  // verdad del motor (ver analizar()), asi que rellenar el input ES
+  // rellenar el contexto.
+  function aplicarSlotsAlFormulario() {
+    const map = {
+      renta: "#rentaNeta",
+      margen: "#margenBruto",
+      saldo: "#saldoActual",
+      actividad: "#actividad",
+    };
+    for (const [k, sel] of Object.entries(map)) {
+      const el = $(sel);
+      if (!el) continue;
+      const v = state.slots[k];
+      if (v === undefined || v === null || v === "") continue;
+      const nv = k === "margen" ? Math.round(v) : k === "actividad" ? String(v) : String(Math.round(v));
+      if (el.value !== nv) {
+        el.value = nv;
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    }
+    // Si ya hay datos, el paso 1 debe estar visible para que el
+    // formulario refleje lo capturado.
+    const cardDatos = $("#cardDatos");
+    if (cardDatos && cardDatos.hidden) cardDatos.hidden = false;
+  }
+
+  // ---------------------------------------------------------------
+  // UI de voz
+  // ---------------------------------------------------------------
+  // La UI de voz aparece en dos sitios (paso 1 y paso 2 del flujo).
+  // Se listan TODOS los elementos de cada tipo y se actualizan a la
+  // vez: el usuario ve el mismo estado en el sitio donde esta.
+  const VARIANTES = ["", "Step1"];
+
+  const porVariante = (base) =>
+    VARIANTES.map((v) => $(base + v)).filter(Boolean);
+
+  function setStatus(estado, texto) {
+    for (const st of porVariante("#voiceStatus")) st.dataset.state = estado;
+    for (const tx of porVariante("#voiceStatusText")) tx.textContent = texto;
+    for (const orb of porVariante("#voiceOrb")) {
+      orb.classList.toggle("listening", estado === "listening");
+      orb.classList.toggle("speaking", estado === "speaking");
+    }
+    for (const btn of porVariante("#btnMic")) {
+      btn.classList.toggle("on", estado === "listening" || estado === "speaking");
+    }
+    for (const meter of porVariante("#voiceMeter")) {
+      meter.classList.toggle("on", estado === "listening");
+    }
+  }
+
+  function aviso(msg) {
+    for (const n of porVariante("#voiceNotice")) {
+      if (!msg) { n.hidden = true; n.textContent = ""; continue; }
+      n.hidden = false;
+      n.textContent = msg;
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Medidor de nivel (feedback de que el micro esta abierto)
+  // ---------------------------------------------------------------
+  function arrancarMedidor() {
+    try {
+      const ac = state.audioCtx || (state.audioCtx = new (window.AudioContext || window.webkitAudioContext)());
+      if (ac.state === "suspended") ac.resume();
+      const src = ac.createMediaStreamSource(state.stream);
+      const an = ac.createAnalyser();
+      an.fftSize = 512;
+      src.connect(an);
+      const buf = new Uint8Array(an.frequencyBinCount);
+      const loop = () => {
+        const els = porVariante("#voiceLevel");
+        if (!state.on) { els.forEach((e) => { e.style.width = "0%"; }); return; }
+        an.getByteTimeDomainData(buf);
+        let m = 0;
+        for (const v of buf) m = Math.max(m, Math.abs(v - 128));
+        const ancho = Math.min(100, m * 1.6) + "%";
+        els.forEach((e) => { e.style.width = ancho; });
+        state.rafId = requestAnimationFrame(loop);
+      };
+      cancelAnimationFrame(state.rafId);
+      state.rafId = requestAnimationFrame(loop);
+    } catch (e) {
+      // El medidor es decorativo: si falla, la voz sigue funcionando.
+      console.warn("[MoraBanc] medidor no disponible:", e && e.message);
+    }
+  }
+
+  function pararMedidor() {
+    cancelAnimationFrame(state.rafId);
+    state.rafId = 0;
+    porVariante("#voiceLevel").forEach((e) => { e.style.width = "0%"; });
+  }
+
+  // ---------------------------------------------------------------
+  // Enumeracion de microfonos
+  // ---------------------------------------------------------------
+  async function listarMicros(preferido) {
+    const sels = porVariante("#voiceDevice");
+    if (!sels.length) return;
+    try {
+      const devs = (await navigator.mediaDevices.enumerateDevices())
+        .filter((d) => d.kind === "audioinput");
+      if (devs.length < 2) { sels.forEach((s) => { s.hidden = true; }); return; }
+      const actual = preferido ||
+        (state.stream && state.stream.getAudioTracks()[0]
+          ? state.stream.getAudioTracks()[0].getSettings().deviceId : "");
+      const html = devs.map((d) =>
+        '<option value="' + d.deviceId + '"' +
+        (d.deviceId === actual ? " selected" : "") + ">" +
+        escapar(d.label || "Micrófono") + "</option>"
+      ).join("");
+      sels.forEach((s) => { s.innerHTML = html; s.hidden = false; });
+    } catch (e) {
+      sels.forEach((s) => { s.hidden = true; });
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Ruta 1: ElevenLabs Conversations (misma integracion que Ubot)
+  // ---------------------------------------------------------------
+  async function iniciarElevenLabs() {
+    const { Conversation } = await import(
+      "https://cdn.jsdelivr.net/npm/@elevenlabs/client@latest/+esm"
+    );
+    const sel = $("#voiceDevice");
+    const pref = sel && !sel.hidden ? sel.value : undefined;
+
+    state.stream = await navigator.mediaDevices.getUserMedia({
+      audio: pref ? { deviceId: { exact: pref } } : true,
+    });
+
+    await listarMicros(pref);
+    arrancarMedidor();
+
+    state.conv = await Conversation.startSession({
+      agentId: ELEVENLABS_AGENT_ID,
+      connectionType: "webrtc",
+      clientTools: {
+        // El agente puede pedir abrir una URL. Se limita a las internas
+        // de la propia aplicacion: nada de abrir sitios arbitrarios.
+        open_url: (p) => {
+          const url = String((p && p.url) || "");
+          const internas = ["#stepContexto", "#stepResultado", "#chat"];
+          if (internas.includes(url)) {
+            const destino = document.querySelector(url);
+            if (destino) {
+              destino.scrollIntoView({ behavior: "smooth", block: "center" });
+              return "opened";
+            }
+          }
+          return "blocked";
+        },
+      },
+      ...(pref ? { inputDeviceId: pref } : {}),
+      onConnect: () => {
+        setStatus("listening", "Escuchando…");
+        aviso("");
+      },
+      onDisconnect: () => {
+        setStatus("idle", "Toca para hablar");
+        state.conv = null;
+      },
+      onModeChange: (m) => {
+        const modo = m && m.mode;
+        if (modo === "speaking") setStatus("speaking", "Hablando…");
+        else if (modo === "listening") setStatus("listening", "Escuchando…");
+      },
+      onMessage: (m) => {
+        const texto = (m && m.message) || "";
+        if (!texto) return;
+        if (m.source === "user") {
+          // El usuario ha hablado: entra por el mismo camino que si
+          // lo hubiera escrito, para que la captura de slots sea igual.
+          enviar(texto, { voz: true });
+        } else if (m.source === "ai") {
+          // La respuesta del agente de voz ya suena: no la duplicamos
+          // en el chat. Solo la registramos en la traza.
+          registrarEnTraza(texto);
+        }
+      },
+      onError: (e) => {
+        setStatus("error", "Error de voz");
+        aviso("No se pudo conectar la voz: " + escapar((e && e.message) || e));
+      },
+    });
+  }
+
+  // ---------------------------------------------------------------
+  // Ruta 2: SpeechRecognition nativo (fallback)
+  // ---------------------------------------------------------------
+  function reconocimientoNativo() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return null;
+    const rec = new SR();
+    rec.lang = document.documentElement.lang || "es-ES";
+    rec.continuous = false;
+    rec.interimResults = true;
+    rec.maxAlternatives = 1;
+
+    rec.onresult = (ev) => {
+      let final = "";
+      let interim = "";
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const r = ev.results[i];
+        if (r.isFinal) final += r[0].transcript;
+        else interim += r[0].transcript;
+      }
+      const cap = $("#liveCaption");
+      if (cap) {
+        if (interim) {
+          cap.hidden = false;
+          cap.innerHTML = escapar(interim) + '<span class="caret"></span>';
+        } else if (final) {
+          cap.hidden = false;
+          cap.innerHTML = escapar(final);
+        }
+      }
+      if (final) {
+        cap.hidden = true;
+        rec.stop();
+        if (state.recogiendo) {
+          state.recogiendo = false;
+          setStatus("listening", "Escuchando…");
+          enviar(final, { voz: true });
+        }
+      }
+    };
+
+    rec.onerror = (ev) => {
+      const err = ev && ev.error;
+      if (err === "no-speech") {
+        aviso("No he oído nada. Inténtalo de nuevo.");
+      } else if (err === "not-allowed" || err === "service-not-allowed") {
+        aviso("El navegador ha bloqueado el micrófono. Permítelo en la barra de direcciones y reinténtalo.");
+        setStatus("error", "Micrófono bloqueado");
+      } else {
+        aviso("Error de voz: " + escapar(err || "desconocido"));
+        setStatus("error", "Error de voz");
+      }
+      state.recogiendo = false;
+    };
+
+    rec.onend = () => {
+      // Chrome corta la sesion cada ~60s: si el usuario sigue en modo
+      // voz, se reinicia sola para que no se corte la conversacion.
+      if (state.on && state.recogiendo) {
+        try { rec.start(); } catch (e) { /* ya arrancada */ }
+      }
+    };
+
+    return rec;
+  }
+
+  // ---------------------------------------------------------------
+  // Captura de texto (puente comun de voz y teclado)
+  // ---------------------------------------------------------------
+  // Se engancha al submit del formulario de chat existente y al
+  // mensaje del agente de voz.
+  function enviar(texto, opts) {
+    const t = String(texto || "").trim();
+    if (!t) return;
+
+    // 1) Extraer slots de lo que ha dicho.
+    const slots = extraerSlots(t);
+    const nuevos = [];
+    for (const [k, v] of Object.entries(slots)) {
+      if (state.slots[k] === undefined || state.slots[k] === v) {
+        if (state.slots[k] === undefined) {
+          state.slots[k] = v;
+          nuevos.push(k);
+        }
+      }
+    }
+    if (nuevos.length) {
+      aplicarSlotsAlFormulario();
+      pintarChips();
+      const etq = nuevos.map((k) => {
+        const s = SLOTS.find((x) => x.key === k);
+        const v = state.slots[k];
+        const val = k === "margen" ? fmt(v, 0) + " %"
+                  : k === "actividad" ? v
+                  : fmt(v, 0) + " €";
+        return (s ? s.label : k) + " (" + val + ")";
+      }).join(", ");
+      registrarEnTraza("Contexto capturado: " + etq);
+      // El asistente confirma lo que ha entendido y dice que le falta
+      // (si algo): el usuario ve el progreso en la barra de voz.
+      confirmarDato(etq);
+    }
+
+    // 2) Enviar al motor por el camino real de la app: el chat del
+    // paso 2. Si el texto venia del formulario del paso 1, se
+    // escribe alli para que quede en la conversacion.
+    const form = $("#chatForm");
+    const input = $("#chatInput");
+    if (form && input) {
+      input.value = t;
+      if (typeof form.requestSubmit === "function") form.requestSubmit();
+      else form.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+    }
+    // Si el texto venia del paso 1, se limpia su input para no
+    // duplicar la frase.
+    const in1 = $("#voiceInputStep1");
+    if (in1 && opts && opts.desdePaso1) in1.value = "";
+  }
+
+  // La traza tecnica la rellena la app principal. Si no existe todavia
+  // (el chat se abre despues del analisis), no pasa nada: la captura
+  // de slots ya esta guardada en el formulario, que es lo que cuenta.
+  function registrarEnTraza(texto) {
+    const body = $("#trazaBody");
+    if (!body) return;
+    const div = document.createElement("div");
+    div.className = "traza-item";
+    div.textContent = texto;
+    body.appendChild(div);
+  }
+
+  // ---------------------------------------------------------------
+  // El asistente que acompaña
+  // ---------------------------------------------------------------
+  // El cuadro de voz no es solo un micro: es un ASESOR. Al activarlo
+  // saluda, dice que espera, y va guiando la conversacion segun lo que
+  // le falta (renta, saldo, actividad). Cuando ya lo tiene todo, lo dice
+  // y espera a que pulses Analizar.
+  //
+  // La guia se decide con CODIGO (que slots faltan), no con un LLM: el
+  // mismo principio que el motor. El LLM (ElevenLabs) pone la voz; la
+  // logica de que preguntarle, la decide el front.
+
+  function slotFaltante() {
+    const c = state.contexto || {};
+    if (!c.renta) return "renta";
+    if (c.saldo === undefined || c.saldo === null) return "saldo";
+    if (!c.actividad) return "actividad";
+    return null;
+  }
+
+  function mensajeGuia() {
+    const falta = slotFaltante();
+    if (!falta) return t("vozListo");
+    if (falta === "renta") return t("vozFaltaRenta");
+    if (falta === "saldo") return t("vozFaltaSaldo");
+    return t("vozFaltaActividad");
+  }
+
+  /**
+   * Manda un texto al agente de voz para que lo DIGA.
+   *
+   * En ElevenLabs el agente habla cuando el usuario le habla; para que
+   * el asistente tome la iniciativa se le manda un mensaje de usuario
+   * sintetico (sendUserMessage). El agente lo trata como lo que el
+   * usuario ha dicho y responde en voz alta.
+   *
+   * Si la voz no esta disponible (fallback a texto), el mensaje se
+   * muestra en la barra y ya esta: el acompanamiento nunca bloquea.
+   */
+  function decirAlAgente(texto) {
+    if (!texto) return;
+    try {
+      if (state.conv && typeof state.conv.sendUserMessage === "function") {
+        state.conv.sendUserMessage(texto);
+        return true;
+      }
+    } catch (e) {
+      console.warn("[PlanificAND] no se pudo enviar el mensaje al agente de voz:", e && e.message);
+    }
+    return false;
+  }
+
+  /** Muestra la guia en la barra de voz y la intenta decir en voz alta. */
+  function acompanar(texto) {
+    if (!texto) return;
+    aviso(texto);
+    decirAlAgente(texto);
+  }
+
+  /** Saludo inicial: quien es, que espera y como se dice. */
+  function saludar() {
+    const saludo = t("vozSaludo");
+    const guia = t("vozGuiaInicial");
+    aviso(guia);
+    // El saludo se dice por voz Y se muestra resumido en la barra.
+    if (!decirAlAgente(saludo)) {
+      aviso(saludo);
+    }
+  }
+
+  /** Se llama cuando el asistente ha capturado un dato: confirma y sigue. */
+  function confirmarDato(dato) {
+    const msg = t("vozConfirmado").replace("{dato}", dato);
+    const falta = slotFaltante();
+    const siguiente = falta ? " " + mensajeGuia() : " " + t("vozListo");
+    if (!decirAlAgente(msg + siguiente)) {
+      aviso(msg + " " + mensajeGuia());
+    } else {
+      aviso(mensajeGuia());
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Arranque / parada del modo voz
+  // ---------------------------------------------------------------
+  async function toggleVoz() {
+    if (state.on) { await pararVoz(); return; }
+
+    // La barra del paso 2 aparece al pulsar; la del paso 1 ya esta
+    // visible (el micro es la via principal, no un extra).
+    for (const bar of porVariante("#voiceBar")) bar.hidden = false;
+
+    // El permiso de microfono se pide SIEMPRE: sin el permiso no hay
+    // ni ElevenLabs ni SpeechRecognition.
+    try {
+      state.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      aviso("El navegador ha bloqueado el micrófono. Permítelo en la barra de direcciones para hablar con el asesor.");
+      setStatus("error", "Micrófono bloqueado");
+      return;
+    }
+
+    state.on = true;
+    aviso("");
+
+    // Ruta preferida: ElevenLabs (conversacion real con el agente).
+    if (ELEVENLABS_AGENT_ID) {
+      try {
+        setStatus("listening", "Conectando…");
+        await iniciarElevenLabs();
+        // El saludo del asistente: no espera en silencio a que hables,
+        // se presenta y dice que necesita.
+        saludar();
+        return;
+      } catch (e) {
+        console.warn("[MoraBanc] ElevenLabs no disponible:", e && e.message);
+        aviso("Voz en modo texto: la conexión con el agente de voz no está disponible en este entorno.");
+        // Se sigue con SpeechRecognition, que ya tiene el permiso.
+      }
+    }
+
+    // Ruta de reserva: reconocimiento nativo.
+    const rec = reconocimientoNativo();
+    if (!rec) {
+      aviso("Este navegador no admite voz. Puedes escribir tus datos en el chat y el asesor trabaja igual.");
+      setStatus("error", "Voz no disponible");
+      state.on = false;
+      return;
+    }
+    state.recog = rec;
+    state.recogiendo = true;
+    try {
+      rec.start();
+      setStatus("listening", "Escuchando…");
+      saludar();
+    } catch (e) {
+      state.recogiendo = false;
+      setStatus("error", "Error de voz");
+    }
+  }
+
+  async function pararVoz() {
+    state.on = false;
+    state.recogiendo = false;
+    setStatus("idle", "Toca para hablar");
+    pararMedidor();
+
+    if (state.conv) {
+      const c = state.conv;
+      state.conv = null;
+      try { await c.endSession(); } catch (e) { /* ya cerrada */ }
+    }
+    if (state.recog) {
+      const r = state.recog;
+      state.recog = null;
+      try { r.stop(); } catch (e) { /* ya parada */ }
+    }
+    if (state.stream) {
+      state.stream.getTracks().forEach((tr) => tr.stop());
+      state.stream = null;
+    }
+    const cap = $("#liveCaption");
+    if (cap) { cap.hidden = true; cap.innerHTML = ""; }
+  }
+
+  // ---------------------------------------------------------------
+  // Enganche
+  // ---------------------------------------------------------------
+  function init() {
+    // Los botones de micro de los dos pasos (el grande de la barra y
+    // el pequeno junto al input del chat) hacen lo mismo.
+    porVariante("#btnMic").forEach((b) => b.addEventListener("click", toggleVoz));
+    porVariante("#voiceOrb").forEach((b) => b.addEventListener("click", toggleVoz));
+    porVariante("#voiceDevice").forEach((s) => {
+      s.addEventListener("change", async () => {
+        // Cambiar de micro reinicia la captura: el stream anterior
+        // esta atado al dispositivo viejo.
+        if (state.on) { await pararVoz(); setTimeout(toggleVoz, 350); }
+      });
+    });
+
+    // Tecla M: atajo para hablar sin tocar el raton.
+    document.addEventListener("keydown", (e) => {
+      if (e.key.toLowerCase() !== "m") return;
+      const tag = (e.target && e.target.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      toggleVoz();
+    });
+
+    pintarChips();
+
+    // Captura de slots tambien al ESCRIBIR: el mismo extractor sirve
+    // para texto y para voz. Se engancha al submit de los dos
+    // formularios (el del paso 1 y el del chat del paso 2).
+    for (const id of ["#chatForm", "#voiceFormStep1"]) {
+      const form = $(id);
+      if (!form) continue;
+      form.addEventListener("submit", () => {
+        const input = id === "#chatForm" ? $("#chatInput") : $("#voiceInputStep1");
+        if (!input) return;
+        const slots = extraerSlots(input.value);
+        let cambio = false;
+        for (const [k, v] of Object.entries(slots)) {
+          if (state.slots[k] === undefined) { state.slots[k] = v; cambio = true; }
+        }
+        if (cambio) { aplicarSlotsAlFormulario(); pintarChips(); }
+      }, true);
+    }
+
+    // El formulario del paso 1 tiene su propio motor de envio: lleva
+    // la frase al chat del paso 2 (que es quien pregunta a la API) y
+    // se limpia. El chat del paso 2 es el unico que habla con el
+    // motor, para no duplicar llamadas ni trazas.
+    const form1 = $("#voiceFormStep1");
+    if (form1) {
+      form1.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const in1 = $("#voiceInputStep1");
+        const chatIn = $("#chatInput");
+        if (!in1 || !chatIn) return;
+        const texto = in1.value.trim();
+        if (!texto) return;
+        chatIn.value = texto;
+        in1.value = "";
+        const chatForm = $("#chatForm");
+        if (chatForm && typeof chatForm.requestSubmit === "function") chatForm.requestSubmit();
+      });
     }
   }
 

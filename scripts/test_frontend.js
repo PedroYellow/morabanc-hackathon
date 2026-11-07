@@ -43,7 +43,8 @@ function check(nombre, ok, extra) {
 
   console.log("\n=== CARGA ===");
   await page.goto(URL, { waitUntil: "networkidle" });
-  check("titulo correcto", (await page.title()).includes("MoraBanc"));
+  check("titulo correcto", (await page.title()).includes("PlanificAND"),
+    await page.title());
   check("paso 1 visible", await page.isVisible("#stepContexto"));
   check("paso 2 oculto", !(await page.isVisible("#stepResultado")));
   check("5 opciones de inicio", (await page.locator("#opcionesInicio .opcion").count()) === 5);
@@ -68,7 +69,17 @@ function check(nombre, ok, extra) {
 
   console.log("\n=== ANALISIS ===");
   await page.click("#btnAnalizar");
-  await page.waitForSelector("#stepResultado:not([hidden])", { timeout: 15000 });
+  // OJO: el analisis hace 5 llamadas a Bedrock (fugas, caja, crossover,
+  // flujo y CASS). Con la IA real tarda 30-60 s: 15 s ya no bastaban.
+  await page.waitForSelector("#stepResultado:not([hidden])", { timeout: 90000 });
+  // Y el resultado se pinta DESPUES de mostrar el paso: hay que esperar
+  // a que las metricas esten.
+  await page.waitForSelector("#verdictMetrics .metric-label", { timeout: 90000 });
+  await page.waitForFunction(
+    () => document.querySelectorAll(".hallazgo-desc").length > 0,
+    { timeout: 90000 }
+  );
+  await page.waitForTimeout(600);
   await page.waitForTimeout(600);
 
   check("paso 2 visible", await page.isVisible("#stepResultado"));
@@ -135,19 +146,48 @@ function check(nombre, ok, extra) {
 
   console.log("\n=== CHAT ===");
   await page.fill("#chatInput", "¿Cuánto cotizo a la CASS?");
-  await page.click(".btn-send");
-  await page.waitForTimeout(1400);
+  // OJO: hay DOS botones .btn-send (el del paso 1 y el del paso 2). El del
+  // paso 1 esta oculto (el chat no se ve todavia), asi que hay que pulsar
+  // el del paso 2: si no, Playwright espera a que uno visible aparezca y
+  // el test se queda colgado.
+  await page.click("#chatForm .btn-send");
+  // El chat ahora llama a la IA REAL (Bedrock por API Gateway): la
+  // respuesta tarda entre 5 y 20 segundos. Antes era 1,4 s porque el
+  // front estaba en modo demo con datos precalculados.
+  // OJO: el primer .msg.bot es el INDICADOR de "pensando" (tiene la clase
+  // .typing y esta vacio). Hay que esperar a que haya un mensaje de bot
+  // con TEXTO, si no el assert de la regla leeria una cadena vacia.
+  await page.waitForFunction(
+    () => Array.from(document.querySelectorAll(".msg.bot"))
+      .some((e) => e.innerText.trim().length > 20),
+    { timeout: 60000 }
+  );
+  await page.waitForTimeout(400);
   check("mensaje de usuario", (await page.locator(".msg.user").count()) === 1);
   check("respuesta del bot", (await page.locator(".msg.bot").count()) >= 1);
-  const respuesta = await page.textContent(".msg.bot");
-  check("respuesta con regla aplicada", respuesta.includes("Regla aplicada"),
-    respuesta.slice(0, 70));
+  const respuesta = await page.evaluate(() => {
+    const conTexto = Array.from(document.querySelectorAll(".msg.bot"))
+      .filter((e) => e.innerText.trim().length > 20);
+    return conTexto.length ? conTexto[conTexto.length - 1].innerText : "";
+  });
+  // OJO: la cita de la regla puede venir como "Regla aplicada:" o como
+  // "Reglas aplicadas:" (el agente la redacta en plural cuando han salido
+  // varias herramientas). Se acepta cualquiera de las dos.
+  check("respuesta con regla aplicada",
+    /Reglas? aplicad[as]/i.test(respuesta), respuesta.slice(0, 90));
   check("respuesta con numero", /\d/.test(respuesta));
 
   console.log("\n=== SUGERENCIA RAPIDA ===");
   const antes = await page.locator(".msg.bot").count();
   await page.locator("#sugerencias .sugerencia").first().click();
-  await page.waitForTimeout(1400);
+  // La sugerencia tambien la responde la IA real: hay que esperar a que
+  // llegue la respuesta nueva.
+  await page.waitForFunction(
+    (n) => Array.from(document.querySelectorAll(".msg.bot"))
+      .filter((e) => e.innerText.trim().length > 20).length > n,
+    antes,
+    { timeout: 60000 }
+  );
   check("nueva respuesta anadida", (await page.locator(".msg.bot").count()) > antes);
 
   console.log("\n=== MODO PRESENTACION (proyector) ===");
@@ -226,7 +266,12 @@ function check(nombre, ok, extra) {
   check("el boton principal usa el gold de marca", marca.gold === "rgb(241, 198, 87)", marca.gold);
   check("el fondo es claro (no dark)", marca.bodyBg === "rgb(244, 247, 250)", marca.bodyBg);
   check("el texto es oscuro sobre fondo claro", marca.txt === "rgb(33, 37, 41)", marca.txt);
-  check("las cards son blancas", marca.cardBg === "rgb(255, 255, 255)", marca.cardBg);
+  // El front de voz usa cards TRANSPARENTES sobre el fondo de la pagina
+  // (antes eran blancas solidas). Lo que tiene que seguir siendo cierto es
+  // que el fondo es claro y el texto oscuro: legibilidad.
+  check("las cards no usan un color de fondo opaco que tape la pagina",
+    marca.cardBg === "rgba(0, 0, 0, 0)" || marca.cardBg === "rgb(255, 255, 255)",
+    marca.cardBg);
   check("el logo real de MoraBanc esta cargado",
     marca.logoSrc.includes("logo-morabanc.svg"), marca.logoSrc);
   check("el logo se ve (no collapsed)", marca.logoVisible === true);
@@ -280,7 +325,12 @@ function check(nombre, ok, extra) {
     const cs = getComputedStyle(document.documentElement);
     const card = document.querySelector(".card");
     const opcion = document.querySelector(".opcion");
-    const input = document.querySelector('input[type="text"]');
+    // OJO: los campos del formulario fiscal son type="number" (renta,
+    // margen, saldo). El front de voz no cambio un type="text" a number:
+    // el que hay type="text" es el del chat, y ese no es el que se
+    // quiere medir.
+    const input = document.querySelector("#rentaNeta") ||
+                  document.querySelector('input[type="number"]');
     return {
       space1: cs.getPropertyValue("--space-1").trim(),
       space3: cs.getPropertyValue("--space-3").trim(),
@@ -355,7 +405,12 @@ function check(nombre, ok, extra) {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.click('.opcion[data-perfil="contratar"]');
   await page.click("#btnAnalizar");
-  await page.waitForSelector("#stepResultado:not([hidden])", { timeout: 15000 });
+  await page.waitForSelector("#stepResultado:not([hidden])", { timeout: 90000 });
+  await page.waitForFunction(
+    () => document.querySelectorAll(".hallazgo-desc").length > 0,
+    { timeout: 90000 }
+  );
+  await page.waitForTimeout(600);
   await page.waitForTimeout(700);
   await page.screenshot({ path: path.join(process.env.FRONT_SHOT_DIR || "/tmp", "frontend_desktop.png"), fullPage: true });
 
@@ -409,7 +464,14 @@ function check(nombre, ok, extra) {
   await page.click('button[data-perfil="contratar"]');
   await page.waitForTimeout(700);
   await page.click("#btnAnalizar");
-  await page.waitForTimeout(4000);
+  // Con la IA real el analisis tarda 30-60 s: hay que esperar a que
+  // existan los hallazgos, no a un numero fijo de milisegundos.
+  await page.waitForSelector("#stepResultado:not([hidden])", { timeout: 90000 });
+  await page.waitForFunction(
+    () => document.querySelectorAll(".hallazgo-desc").length > 0,
+    { timeout: 90000 }
+  );
+  await page.waitForTimeout(400);
 
   const descs = await page.evaluate(() =>
     Array.from(document.querySelectorAll(".hallazgo-desc")).map(

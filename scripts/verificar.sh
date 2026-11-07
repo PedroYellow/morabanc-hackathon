@@ -29,7 +29,10 @@ run_suite() {
   f=$(echo "$out" | grep -cE "^\s+FAIL")
   TOTAL_PASS=$((TOTAL_PASS + p))
   TOTAL_FAIL=$((TOTAL_FAIL + f))
-  if echo "$out" | grep -qE "TODOS LOS TESTS( DEL AUTHORIZER)? PASAN|LA LAMBDA FUNCIONA|Success! The configuration is valid"; then
+  # Cada suite imprime su propio mensaje final. El patron acepta
+  # cualquier sufijo: "TODOS LOS TESTS DEL ASISTENTE PASAN",
+  # "TODOS LOS TESTS DEL AUTHORIZER PASAN", "TODOS LOS TESTS PASAN"...
+  if echo "$out" | grep -qE "TODOS LOS TESTS( DEL [A-Z ]+)? PASAN|LA LAMBDA FUNCIONA|Success! The configuration is valid"; then
     echo "  ✔ $nombre — $p asserts"
   else
     echo "  ✘ $nombre — $f fallos"
@@ -48,6 +51,7 @@ run_suite "Agente de Bedrock"     "python3 tests/test_agente.py"
 run_suite "Formato del pitch"     "python3 tests/test_formato.py"
 run_suite "Terraform (orden y IaC)" "python3 tests/test_terraform.py"
 run_suite "Proteccion de la API" "python3 tests/test_authorizer.py"
+run_suite "Asistente de voz"     "python3 tests/test_asistente.py"
 run_suite "Lambda empaquetada"    "bash scripts/test_lambda.sh"
 
 # El test del frontend necesita Chromium + Playwright. Si no estan, se omite
@@ -84,6 +88,28 @@ if command -v node >/dev/null 2>&1 && [ -n "$FRONT_TEST_DIR" ] && \
     echo "  ✘ Frontend — $FF fallos"
     echo "$FRONT_OUT" | grep -E "^\s+FAIL|ERROR" | head -5
     FALLOS+=("Frontend")
+  fi
+
+  # --- El asistente de voz y la carga de archivos ----------------------
+  # El cuadro de voz tiene que saludar y guiar, y los archivos se tienen
+  # que poder arrastrar a cualquier parte de la pagina.
+  ASIS_SCRIPT="$FRONT_TEST_DIR/test_asistente.js"
+  cp "$RAIZ/scripts/test_asistente.js" "$ASIS_SCRIPT"
+  ASIS_OUT="$(cd "$FRONT_TEST_DIR" && \
+    ${CHROMIUM_LD_PATH:+env LD_LIBRARY_PATH="$CHROMIUM_LD_PATH"} \
+    FUENTE_APP_JS="$RAIZ/frontend/assets/app.js" \
+    node "$(basename "$ASIS_SCRIPT")" http://localhost:8899/ 2>&1)"
+  echo "$ASIS_OUT" | grep -E "^  (PASS|FAIL)" | tail -3
+  AP=$(echo "$ASIS_OUT" | grep -cE "^\s+PASS")
+  AF=$(echo "$ASIS_OUT" | grep -cE "^\s+FAIL")
+  TOTAL_PASS=$((TOTAL_PASS + AP))
+  TOTAL_FAIL=$((TOTAL_FAIL + AF))
+  if echo "$ASIS_OUT" | grep -q "TODOS LOS TESTS DEL ASISTENTE PASAN"; then
+    echo "  ✔ Asistente de voz — $AP asserts"
+  else
+    echo "  ✘ Asistente de voz — $AF fallos"
+    echo "$ASIS_OUT" | grep -E "^\s+FAIL|ERROR" | head -5
+    FALLOS+=("Asistente de voz")
   fi
 else
   echo ""
