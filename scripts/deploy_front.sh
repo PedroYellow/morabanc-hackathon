@@ -30,6 +30,11 @@ if command -v terraform >/dev/null 2>&1; then
 $(python3 -c "
 import json, sys
 cfg = json.loads(sys.argv[1])
+# OJO: el output es sensitive, asi que Terraform lo devuelve como un STRING
+# JSON dentro del JSON. Hay que desempaquetar dos veces o esto falla con
+# 'str object has no attribute get'.
+if isinstance(cfg, str):
+    cfg = json.loads(cfg)
 print(cfg.get('api_url', ''),
       cfg.get('cognito_domain', ''),
       cfg.get('cognito_client', ''),
@@ -74,7 +79,11 @@ fi
 
 echo ""
 echo "==> Comprobando el front"
-for f in index.html assets/app.js assets/styles.css data/demo_data.json; do
+for f in index.html assets/app.js assets/styles.css data/demo_data.json \
+         mb-login.html mb-empresas.html \
+         assets/mb-portal.js assets/mb-portal.css \
+         assets/mb-login.js assets/mb-login.css \
+         data/mb_escenarios.json; do
   if [ -f "frontend/$f" ]; then
     printf "    OK  %-26s %8d bytes\n" "$f" "$(stat -c%s "frontend/$f")"
   else
@@ -87,7 +96,22 @@ echo "==> Publicando el front con aws s3 sync (opcional)"
 if command -v aws >/dev/null 2>&1 && aws sts get-caller-identity >/dev/null 2>&1; then
   BUCKET=$(terraform -chdir=terraform output -raw bucket_datos 2>/dev/null || echo "")
   if [ -n "$BUCKET" ]; then
-    aws s3 sync frontend/ "s3://$BUCKET/" --exclude "generar_demo_data.py" --delete
+    # OJO: --delete borra lo que no este en frontend/. El corpus
+    # NORMATIVO (normativa/*.md) lo publica terraform en el mismo bucket
+    # y lo necesita la Knowledge Base de Bedrock: si se borra, el RAG se
+    # queda sin normativa. Por eso se excluye.
+    #
+    # Tambien se excluye assets/mb/ (recursos de la web de MoraBanc que
+    # se pueden subir aparte).
+    #
+    # El portal de empresas (mb-login.html, mb-empresas.html,
+    # assets/mb-portal.*, assets/mb-login.*, data/mb_escenarios.json)
+    # SI se publica: son parte del front.
+    aws s3 sync frontend/ "s3://$BUCKET/" \
+      --exclude "generar_demo_data.py" \
+      --exclude "normativa/*" \
+      --exclude "assets/mb/*" \
+      --delete
     echo "    publicado en s3://$BUCKET/"
   fi
 else

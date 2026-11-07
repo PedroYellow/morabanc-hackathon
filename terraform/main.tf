@@ -27,6 +27,10 @@ terraform {
       source  = "hashicorp/time"
       version = "~> 0.12"
     }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.2"
+    }
   }
 }
 
@@ -108,9 +112,21 @@ variable "log_retention_days" {
 }
 
 variable "cors_allowed_origins" {
-  description = "Origenes permitidos para el front estatico."
-  type        = list(string)
-  default     = ["http://localhost:5173", "http://localhost:3000"]
+  description = <<-EOT
+    Origenes permitidos para el front estatico.
+
+    El dominio real del front (welcomeandorra.com) TIENE que estar aqui:
+    sin el, el navegador aborta la peticion con "Failed to fetch" porque
+    el API Gateway no devuelve Access-Control-Allow-Origin y el chat del
+    asesor no responde.
+  EOT
+  type = list(string)
+  default = [
+    "https://welcomeandorra.com",
+    "https://www.welcomeandorra.com",
+    "http://localhost:5173",
+    "http://localhost:3000",
+  ]
 }
 
 variable "alert_email" {
@@ -222,6 +238,23 @@ resource "aws_kms_key" "main" {
             "kms:EncryptionContext:aws:logs:arn" = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:*"
           }
         }
+      },
+      {
+        Sid    = "AllowCloudFrontToDecrypt"
+        Effect = "Allow"
+        Principal = {
+          # CloudFront usa OAC para leer del bucket, pero si el bucket
+          # cifra con una KMS gestionada por el cliente, CloudFront TIENE
+          # que poder descifrar los objetos. Sin esta delegacion, el front
+          # se sirve con un 403 "Access Denied" (error de S3 via
+          # CloudFront) aunque la bucket policy y el OAC esten correctos.
+          Service = "cloudfront.amazonaws.com"
+        }
+        Action = [
+          "kms:Decrypt*",
+          "kms:DescribeKey",
+        ]
+        Resource = "*"
       },
       {
         Sid    = "AllowBedrockAndServices"
@@ -639,7 +672,8 @@ resource "aws_apigatewayv2_api" "api" {
   cors_configuration {
     allow_origins = var.cors_allowed_origins
     allow_methods = ["GET", "POST", "OPTIONS"]
-    allow_headers = ["Content-Type", "Authorization"]
+    # x-api-key es obligatorio: la Lambda lo exige en /preguntar.
+    allow_headers = ["Content-Type", "Authorization", "x-api-key"]
     max_age       = 3600
   }
 
@@ -912,7 +946,30 @@ resource "aws_cloudfront_distribution" "web" {
     max_ttl     = 300
   }
 
-  # API: nunca cacheada
+  # API: nunca cacheada. Dos patterns: "/preguntar" (cuando el front
+  # apunta directo a la API) y "/api/preguntar" (cuando el front usa el
+  # proxy "/api" de nginx, como en el despliegue del VPS).
+  ordered_cache_behavior {
+    path_pattern           = "/api/preguntar"
+    target_origin_id       = "api-${aws_apigatewayv2_api.api.id}"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = true
+
+    forwarded_values {
+      query_string = true
+      cookies {
+        forward = "all"
+      }
+      headers = ["x-api-key", "content-type"]
+    }
+
+    min_ttl     = 0
+    default_ttl = 0
+    max_ttl     = 0
+  }
+
   ordered_cache_behavior {
     path_pattern           = "/preguntar"
     target_origin_id       = "api-${aws_apigatewayv2_api.api.id}"
@@ -1083,6 +1140,51 @@ resource "aws_bedrock_guardrail" "principal" {
 #  Bedrock Knowledge Base — normativa andorrana (RAG)
 # ---------------------------------------------------------------------------
 
+# Crear el indice "default" en la coleccion de vectores.
+#
+# Bedrock, al crear la Knowledge Base, valida el acceso a la coleccion
+# PROBANDO el indice "default". Si no existe, falla con:
+#   "ValidationException: The knowledge base storage configuration
+#    provided is invalid... Dependency error document status code: 404,
+#    error message: no such index [default]"
+#
+# El indice lo tiene que crear el mismo Bedrock al indexar... pero
+# primero valida. Es un requisito del servicio: la coleccion tiene que
+# tener un indice llamado "default" antes de crear la KB.
+#
+# Se crea con la API de OpenSearch (PUT index) usando la IAM del rol de
+# la KB. Es idempotente: si ya existe, devuelve 400 "resource_already_exists"
+# y se considera un exito.
+resource "null_resource" "indice_default" {
+  count = (var.bedrock_kb_id != "" || !var.enable_kb) ? 0 : 1
+
+  # La coleccion tiene que existir y estar ACTIVE.
+  depends_on = [
+    aws_opensearchserverless_collection.vector,
+    time_sleep.aoss_policy,
+  ]
+
+  triggers = {
+    coleccion = one(aws_opensearchserverless_collection.vector[*].collection_endpoint)
+    # Si la collection_endpoint cambia, hay que rehacerlo.
+  }
+
+  provisioner "local-exec" {
+    # La peticion va FIRMADA (SigV4) al endpoint de OpenSearch Serverless.
+    # "aws curl" no existe en el AWS CLI (es una CLI aparte), asi que se
+    # firma con botocore, que ya esta instalado.
+    command = <<-EOT
+      set -e
+      ENDPOINT="${one(aws_opensearchserverless_collection.vector[*].collection_endpoint)}"
+      if [ -z "$ENDPOINT" ]; then
+        echo "sin endpoint de la coleccion: se salta"
+        exit 0
+      fi
+      python3 "$RAIZ/scripts/crear_indice_opensearch.py" "$ENDPOINT" default
+    EOT
+  }
+}
+
 resource "aws_bedrockagent_knowledge_base" "normativa" {
   count = (var.bedrock_kb_id != "" || !var.enable_kb) ? 0 : 1
 
@@ -1093,7 +1195,10 @@ resource "aws_bedrockagent_knowledge_base" "normativa" {
   # La coleccion de OpenSearch Serverless tarda ~1-2 minutos en estar lista
   # para recibir indices. Si la KB se crea antes, el apply falla con un
   # error de coleccion no encontrada y hay que reintentar a mano.
-  depends_on = [aws_opensearchserverless_collection.vector]
+  depends_on = [
+    aws_opensearchserverless_collection.vector,
+    null_resource.indice_default,
+  ]
 
   knowledge_base_configuration {
     type = "VECTOR"

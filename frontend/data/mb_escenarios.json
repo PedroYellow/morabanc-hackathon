@@ -1,0 +1,220 @@
+{
+  "_comentario": [
+    "Escenarios de prueba del portal de empresas de MoraBanc.",
+    "Cada escenario es una empresa real con los numeros que calcula el",
+    "motor (engine/tesoreria.py + engine/fiscal_andorra.py): el extracto",
+    "CSV es el mismo que genera el motor, y el resto de campos",
+    "(patrimonio, nominas, cuentas) son coherentes con el.",
+    "",
+    "El perfil demo del motor al que corresponde cada escenario esta en",
+    "'perfil_motor'. Al cargar el asesor en el portal se le pasa ese",
+    "perfil para que la demo use los datos precalculados del motor.",
+    "",
+    "Los importes de las cuentas NO son de un banco real: son de prueba."
+  ],
+  "escenarios": [
+    {
+      "id": "freelance",
+      "usuario": "12TJ28",
+      "perfil_motor": "freelance",
+      "empresa": "PEDRO ANDRE MIRANDA GOMES",
+      "nif": "933845",
+      "razon_social": "Pedro Andre Miranda Gomez",
+      "actividad": "Freelance de servicios",
+      "es_autonomo": true,
+      "empleados": 0,
+      "facturacion_anual": 42857.14,
+      "renta_neta": 30000,
+      "margen_bruto": 70,
+      "saldo_actual": 8500,
+      "patrimonio_total": 22211.16,
+      "cuentas": [
+        {
+          "iban": "AD1200012030200359100100",
+          "tipo": "Compte corrent",
+          "saldo": 8500.0,
+          "divisa": "EUR"
+        },
+        {
+          "iban": "AD1400080000300034567890",
+          "tipo": "Compte d'estalvi",
+          "saldo": 13711.16,
+          "divisa": "EUR"
+        }
+      ],
+      "tarjetas": [
+        {
+          "ultimos4": "4471",
+          "tipo": "Crèdit",
+          "saldo": 0.0
+        },
+        {
+          "ultimos4": "8823",
+          "tipo": "Débito",
+          "saldo": 0.0
+        }
+      ],
+      "financament": {
+        "prestamos": 0,
+        "lineas_credito": 0
+      },
+      "nomina_mensual": 0,
+      "escenario_narrativo": "Freelance estable, sin nominas. La caja aguanta y la pregunta es si merece la pena facturar mas.",
+      "pregunta_sugerida": "¿Me compensa facturar más?"
+    },
+    {
+      "id": "contratar",
+      "usuario": "12TJ29",
+      "perfil_motor": "contratar",
+      "empresa": "ANDORRA DIGITAL SL",
+      "nif": "B-98765432",
+      "razon_social": "Andorra Digital SL",
+      "actividad": "Freelancer de servicios",
+      "es_autonomo": false,
+      "empleados": 1,
+      "facturacion_anual": 40000,
+      "renta_neta": 28000,
+      "margen_bruto": 70,
+      "saldo_actual": 3200,
+      "patrimonio_total": 18400.0,
+      "cuentas": [
+        {
+          "iban": "AD1200012030200359100200",
+          "tipo": "Compte corrent",
+          "saldo": 3200.0,
+          "divisa": "EUR"
+        },
+        {
+          "iban": "AD1400080000300034567800",
+          "tipo": "Compte d'estalvi",
+          "saldo": 9800.0,
+          "divisa": "EUR"
+        },
+        {
+          "iban": "AD1200012030200359100210",
+          "tipo": "Fons d'inversió",
+          "saldo": 5400.0,
+          "divisa": "EUR"
+        }
+      ],
+      "tarjetas": [
+        {
+          "ultimos4": "1122",
+          "tipo": "Débito",
+          "saldo": 0.0
+        },
+        {
+          "ultimos4": "6654",
+          "tipo": "Crèdit",
+          "saldo": 0.0
+        }
+      ],
+      "financament": {
+        "prestamos": 0,
+        "lineas_credito": 0
+      },
+      "nomina_mensual": 2400,
+      "escenario_narrativo": "Acabo de contratar a la primera persona. La nomina se come el flujo: los ingresos no cubren los gastos. La pregunta es si el negocio aguanta.",
+      "pregunta_sugerida": "¿Puedo permitirme esta nómina?"
+    },
+    {
+      "id": "comercio",
+      "usuario": "12TJ30",
+      "perfil_motor": "comercio",
+      "empresa": "BARNES I FILLS SL",
+      "nif": "B-11223344",
+      "razon_social": "Barnes i Fils SL",
+      "actividad": "Comerç amb botiga local",
+      "es_autonomo": false,
+      "empleados": 3,
+      "facturacion_anual": 157007,
+      "renta_neta": 45000,
+      "margen_bruto": 35,
+      "saldo_actual": 14200,
+      "patrimonio_total": 42650.0,
+      "cuentas": [
+        {
+          "iban": "AD1200012030200359100300",
+          "tipo": "Compte corrent",
+          "saldo": 14200.0,
+          "divisa": "EUR"
+        },
+        {
+          "iban": "AD1400080000300034567900",
+          "tipo": "Compte d'estalvi",
+          "saldo": 21450.0,
+          "divisa": "EUR"
+        },
+        {
+          "iban": "AD1200012030200359100310",
+          "tipo": "Fons d'inversió",
+          "saldo": 7000.0,
+          "divisa": "EUR"
+        }
+      ],
+      "tarjetas": [
+        {
+          "ultimos4": "7788",
+          "tipo": "Débito",
+          "saldo": 0.0
+        },
+        {
+          "ultimos4": "3391",
+          "tipo": "Crèdit",
+          "saldo": 0.0
+        }
+      ],
+      "financament": {
+        "prestamos": 0,
+        "lineas_credito": 25000
+      },
+      "nomina_mensual": 8400,
+      "escenario_narrativo": "Comercio con tienda local, 3 empleados y turno de nomina. Cruza el umbral de la CASS: el 125% duele.",
+      "pregunta_sugerida": "¿Me afecta el salto de tramo del CASS?"
+    },
+    {
+      "id": "crecimiento",
+      "usuario": "12TJ31",
+      "perfil_motor": "comercio",
+      "empresa": "CERAMICA CANILLO SL",
+      "nif": "B-55667788",
+      "razon_social": "Ceramica Canillo SL",
+      "actividad": "Comerç amb botiga local",
+      "es_autonomo": false,
+      "empleados": 2,
+      "facturacion_anual": 96000,
+      "renta_neta": 38000,
+      "margen_bruto": 40,
+      "saldo_actual": 6900,
+      "patrimonio_total": 28700.0,
+      "cuentas": [
+        {
+          "iban": "AD1200012030200359100400",
+          "tipo": "Compte corrent",
+          "saldo": 6900.0,
+          "divisa": "EUR"
+        },
+        {
+          "iban": "AD1400080000300034567910",
+          "tipo": "Compte d'estalvi",
+          "saldo": 21800.0,
+          "divisa": "EUR"
+        }
+      ],
+      "tarjetas": [
+        {
+          "ultimos4": "2244",
+          "tipo": "Débito",
+          "saldo": 0.0
+        }
+      ],
+      "financament": {
+        "prestamos": 15000,
+        "lineas_credito": 0
+      },
+      "nomina_mensual": 5600,
+      "escenario_narrativo": "Pyme que crece: esta a 2.000 euros de renta neta del salto de tramo del CASS. La pregunta es si facturar mas le compensa o se duele.",
+      "pregunta_sugerida": "¿Debería facturar más o me quedo aquí?"
+    }
+  ]
+}

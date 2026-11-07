@@ -690,9 +690,23 @@
           "¿Cuánto cotizo a la CASS y en qué tramo estoy?",
         ]);
 
-        for (const p of preguntasReal) {
-          const r = await preguntar(p, ctx);
-          resultados.push({ pregunta: p, ...r });
+        // Las preguntas van EN PARALELO: son independientes y la API
+        // responde cada una en ~4 s. En serie el paso 2 tardaba 12 s;
+        // en paralelo, 5 s. En un pitch, esa diferencia se nota.
+        //
+        // Promise.allSettled (y no Promise.all): si UNA falla, se
+        // muestran las otras. Con Promise.all un solo fallo dejaria
+        // el paso 2 en blanco.
+        const rs = await Promise.allSettled(
+          preguntasReal.map(async (p) => ({ pregunta: p, ...(await preguntar(p, ctx)) }))
+        );
+        let fallos = 0;
+        for (const r of rs) {
+          if (r.status === "fulfilled") resultados.push(r.value);
+          else fallos++;
+        }
+        if (fallos && !resultados.length) {
+          throw new Error("No se pudo contactar con el motor de calculo");
         }
       }
 
@@ -1671,7 +1685,7 @@
       }
       if (!mejor) continue;
 
-      const slot = PISTAS_MARGEN.includes(mejor.p) ? "margen"
+      let slot = PISTAS_MARGEN.includes(mejor.p) ? "margen"
                  : PISTAS_RENTA.includes(mejor.p) ? "renta"
                  : PISTAS_SALDO.includes(mejor.p) ? "saldo"
                  : null;
@@ -1682,7 +1696,29 @@
       const despues = t.slice(c.fin, c.fin + 26);
       const palabraAntes = (antes.match(/([a-zñáéíóú]+)\s*$/i) || [, ""])[1].toLowerCase();
       const palabraDespues = (despues.match(/^\s*([a-zñáéíóú%€]+)/i) || [, ""])[1].toLowerCase();
-      const esPorcentaje = /%|por\s*ciento/i.test(despues.slice(0, 12)) || /%|por\s*ciento/i.test(antes);
+      // El porcentaje tiene que ser de ESTA cifra: "72 %" o
+      // "72 por ciento". El "%" de "un margen del 72% y 9000 euros"
+      // NO es de esta cifra: hay un "y" en medio, asi que la cifra
+      // anterior al "%" no es la nuestra. Antes se miraba si habia
+      // un "%" en cualquier sitio, y eso hacia que "9000 euros"
+      // (que va despues del 72%) se descartara por ser porcentaje.
+      const pctAntes = antes.match(/(\d[\d.,\s]*)\s*(?:%|por\s*ciento)\s*$/i);
+      const esPctAntes = !!pctAntes && pctAntes[1].trim().replace(/[\s.,]/g, "") === String(c.n);
+      const esPctDespues = /^\s*(?:%|por\s*ciento)/.test(despues);
+      const esPorcentaje = esPctAntes || esPctDespues;
+
+      // Una cifra en EUROS sin "%" y sin una pista de renta cerca es un
+      // SALDO por defecto: "tengo 9000 euros" es saldo aunque no diga
+      // "en cuenta". Antes, la palabra clave mas cercana ("margen", en
+      // "un margen del 72% y 9000 euros") se la adjudicaba y el saldo
+      // se perdia.
+      if (slot === "margen" && !esPorcentaje) {
+        const eurosDirectos = RE_DINERO.test(despues.slice(0, 12)) || RE_DINERO.test(antes);
+        const hayPistaRentaCerca = palabras.some((pal) =>
+          PISTAS_RENTA.includes(pal.p) &&
+          Math.abs(pal.fin <= c.ini ? c.ini - pal.fin : pal.ini - c.fin) < 14);
+        if (eurosDirectos && !hayPistaRentaCerca) slot = "saldo";
+      }
 
       if (slot === "margen") {
         // El margen solo es un porcentaje.
@@ -2153,11 +2189,15 @@
     const slots = extraerSlots(t);
     const nuevos = [];
     for (const [k, v] of Object.entries(slots)) {
-      if (state.slots[k] === undefined || state.slots[k] === v) {
-        if (state.slots[k] === undefined) {
-          state.slots[k] = v;
-          nuevos.push(k);
-        }
+      // Lo que dice el usuario SIEMPRE gana, aunque el slot ya tuviera
+      // un valor (por ejemplo, el que precarga el portal de empresas).
+      // Antes solo se rellenaban los vacios: si el portal precargaba
+      // "30.000" y el usuario decia "facturo 60.000", se quedaba con
+      // 30.000 y el motor calculaba sobre una cifra que el usuario
+      // NUNCA dijo. En un pitch, eso es un desastre.
+      if (state.slots[k] !== v) {
+        state.slots[k] = v;
+        nuevos.push(k);
       }
     }
     if (nuevos.length) {
@@ -2373,7 +2413,72 @@
   // ---------------------------------------------------------------
   // Enganche
   // ---------------------------------------------------------------
+  function aplicarParametrosPortal() {
+    const p = new URLSearchParams(window.location.search);
+    const perfil = p.get("perfil");
+    const empresa = p.get("empresa");
+
+    // Modo embed: el front va dentro del portal, que ya pone su
+    // cabecera. Se oculta la nuestra.
+    if (p.get("embed") === "1" || perfil || empresa) {
+      document.body.classList.add("mb-embed");
+    }
+
+    if (!perfil && !empresa) return;
+
+    if (perfil) {
+      const btn = document.querySelector('#opcionesInicio .opcion[data-perfil="' + perfil + '"]');
+      if (btn) btn.click();
+    }
+
+    const campos = {
+      rentaNeta: p.get("renta"),
+      margenBruto: p.get("margen"),
+      saldoActual: p.get("saldo"),
+      actividad: p.get("actividad"),
+    };
+    for (const [id, valor] of Object.entries(campos)) {
+      if (valor === null || valor === "") continue;
+      const el = $("#" + id);
+      if (!el) continue;
+      el.value = valor;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
+    if (empresa) {
+      const sub = $(".brand-sub");
+      if (sub) sub.textContent = empresa + " \u00b7 Andorra";
+    }
+
+    // Los chips de contexto se rellenan con los mismos datos: si el
+    // campo de arriba ya tiene 30000, el chip debe decir "30.000 \u20ac".
+    const slots = {
+      renta: parseFloat($("#rentaNeta").value) || undefined,
+      margen: parseFloat($("#margenBruto").value) || undefined,
+      saldo: parseFloat($("#saldoActual").value) || undefined,
+      actividad: ($("#actividad").value || "").trim() || undefined,
+    };
+
+    // Los chips leen de state.slots, no de los inputs: sin esto, el
+    // portal precargaba los campos pero los chips se quedaban en "—"
+    // y el usuario no veia que su situacion ya estaba capturada.
+    Object.assign(state.slots, slots);
+    pintarChips();
+
+    window.__mbSlotsPendientes = slots;
+    if (window.__mbSincronizarChips) window.__mbSincronizarChips(slots);
+  }
+
+
+
   function init() {
+    // El portal de empresas precarga la situacion por la URL. Se
+    // aplica aqui, dentro del bundle que define state.slots y
+    // pintarChips: si se hiciera en el bundle de la UI (que corre
+    // antes), todavia no existian y los chips se quedaban en "—".
+    aplicarParametrosPortal();
+
     // Los botones de micro de los dos pasos (el grande de la barra y
     // el pequeno junto al input del chat) hacen lo mismo.
     porVariante("#btnMic").forEach((b) => b.addEventListener("click", toggleVoz));
@@ -2408,8 +2513,14 @@
         if (!input) return;
         const slots = extraerSlots(input.value);
         let cambio = false;
+        // Lo que el usuario escribe gana a lo que habia precargado
+        // (el portal de empresas deja la situacion de la empresa
+        // puesta). Antes solo se rellenaban los slots vacios, asi que
+        // un usuario que corrigiera su renta se quedaba con la
+        // precargada y el motor calculaba sobre una cifra distinta de
+        // la que dijo.
         for (const [k, v] of Object.entries(slots)) {
-          if (state.slots[k] === undefined) { state.slots[k] = v; cambio = true; }
+          if (state.slots[k] !== v) { state.slots[k] = v; cambio = true; }
         }
         if (cambio) { aplicarSlotsAlFormulario(); pintarChips(); }
       }, true);
