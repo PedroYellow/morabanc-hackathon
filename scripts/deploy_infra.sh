@@ -150,6 +150,27 @@ while [ "$intento" -le "$RETRIES" ]; do
   # aoss:CreateCollection. Guardrail y Knowledge Base son DEFENSAS: el
   # motor de decision y el RAG (ya opcional en el agente) funcionan sin
   # ellos. Es preferible desplegar el 90% que no desplegar nada.
+  # La Knowledge Base de Bedrock es la pieza MAS FRAGIL del despliegue:
+  # depende de que OpenSearch Serverless propague su network policy, y un
+  # 403 ahi tumba el apply entero. Pero el motor de decision y el RAG
+  # (que ya es opcional en el agente) funcionan sin ella.
+  if grep -qE "CreateKnowledgeBase|ValidationException: The knowledge base storage" "$LOG_APPLY" 2>/dev/null; then
+    echo ""
+    echo "    El fallo es de la KNOWLEDGE BASE de Bedrock (403 de OpenSearch)."
+    echo "    Reintentando sin ella: el motor y el RAG opcional siguen funcionando."
+    echo ""
+    "$TF" plan -input=false -out=/tmp/morabanc.tfplan \
+      -var="enable_kb=false" >/dev/null 2>&1
+    if "$TF" apply -input=false -auto-approve /tmp/morabanc.tfplan 2>&1 | tee "$LOG_APPLY" | tail -20; then
+      echo ""
+      echo "==> APLICADO (sin la Knowledge Base: el RAG queda como opcional)"
+      echo "    El motor de decision, la API y el front funcionan igual."
+      break
+    fi
+    echo ""
+    echo "    tambien fallo sin la Knowledge Base."
+  fi
+
   if grep -qE "not authorized to perform (bedrock:TagResource|aoss:CreateCollection|bedrock:CreateGuardrail)" "$LOG_APPLY" 2>/dev/null; then
     echo ""
     echo "    El fallo es de PERMISOS en la cuenta (no de codigo)."

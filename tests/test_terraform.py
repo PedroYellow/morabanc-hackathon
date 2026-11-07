@@ -411,6 +411,44 @@ check("el provider time esta declarado",
       'source  = "hashicorp/time"' in SRC)
 
 
+
+# ==========================================================================
+# Regresiones del CUARTO apply: la network policy de OpenSearch
+# ==========================================================================
+
+# BUG 13: faltaba la NETWORK policy de OpenSearch Serverless.
+# La de encryption dice como se cifra la coleccion; la de network dice
+# QUIEN puede entrar. Sin la de network, Bedrock no puede validar el
+# acceso a la coleccion y la Knowledge Base falla con
+# "[security_exception] 403 Forbidden".
+# Los dos tipos de policy (encryption y network) se crean con el MISMO
+# resource: aws_opensearchserverless_security_policy, cambiando "type".
+# El provider de AWS 5.100 NO tiene aws_opensearchserverless_network_policy.
+check("la network policy usa el resource de security policy",
+      'resource "aws_opensearchserverless_network_policy"' not in SRC
+      and 'resource "aws_opensearchserverless_security_policy" "red"' in SRC,
+      "en el provider 5.100 los dos tipos de policy usan el mismo resource")
+check("la network policy es de tipo network",
+      re.search(r'aws_opensearchserverless_security_policy" "red" \{.*?type\s*=\s*"network"', SRC, re.S) is not None)
+check("la network policy autoriza a bedrock.amazonaws.com",
+      "bedrock.amazonaws.com" in SRC,
+      "SourceServices debe incluir bedrock.amazonaws.com")
+check("la network policy no deja acceso publico",
+      re.search(r'aws_opensearchserverless_security_policy" "red" \{.*?AllowFromPublic\s*=\s*false', SRC, re.S) is not None)
+check("la network policy cubre collection y dashboard",
+      re.search(r'aws_opensearchserverless_security_policy" "red" \{.*?ResourceType\s*=\s*"collection"', SRC, re.S) is not None
+      and re.search(r'aws_opensearchserverless_security_policy" "red" \{.*?ResourceType\s*=\s*"dashboard"', SRC, re.S) is not None,
+      "Bedrock necesita poder entrar por la API y por el dashboard")
+check("la coleccion depende de la network policy",
+      re.search(r'aws_opensearchserverless_collection" "vector" \{.*?aws_opensearchserverless_security_policy\.red', SRC, re.S) is not None)
+
+# El rol de la KB necesita aoss:APIAccessAll (no solo DescribeIndex),
+# y el documento oficial avisa de que sin el sale 403.
+check("el rol de la KB tiene aoss:APIAccessAll",
+      "aoss:APIAccessAll" in SRC,
+      "sin APIAccessAll, OpenSearch Serverless devuelve 403")
+
+
 # ==========================================================================
 
 for o in ["api_url", "front_url", "bucket_datos", "guardrail_id",

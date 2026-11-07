@@ -1149,10 +1149,61 @@ resource "time_sleep" "aoss_policy" {
   create_duration = "30s"
 }
 
+# Network access policy: es la que dice QUE puede entrar en la coleccion.
+# Sin ella, la Knowledge Base de Bedrock falla al validarse con
+# "[security_exception] 403 Forbidden", porque Bedrock no esta autorizado a
+# entrar en la coleccion.
+#
+# Detalles que importan (documentacion de AWS):
+# - El ResourceType puede ser "collection" o "dashboard", pero cada regla
+#   debe tener un unico ResourceType. La de encryption solo admite 1 regla;
+#   esta admite varias, una por tipo.
+# - SourceServices es lo que autoriza a Bedrock specifically.
+# - AllowFromPublic=false: solo Bedrock entra, no internet abierto.
+# OJO: el provider de AWS (5.100) NO tiene un resource
+# "aws_opensearchserverless_network_policy". Los dos tipos de policy
+# (encryption y network) se crean con el MISMO resource,
+# "aws_opensearchserverless_security_policy", cambiando el campo "type".
+resource "aws_opensearchserverless_security_policy" "red" {
+  count = (var.bedrock_kb_id != "" || !var.enable_kb) ? 0 : 1
+
+  name        = "${local.name}-red"
+  description = "Acceso de Bedrock a la coleccion de vectores"
+  type        = "network"
+
+  policy = jsonencode([
+    {
+      Description = "Bedrock accede a la coleccion"
+      Rules = [
+        {
+          ResourceType = "collection"
+          Resource     = ["collection/${local.name}-vector"]
+        },
+      ]
+      AllowFromPublic = false
+      SourceServices = ["bedrock.amazonaws.com"]
+    },
+    {
+      Description = "Bedrock accede al dashboard de la coleccion"
+      Rules = [
+        {
+          ResourceType = "dashboard"
+          Resource     = ["collection/${local.name}-vector"]
+        },
+      ]
+      AllowFromPublic = false
+      SourceServices = ["bedrock.amazonaws.com"]
+    },
+  ])
+}
+
 resource "aws_opensearchserverless_collection" "vector" {
   count = (var.bedrock_kb_id != "" || !var.enable_kb) ? 0 : 1
 
-  depends_on = [time_sleep.aoss_policy]
+  depends_on = [
+    time_sleep.aoss_policy,
+    aws_opensearchserverless_security_policy.red,
+  ]
 
   name = "${local.name}-vector"
   type = "VECTORSEARCH"
