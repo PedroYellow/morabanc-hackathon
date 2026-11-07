@@ -26,6 +26,8 @@ from typing import Iterable, Optional
 
 D = Decimal
 
+from engine.fiscal_andorra import eur  # noqa: E402  (formato de euros)
+
 
 def _d(x) -> Decimal:
     if isinstance(x, Decimal):
@@ -438,9 +440,9 @@ def proyectar_caja(
         # ultimo saldo comodo y la deuda real, no un "-0,31 €".
         resumen = (
             f"Con el ritmo actual la caja se agota en el mes {mes_quiebre}. "
-            f"Tu ultimo saldo positivo es de {ultimo_saldo_positivo} € "
+            f"Tu ultimo saldo positivo es de {eur(ultimo_saldo_positivo)} € "
             f"(mes {mes_ultimo_positivo}). "
-            f"En el mes del quiebre te faltan {deuda_en_quiebre} € para cubrir los pagos."
+            f"En el mes del quiebre te faltan {eur(deuda_en_quiebre)} € para cubrir los pagos."
         )
     else:
         runway = (saldo / (gas_base - ing_base)) if (gas_base > ing_base) else None
@@ -508,7 +510,7 @@ def detectar_fugas(movimientos: list[Movimiento]) -> list[Fuga]:
         fugas.append(Fuga(
             tipo="suscripcion",
             descripcion=(
-                f"Cobro recurrente de {importe} € ({concepto}). "
+                f"Cobro recurrente de {eur(importe)} € ({concepto}). "
                 f"Se repite {len(grupo)} veces en {meses} meses."
             ),
             importe_mensual=importe,
@@ -518,8 +520,8 @@ def detectar_fugas(movimientos: list[Movimiento]) -> list[Fuga]:
                 for m in grupo
             ],
             accion_sugerida=(
-                f"Revisa si sigues usando '{concepto}'. Cancelarlo libera {importe} €/mes "
-                f"({_r2(importe * 12)} €/año)."
+                f"Revisa si sigues usando '{concepto}'. Cancelarlo libera {eur(importe)} €/mes "
+                f"({eur(_r2(importe * 12))} €/año)."
             ),
             confianza=Decimal("0.8"),
         ))
@@ -540,7 +542,7 @@ def detectar_fugas(movimientos: list[Movimiento]) -> list[Fuga]:
                 fugas.append(Fuga(
                     tipo="cobro_duplicado",
                     descripcion=(
-                        f"Cobro duplicado de {importe} €: '{a.concepto}' el "
+                        f"Cobro duplicado de {eur(importe)} €: '{a.concepto}' el "
                         f"{a.fecha.strftime('%d/%m/%Y')} y otra vez el "
                         f"{b.fecha.strftime('%d/%m/%Y')}."
                     ),
@@ -550,7 +552,7 @@ def detectar_fugas(movimientos: list[Movimiento]) -> list[Fuga]:
                         {"fecha": a.fecha.isoformat(), "concepto": a.concepto, "importe": a.importe},
                         {"fecha": b.fecha.isoformat(), "concepto": b.concepto, "importe": b.importe},
                     ],
-                    accion_sugerida=f"Reclama el cobro duplicado: {importe} €.",
+                    accion_sugerida=f"Reclama el cobro duplicado: {eur(importe)} €.",
                     confianza=Decimal("0.9"),
                 ))
 
@@ -605,15 +607,15 @@ def _detectar_deriva(movimientos: list[Movimiento]) -> list[Fuga]:
                 descripcion=(
                     f"El gasto en '{cat}' ha subido un "
                     f"{(crecimiento * 100).quantize(Decimal('1'))}% en 3 meses "
-                    f"({_r2(ultimos[0][1])} € -> {_r2(ultimos[-1][1])} €)."
+                    f"({eur(_r2(ultimos[0][1]))} € -> {eur(_r2(ultimos[-1][1]))} €)."
                 ),
                 importe_mensual=delta_mensual,
                 importe_anual=_r2(delta_mensual * 12),
                 movimientos_involucrados=[],
                 accion_sugerida=(
                     f"Revisa el gasto en '{cat}': ha crecido "
-                    f"{_r2(delta_mensual)} €/mes de media. Si lo estabilizas, "
-                    f"recuperas {_r2(delta_mensual * 12)} €/año."
+                    f"{eur(_r2(delta_mensual))} €/mes de media. Si lo estabilizas, "
+                    f"recuperas {eur(_r2(delta_mensual * 12))} €/año."
                 ),
                 confianza=Decimal("0.6"),
             ))

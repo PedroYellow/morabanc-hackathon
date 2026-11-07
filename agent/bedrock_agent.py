@@ -40,6 +40,7 @@ from engine.fiscal_andorra import (  # noqa: E402
     punto_optimo_facturacion,
     simular_contratacion,
     comparar_escenarios,
+    eur,
     Escenario,
 )
 from engine.tesoreria import (  # noqa: E402
@@ -110,6 +111,22 @@ def _jsonable(obj: Any) -> Any:
     if isinstance(obj, (list, tuple)):
         return [_jsonable(v) for v in obj]
     return obj
+
+
+def _eur(valor: Any, decimales: int = 2) -> str:
+    """
+    Formato europeo de euros: 34800.0 -> "34.800,00".
+
+    En el pitch, "34800.00 €" se lee como un dato crudo de maquina; "34.800,00 €"
+    se lee como una cuenta. Ademas el equipo habla catalan y castellano, donde
+    el separador de millares es el punto.
+    """
+    try:
+        v = float(valor)
+    except (TypeError, ValueError):
+        return str(valor)
+    txt = f"{v:,.{decimales}f}"
+    return txt.replace(",", " ").replace(".", ",").replace(" ", ".")
 
 
 # ==========================================================================
@@ -247,7 +264,7 @@ def _tool_tramo_cass(ctx: ContextoEmpresa, renta_neta: Optional[float] = None, *
             "cuota_anual": cass_anual(t),
             "condicion": t.condicion,
         }),
-        "regla": f"CASS {t.nombre}. Base global {t.base} EUR (Decret 28/2026), "
+        "regla": f"CASS {t.nombre}. Base global {eur(t.base)} EUR (Decret 28/2026), "
                  f"tipo total 22% (10% rama general + 12% jubilacion).",
     }
 
@@ -728,6 +745,17 @@ class AgenteFinanciero:
     # "cotizo"/"cotizacion" (CASS) debe ir antes que "renta"/"impuesto" (IRPF),
     # porque una pregunta de cotizacion suele mencionar tambien la renta.
     _REGLAS_ROUTER: list[tuple[tuple[str, ...], str, list[str]]] = [
+        # "y si" / "en vez de" / "que pasaria" son preguntas de RECALCULO sobre
+        # una decision. Si la pregunta menciona un coste de empleado o un
+        # sueldo, es una simulacion de contratacion aunque no diga
+        # "contratar" (p.ej. "¿y si el sueldo es de 2.900?"). Sin esto, la
+        # pregunta cae en "analizar_tesoreria" y el pitch se rompe en la
+        # segunda vuelta, que es justo el momento en que el jurado ve que
+        # no es una calculadora.
+        (("y si", "y si el", "en vez de", "en lugar de", "que pasaria",
+          "que pasaría", "qué pasaría", "subo el sueldo", "subir el sueldo",
+          "pago mas", "cobro mas", "cambio el sueldo", "cambiar el sueldo"),
+         "simular_contratacion", ["coste_mensual_empleado"]),
         (("contratar", "contratar", "emplead", "empleado", "nómina", "nomina",
           "contratacion", "sueldo", "brutos"),
          "simular_contratacion", ["coste_mensual_empleado"]),
@@ -792,13 +820,21 @@ class AgenteFinanciero:
         elif herramienta == "proyectar_caja":
             args["meses"] = 12
         elif herramienta in ("detectar_crossover_fiscal", "tramo_cass", "calcular_irpf", "calcular_igi"):
-            if self.ctx.renta_neta_anual is None and _num(0):
-                self.ctx.renta_neta_anual = Decimal(str(_num(0)))
-            args["renta_neta"] = _num(0)
-            if herramienta == "calcular_irpf":
-                args["base_general"] = _num(0)
-            if herramienta == "calcular_igi":
-                args["base_imponible"] = _num(0)
+            # Si la pregunta trae un numero, ese manda. Si NO trae ninguno,
+            # se usa la renta neta del contexto (el perfil de demo) en vez de
+            # pasar None: pasar None explicitamente hacia que la herramienta
+            # no pueda aplicar su fallback y devuelva "falta la renta neta".
+            n = _num(0)
+            if n is not None:
+                args["renta_neta"] = n
+                if self.ctx.renta_neta_anual is None:
+                    self.ctx.renta_neta_anual = Decimal(str(n))
+            elif herramienta == "calcular_irpf":
+                args["base_general"] = self.ctx.renta_neta_anual
+            elif herramienta == "calcular_igi":
+                args["base_imponible"] = self.ctx.renta_neta_anual
+            elif herramienta == "tramo_cass":
+                args["renta_neta"] = self.ctx.renta_neta_anual
 
         out = ejecutar_tool(herramienta, self.ctx, args)
         llamada = {
@@ -848,8 +884,8 @@ class AgenteFinanciero:
                 return ("No he encontrado fugas claras en el periodo analizado.\n\n"
                         "Regla aplicada: " + llamada["regla"])
             lineas = [f"**He encontrado {r['n_fugas']} fugas.** "
-                      f"Recuperando lo que no uses: **{r['recuperable_mensual']:.2f} €/mes** "
-                      f"({r['recuperable_anual']:.2f} €/año).", ""]
+                      f"Recuperando lo que no uses: **{_eur(r['recuperable_mensual'])} €/mes** "
+                      f"({_eur(r['recuperable_anual'])} €/año).", ""]
             for f in r.get("fugas", [])[:5]:
                 lineas.append(f"- **{f['descripcion']}** → {f['accion_sugerida']}")
             lineas += ["", "Regla aplicada: " + llamada["regla"]]
@@ -865,15 +901,16 @@ class AgenteFinanciero:
                     except (TypeError, ValueError):
                         return 0.0
                 lineas.append("")
+                # "0 a medias" suena raro: solo se mentiona si hay parciales.
+                detalle = f"{r.get('cumplidos', 0)} cumplidos"
+                if r.get("parciales", 0):
+                    detalle += f", {r['parciales']} a medias"
+                if r.get("incumplidos", 0):
+                    detalle += f", {r['incumplidos']} sin aplicar"
+                lineas.append(f"- Consejos evaluados: {r['n_evaluables']} ({detalle})")
                 lineas.append(
-                    f"- Consejos evaluados: {r['n_evaluables']} "
-                    f"(cumplidos {r.get('cumplidos', 0)}, "
-                    f"parciales {r.get('parciales', 0)}, "
-                    f"incumplidos {r.get('incumplidos', 0)})"
-                )
-                lineas.append(
-                    f"- Ahorro real: **{_num(r.get('ahorro_real_mensual', 0)):.2f} €/mes** "
-                    f"frente a {_num(r.get('ahorro_esperado_mensual', 0)):.2f} €/mes previstos"
+                    f"- Ahorro real: **{_eur(_num(r.get('ahorro_real_mensual', 0)))} €/mes** "
+                    f"frente a {_eur(_num(r.get('ahorro_esperado_mensual', 0)))} €/mes previstos"
                 )
             for c in r.get("cierres", [])[:5]:
                 exp = c.get("detalle", {}).get("explicacion", "")
@@ -884,10 +921,10 @@ class AgenteFinanciero:
 
         if t == "simular_contratacion":
             return (
-                f"**Contratar cuesta {r['coste_nuevo_empleado_anual']:.2f} €/año.**\n\n"
-                f"Necesitas facturar **{r['facturacion_adicional_para_cubrirlo']:.2f} € "
+                f"**Contratar cuesta {_eur(r['coste_nuevo_empleado_anual'])} €/año.**\n\n"
+                f"Necesitas facturar **{_eur(r['facturacion_adicional_para_cubrirlo'])} € "
                 f"adicionales** para cubrirlo con margen e IGI incluidos "
-                f"(de los cuales {r['igi_adicional']:.2f} € son IGI).\n\n"
+                f"(de los cuales {_eur(r['igi_adicional'])} € son IGI).\n\n"
                 f"Tu tramo CASS actual es el {r['crossover'].get('tipo', 'n/a')}.\n\n"
                 f"Regla aplicada: {llamada['regla']}"
             )
@@ -909,9 +946,9 @@ class AgenteFinanciero:
 
         if t == "tramo_cass":
             return (
-                f"**Tramo {r['tramo']}** — cuota {r['cuota_mensual']:.2f} €/mes "
-                f"({r['cuota_anual']:.2f} €/año).\n"
-                f"Base: {r['base_cotizacion']:.2f} €.\n\n"
+                f"**Tramo {r['tramo']}** — cuota {_eur(r['cuota_mensual'])} €/mes "
+                f"({_eur(r['cuota_anual'])} €/año).\n"
+                f"Base: {_eur(r['base_cotizacion'])} €.\n\n"
                 f"Regla aplicada: {llamada['regla']}"
             )
 

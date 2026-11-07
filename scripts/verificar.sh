@@ -45,6 +45,7 @@ run_suite "Motor fiscal andorrano" "python3 tests/test_fiscal.py"
 run_suite "Motor de tesoreria"    "python3 tests/test_tesoreria.py"
 run_suite "Bucle de cierre"        "python3 tests/test_cierre.py"
 run_suite "Agente de Bedrock"     "python3 tests/test_agente.py"
+run_suite "Formato del pitch"     "python3 tests/test_formato.py"
 run_suite "Terraform (orden y IaC)" "python3 tests/test_terraform.py"
 run_suite "Lambda empaquetada"    "bash scripts/test_lambda.sh"
 
@@ -63,11 +64,11 @@ if command -v node >/dev/null 2>&1 && [ -n "$FRONT_TEST_DIR" ] && \
   # El test necesita node_modules/playwright junto al script. Si el directorio
   # de pruebas no contiene el script, se copia alli (patron CI: deps en el
   # raiz del repo, script en scripts/).
+  # IMPORTANTE: se copia SIEMPRE, para no usar una copia vieja del test
+  # (si no, un test nuevo no se ejecuta y la suite sigue "en verde" sin
+  # comprobar nada nuevo).
   FRONT_SCRIPT="$FRONT_TEST_DIR/test_frontend.js"
-  if [ ! -f "$FRONT_SCRIPT" ]; then
-    FRONT_SCRIPT="$FRONT_TEST_DIR/.test_frontend_ci.js"
-    cp "$RAIZ/scripts/test_frontend.js" "$FRONT_SCRIPT"
-  fi
+  cp "$RAIZ/scripts/test_frontend.js" "$FRONT_SCRIPT"
   FRONT_OUT="$(cd "$FRONT_TEST_DIR" && \
     ${CHROMIUM_LD_PATH:+env LD_LIBRARY_PATH="$CHROMIUM_LD_PATH"} \
     node "$(basename "$FRONT_SCRIPT")" http://localhost:8899/ 2>&1)"

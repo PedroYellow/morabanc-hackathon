@@ -115,6 +115,22 @@ function check(nombre, ok, extra) {
   await page.waitForTimeout(1400);
   check("nueva respuesta anadida", (await page.locator(".msg.bot").count()) > antes);
 
+  console.log("\n=== FORMATO DE LOS NUMEROS (europeo) ===");
+  // El front se ve en la sala el dia del hackathon: "4.267,05 €" se lee como
+  // una cuenta; "4267.05 €" se lee como un dato de maquina. El build de
+  // Chromium de este entorno va con ICU recortado, asi que el separador de
+  // millares se pone a mano en el codigo (no con toLocaleString).
+  const metricas = await page.locator("#verdictMetrics .metric-value").allTextContents();
+  const conMiles = metricas.filter((m) => /\d\.\d{3}/.test(m));
+  check("alguna metrica lleva separador de millares", conMiles.length > 0,
+    metricas.join(" | "));
+  check("ninguna metrica usa formato anglosaxon",
+    !metricas.some((m) => /\d+\.\d{2}(?!\d)/.test(m)), metricas.join(" | "));
+  // El signo va DELANTE: "-4.267,05 €". Un "-4.267,05" con el menos
+  // pegado al numero por detras ("4.267,05-") seria un error de formato.
+  check("el signo va delante del numero",
+    !metricas.some((m) => /\d[\d.]*,\d{2}\s*€\s*-/.test(m)), metricas.join(" | "));
+
   console.log("\n=== CAMBIO DE IDIOMA ===");
   await page.click("#langSwitch");
   await page.waitForTimeout(250);

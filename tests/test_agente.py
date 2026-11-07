@@ -84,10 +84,61 @@ casos_router = [
     ("¿Y si el sueldo es de 2.900 en vez de 2.400?", "simular_contratacion"),
     ("¿Cuánto cotizo a la CASS?", "tramo_cass"),
     ("¿Cuándo salta mi tramo?", "detectar_crossover_fiscal"),
+    # Las preguntas EXACTAS del guion del pitch (demo_integrada.py). Si estas
+    # no enrutan bien, el pitch se rompe en directo ante el jurado.
+    ("¿Y si es de 2900 euros?", "simular_contratacion"),
+    ("¿Cuánto se me está escapando cada mes?", "detectar_fugas"),
+    ("¿Cuánto me queda de caja cada mes?", "proyectar_caja"),
+    ("¿Cuándo salta mi tramo de cotización?", "detectar_crossover_fiscal"),
+    ("¿Puedo contratar a alguien a 2.400 brutos al mes?", "simular_contratacion"),
+    # El cierre del bucle (el beat final del pitch).
+    ("¿Hiciste caso con mis consejos?", "cerrar_ciclo"),
 ]
 for pregunta, esperado in casos_router:
     r = agente.preguntar(pregunta)
     check(f"router: '{pregunta[:34]}'", r["herramientas"][0]["tool"], esperado)
+
+# ---------------------------------------------------------------------------
+print("\n=== La segunda vuelta del pitch RECALCULA (no devuelve la misma cifra) ===")
+# Es el momento en que el jurado ve que no es una calculadora de sliders:
+# se cambia el sueldo y el motor recalcula con los numeros del motor.
+r_2400 = agente.preguntar("¿Puedo contratar a alguien a 2400 euros?")
+r_2900 = agente.preguntar("¿Y si es de 2900 euros?")
+check("las dos preguntas van a la misma herramienta",
+      r_2400["herramientas"][0]["tool"] == r_2900["herramientas"][0]["tool"]
+      == "simular_contratacion",
+      True)
+coste_2400 = r_2400["herramientas"][0]["resultado"]["coste_nuevo_empleado_anual"]
+coste_2900 = r_2900["herramientas"][0]["resultado"]["coste_nuevo_empleado_anual"]
+check("el coste mensual SI se recalcula", coste_2400 != coste_2900, True)
+check("coste a 2400 = 28800 €/año", coste_2400, 28800.0)
+check("coste a 2900 = 34800 €/año", coste_2900, 34800.0)
+
+# El numero de la respuesta es el del motor, no una improvisacion.
+from engine.fiscal_andorra import simular_contratacion as _sim_real  # noqa: E402
+_real = _sim_real(renta_neta_actual=D("28000"), margen_bruto=D("0.70"),
+                   coste_nuevo_empleado_mensual=D("2900"))
+check("la facturacion calculada coincide con el motor",
+      abs(r_2900["herramientas"][0]["resultado"]["facturacion_adicional_para_cubrirlo"]
+          - float(_real["facturacion_adicional_para_cubrirlo"])) < 0.01,
+      True)
+
+# ---------------------------------------------------------------------------
+print("\n=== Sin numero en la pregunta, se usa la renta del CONTEXTO ===")
+# Antes pasaba renta_neta=None explicito y la herramienta no podia aplicar su
+# fallback: el crossover salia con datos genericos en vez de los del perfil.
+ctx_c = ContextoEmpresa(movimientos=ctx.movimientos, saldo_actual=D("3200"),
+                        renta_neta_anual=D("28000"), margen_bruto=D("0.70"))
+ag_c = AgenteFinanciero(ctx_c, mock=True)
+r_cross = ag_c.preguntar("¿Cuándo salta mi tramo de cotización?")
+detalle = r_cross["herramientas"][0]["resultado"]["detalle"]
+check("el crossover usa la renta del contexto (28000)",
+      "28.000,00" in detalle, True)
+check("el crossover no dice 'falta la renta'",
+      "error" not in r_cross["herramientas"][0]["resultado"], True)
+r_cass = ag_c.preguntar("¿Cuánto cotizo a la CASS?")
+check("el tramo CASS usa la renta del contexto",
+      r_cass["herramientas"][0]["resultado"]["tramo"], "100%")
 
 # ---------------------------------------------------------------------------
 print("\n=== Los numeros coinciden EXACTAMENTE con el motor ===")

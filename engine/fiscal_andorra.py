@@ -50,6 +50,22 @@ PAGO_FRACCIONADO_IRPF = Decimal("0.05")
 MONEDA = "EUR"
 
 
+def eur(valor, decimales: int = 2) -> str:
+    """
+    Formato europeo de euros: 34800.0 -> "34.800,00".
+
+    En el pitch, "34800.00 €" se lee como un dato crudo de maquina; "34.800,00 €"
+    se lee como una cuenta. El equipo habla catalan y castellano, donde el
+    separador de millares es el punto.
+    """
+    try:
+        v = float(valor)
+    except (TypeError, ValueError):
+        return str(valor)
+    txt = f"{v:,.{decimales}f}"
+    return txt.replace(",", " ").replace(".", ",").replace(" ", ".")
+
+
 def _d(x) -> Decimal:
     """Convierte a Decimal de forma segura (float -> str -> Decimal)."""
     if isinstance(x, Decimal):
@@ -406,14 +422,14 @@ def crossover_cass(renta_neta_anual: Decimal) -> Crossover:
             tipo="Bonificacion IRPF art. 46 toca su techo de 800 €",
             renta_punto=Decimal("40000"),
             detalle=(
-                f"Con {r} € de renta neta el IRPF efectivo es {irpf_actual.tipo_efectivo}% "
+                f"Con {eur(r)} € de renta neta el IRPF efectivo es {irpf_actual.tipo_efectivo:.2f}% "
                 f"(bonificación art. 46 todavia sin tope). Matiz importante: el \"5%\" "
                 f"que se publica es una simplificacion — el tipo real sube del 0% al 2% "
                 f"de forma progresiva entre 24.000 € y 40.000 €, y la bonificacion del 50% "
                 f"alcanza su tope de 800 € exactamente en 40.000 € de base. A partir de ahi "
                 f"la bonificacion se congela, el IRPF acelera y la CASS pasa del 100% al 125%. "
-                f"A 40.000 € la cuota de IRPF pasa de {irpf_actual.cuota_total} € "
-                f"a {irpf_40k.cuota_total} €."
+                f"A 40.000 € la cuota de IRPF pasa de {eur(irpf_actual.cuota_total)} € "
+                f"a {eur(irpf_40k.cuota_total)} €."
             ),
             delta_anual=Decimal("0"),
         )
@@ -428,8 +444,8 @@ def crossover_cass(renta_neta_anual: Decimal) -> Crossover:
             renta_punto=Decimal("40000"),
             detalle=(
                 f"Al cruzar 40.000 € de renda neta, la CASS salta del 100% "
-                f"({tr_100.cuota_mensual} €/mes) al 125% ({tr_125.cuota_mensual} €/mes): "
-                f"+{delta} € al any. El IRPF efectiu tambien sube del 5% al 10%."
+                f"({eur(tr_100.cuota_mensual)} €/mes) al 125% ({eur(tr_125.cuota_mensual)} €/mes): "
+                f"+{eur(delta)} € al any. El IRPF efectiu tambien sube del 5% al 10%."
             ),
             delta_anual=_r2(delta),
         )
@@ -444,8 +460,8 @@ def crossover_cass(renta_neta_anual: Decimal) -> Crossover:
             renta_punto=Decimal("50000"),
             detalle=(
                 f"Al cruzar 50.000 € de renda neta, la CASS salta del 125% "
-                f"({tr_125.cuota_mensual} €/mes) al 137,5% ({tr_137.cuota_mensual} €/mes): "
-                f"+{delta} € al any."
+                f"({eur(tr_125.cuota_mensual)} €/mes) al 137,5% ({eur(tr_137.cuota_mensual)} €/mes): "
+                f"+{eur(delta)} € al any."
             ),
             delta_anual=_r2(delta),
         )
@@ -457,8 +473,8 @@ def crossover_cass(renta_neta_anual: Decimal) -> Crossover:
             renta_punto=Decimal("24000"),
             detalle=(
                 f"Al cruzar 24.000 € de renda neta, la CASS pasa del 75% "
-                f"({tramo_cass_para(Decimal("20000")).cuota_mensual} €/mes) al 100% "
-                f"({tramo_cass_para(Decimal("25000")).cuota_mensual} €/mes)."
+                f"({eur(tramo_cass_para(Decimal('20000')).cuota_mensual)} €/mes) al 100% "
+                f"({eur(tramo_cass_para(Decimal('25000')).cuota_mensual)} €/mes)."
                 " El IRPF sigue en 0%, asi que el coste real es solo la CASS."
             ),
             delta_anual=_r2(

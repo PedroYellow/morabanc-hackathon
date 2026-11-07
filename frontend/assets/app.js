@@ -154,20 +154,45 @@
   // ---------------------------------------------------------------
   // Utilidades
   // ---------------------------------------------------------------
+  // Formato de euros: separador de millares con punto y decimal con coma
+  // (es-ES / en-GB segun el idioma de la interfaz).
+  //
+  // NO se usa toLocaleString para los millares: el build de Chromium de
+  // este entorno va con ICU recortado y devuelve "4267,05" en vez de
+  // "4.267,05" (y lo mismo con el signo delante). Es un problema del
+  // entorno, no del codigo, pero el front se ve en la sala el dia del
+  // hackathon: si el navegador del movil tiene ICU completo, mejor, pero
+  // no puede ser la unica garantia. Por eso el separador de millares se
+  // pone a mano y toLocaleString solo se encarga de los decimales.
+  function separarMillares(texto, sep) {
+    const neg = texto.startsWith("-");
+    const limpio = neg ? texto.slice(1) : texto;
+    const partes = limpio.split(".");
+    const entero = partes[0].replace(/\B(?=(\d{3})+(?!\d))/g, sep);
+    return (neg ? "-" : "") + (partes.length > 1 ? entero + "." + partes[1] : entero);
+  }
+
   function eur(v, dec) {
     if (v === null || v === undefined || isNaN(v)) return "—";
     const n = Number(v);
-    return n.toLocaleString(lang === "en" ? "en-GB" : "es-ES", {
-      minimumFractionDigits: dec === undefined ? 0 : dec,
-      maximumFractionDigits: dec === undefined ? 0 : dec,
-    }) + " €";
+    const d = dec === undefined ? 0 : dec;
+    const sep = lang === "en" ? "," : ".";
+    const texto = Math.abs(n).toFixed(d);
+    const partes = texto.split(".");
+    const entero = separarMillares(partes[0], sep);
+    const signo = n < 0 ? "-" : "";
+    return signo + entero + (partes.length > 1 ? "," + partes[1] : "") + " €";
   }
 
   function num(v, dec) {
     if (v === null || v === undefined || isNaN(v)) return "—";
-    return Number(v).toLocaleString(lang === "en" ? "en-GB" : "es-ES", {
-      minimumFractionDigits: dec || 0, maximumFractionDigits: dec || 0,
-    });
+    const n = Number(v);
+    const d = dec || 0;
+    const sep = lang === "en" ? "," : ".";
+    const texto = Math.abs(n).toFixed(d);
+    const partes = texto.split(".");
+    const entero = separarMillares(partes[0], sep);
+    return (n < 0 ? "-" : "") + entero + (partes.length > 1 ? "," + partes[1] : "");
   }
 
   function toast(msg, tipo) {

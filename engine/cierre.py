@@ -31,6 +31,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Iterable, Optional
 
+from engine.fiscal_andorra import eur
 from engine.tesoreria import (
     Fuga,
     Movimiento,
@@ -284,7 +285,7 @@ def _cerrar_suscripcion(
             detalle={
                 "explicacion": (
                     f"El cargo '{concepto_esp}' no vuelve a aparecer en los "
-                    f"{meses_obs} meses posteriores. Se ahorran {real} €/mes, "
+                    f"{meses_obs} meses posteriores. Se ahorran {eur(real)} €/mes, "
                     f"exactamente lo previsto."
                 ),
                 "cargos_encontrados": 0,
@@ -309,7 +310,7 @@ def _cerrar_suscripcion(
             detalle={
                 "explicacion": (
                     f"El cargo '{concepto_esp}' sigue apareciendo {len(mismos)} veces "
-                    f"a {importe_esp} € en los {meses_obs} meses posteriores. "
+                    f"a {eur(importe_esp)} € en los {meses_obs} meses posteriores. "
                     f"El consejo no se aplico."
                 ),
                 "cargos_encontrados": len(mismos),
@@ -341,8 +342,8 @@ def _cerrar_suscripcion(
         detalle={
             "explicacion": (
                 f"El cargo '{concepto_esp}' sigue apareciendo pero a "
-                f"{mejor} € en vez de {importe_esp} €. Ahorro real: {real} €/mes "
-                f"frente a {consejo.esperado_mensual} €/mes previstos."
+                f"{eur(mejor)} € en vez de {eur(importe_esp)} €. Ahorro real: {eur(real)} €/mes "
+                f"frente a {eur(consejo.esperado_mensual)} €/mes previstos."
             ),
             "cargos_encontrados": len(candidatos),
             "importes_vistos": [str(i) for i in importes],
@@ -405,21 +406,23 @@ def informe_cierre(cierres: list[Cierre]) -> dict:
             "consejo para comprobarlo. En el proximo corte te dire si "
             "hiciste caso."
         )
-    elif cumplidos and not incumplidos:
+    elif cumplidos and not incumplidos and not parciales:
         resumen = (
             f"Has seguido {len(cumplidos)} de {len(evaluables)} recomendaciones. "
-            f"Llevas ahorrados {ahorro_real} €/mes."
+            f"Llevas ahorrados {eur(ahorro_real)} €/mes."
         )
-    elif incumplidos and not cumplidos:
+    elif incumplidos and not cumplidos and not parciales:
         resumen = (
             f"No has aplicado ninguno de los {len(evaluables)} consejos: "
-            f"{ahorro_esperado} €/mes siguen escapando."
+            f"{eur(ahorro_esperado)} €/mes siguen escapando."
         )
     else:
+        # Solo se mencionan los parciales si los hay ("0 a medias" suena mal).
+        medio = f" ({len(parciales)} a medias)" if parciales else ""
         resumen = (
-            f"Has seguido {len(cumplidos)} de {len(evaluables)} recomendaciones "
-            f"({len(parciales)} a medias). Llevas ahorrados {ahorro_real} €/mes "
-            f"de los {ahorro_esperado} €/mes previstos."
+            f"Has seguido {len(cumplidos)} de {len(evaluables)} recomendaciones{medio}. "
+            f"Llevas ahorrados {eur(ahorro_real)} €/mes "
+            f"de los {eur(ahorro_esperado)} €/mes previstos."
         )
 
     return {
