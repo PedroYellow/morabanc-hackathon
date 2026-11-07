@@ -2509,6 +2509,43 @@
     // antes), todavia no existian y los chips se quedaban en "—".
     aplicarParametrosPortal();
 
+    // Si viene del portal de empresas, el escenario ya esta puesto:
+    // no se toca nada.
+    //
+    // Si es el home suelto, se preselecciona el primer perfil (el caso
+    // del pitch: freelance). Sin esto la pagina llega con los cuatro
+    // chips en "—" y los campos vacios, y en un pitch eso se lee como
+    // "no funciona" cuando en realidad solo falta elegir. Con el perfil
+    // puesto, la situacion se ve capturada desde el primer segundo.
+    const r = $("#rentaNeta");
+    const hayDatos = r && r.value;
+    if (!hayDatos && !document.body.classList.contains("mb-embed")) {
+      const opciones = document.querySelectorAll("#opcionesInicio .opcion");
+      const primera = opciones[0];
+      if (primera) {
+        // El click dispara el handler de la UI, que rellena los inputs
+        // y avisa al motor por el puente. Aqui se espera a que el
+        // handler termine (es sincrono) y se pintan los chips.
+        primera.click();
+      }
+    }
+
+    // Los inputs rellenos (del portal o de la preseleccion) se pasan al
+    // state del motor y se pintan los chips. El bundle de la UI corre
+    // ANTES que este y no puede pintar chips: este bundle aun no
+    // existia cuando la UI elegia el perfil.
+    const renta = $("#rentaNeta");
+    if (renta && renta.value) {
+      const slots = {
+        renta: parseFloat(renta.value) || undefined,
+        margen: parseFloat(($("#margenBruto") || {}).value) || undefined,
+        saldo: parseFloat(($("#saldoActual") || {}).value) || undefined,
+        actividad: (($("#actividad") || {}).value || "").trim() || undefined,
+      };
+      Object.assign(state.slots, slots);
+      pintarChips();
+    }
+
     // Los botones de micro de los dos pasos (el grande de la barra y
     // el pequeno junto al input del chat) hacen lo mismo.
     porVariante("#btnMic").forEach((b) => b.addEventListener("click", toggleVoz));

@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PlanificAND · Asesor financiero — Maqueta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   MAQUETA — PlanificAND como app conversacional
+   Sin backend: todo es mock. Sirve para validar el diseño.
+   ============================================================ */
+
+:root {
+  /* MoraBanc (heredado del proyecto) */
+  --navy:        #0a3550;
+  --navy-2:      #114274;
+  --gold:        #f1c657;
+  --gold-ink:   #6b5314;
+  --bg:          #f4f7fa;
+  --surface-azul:#e8f1f8;
+
+  /* Revolut (referencia de la app) */
+  --ink:        #191c1f;
+  --ink-2:      #505a63;
+  --ink-3:      #8d969e;
+  --line:       #e6e9ec;
+  --white:      #ffffff;
+  --surface:    #f4f4f4;
+
+  /* Semanticos de finanzas */
+  --danger:     #e23b4a;
+  --teal:       #00a87e;
+  --blue:       #494fdf;
+  --warning:    #ec7e00;
+  --green:      #0b9d5c;
+
+  /* Radios: pill como en la app de referencia */
+  --r-pill: 9999px;
+  --r-card: 20px;
+  --r-md:   14px;
+  --r-sm:   10px;
+
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --nav-h:  62px;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0; padding: 0; height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 16px; line-height: 1.5; letter-spacing: 0.01em;
+  overscroll-behavior-y: none;
+}
+
+button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+input  { font: inherit; color: inherit; }
+
+/* ---------- Estructura de la app ---------- */
+.app {
+  max-width: 480px; margin: 0 auto; height: 100dvh;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+  position: relative; overflow: hidden;
+}
+@media (min-width: 700px) {
+  body { background: #e9edf1; }
+  .app { box-shadow: 0 0 60px rgba(25,28,31,.10); }
+}
+
+/* ---------- Cabecera ---------- */
+.topbar {
+  flex: none; background: var(--navy); color: #fff;
+  padding: 14px 18px 12px;
+  display: flex; align-items: center; gap: 12px;
+}
+.topbar .logo { display: flex; align-items: baseline; gap: 8px; }
+.topbar .logo b { font-size: 17px; font-weight: 600; letter-spacing: -0.02em; }
+.topbar .logo span { font-size: 11px; opacity: .7; font-weight: 500; letter-spacing: .04em; }
+.topbar .spacer { flex: 1; }
+.iconbtn {
+  width: 34px; height: 34px; border-radius: var(--r-pill);
+  display: grid; place-items: center; background: rgba(255,255,255,.10);
+}
+.iconbtn:active { background: rgba(255,255,255,.2); }
+.iconbtn svg { width: 17px; height: 17px; fill: none; stroke: #fff; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+
+.avatar {
+  width: 32px; height: 32px; border-radius: var(--r-pill);
+  background: var(--gold); color: var(--navy);
+  display: grid; place-items: center;
+  font-size: 12px; font-weight: 700; letter-spacing: .02em;
+}
+
+/* ---------- Hilo de chat ---------- */
+.thread {
+  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 18px 16px 12px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+
+.msg { max-width: 84%; }
+.msg.asesor { align-self: flex-start; }
+.msg.yo { align-self: flex-end; }
+
+.burbuja {
+  padding: 12px 15px; border-radius: var(--r-card);
+  font-size: 15px; line-height: 1.48;
+}
+.asesor .burbuja {
+  background: var(--white);
+  border-bottom-left-radius: 6px;
+  border: 1px solid var(--line);
+}
+.yo .burbuja {
+  background: var(--navy); color: #fff;
+  border-bottom-right-radius: 6px;
+}
+.burbuja b { font-weight: 600; }
+.burbuja .cifra { font-weight: 600; color: var(--navy); }
+.yo .burbuja .cifra { color: var(--gold); }
+
+/* Indicador de "está escribiendo" */
+.typing { display: flex; gap: 4px; padding: 14px 16px; }
+.typing i {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3);
+  animation: latido 1.3s infinite ease-in-out;
+}
+.typing i:nth-child(2) { animation-delay: .18s; }
+.typing i:nth-child(3) { animation-delay: .36s; }
+@keyframes latido { 0%,60%,100% { opacity:.3; transform:translateY(0) } 30% { opacity:1; transform:translateY(-3px) } }
+
+/* ---------- Chips de contexto (confirmación sutil) ---------- */
+.contexto {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 2px 4px 0;
+}
+.contexto .chip {
+  font-size: 12px; font-weight: 500;
+  padding: 5px 10px; border-radius: var(--r-pill);
+  background: var(--surface-azul); color: var(--navy);
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.contexto .chip svg { width: 11px; height: 11px; stroke: var(--green); stroke-width: 2.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- Tarjeta de resultado dentro del chat ---------- */
+.resultado {
+  align-self: stretch; max-width: 100%;
+  background: var(--white); border: 1px solid var(--line);
+  border-radius: var(--r-card); overflow: hidden;
+}
+.resultado .cabeza {
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 8px;
+}
+.resultado .cabeza .punto { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); flex: none; }
+.resultado .cabeza h4 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .01em; }
+
+.cifra-grande { padding: 16px; }
+.cifra-grande .num {
+  font-size: 34px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+.cifra-grande .et { font-size: 13px; color: var(--ink-2); margin-top: 3px; }
+.cifra-grande .delta { font-size: 13px; font-weight: 500; color: var(--green); margin-top: 6px; display: flex; align-items: center; gap: 4px; }
+.cifra-grande .delta svg { width: 13px; height: 13px; stroke: var(--green); stroke-width: 2.4; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Rejilla de KPIs */
+.kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); }
+.kpi { background: var(--white); padding: 13px 16px; }
+.kpi .n { font-size: 19px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.kpi .l { font-size: 11.5px; color: var(--ink-2); margin-top: 1px; }
+.kpi .n.rojo { color: var(--danger); }
+.kpi .n.verde { color: var(--green); }
+
+/* Gráficos */
+.gfx { padding: 16px; border-top: 1px solid var(--line); }
+.gfx .titulo {
+  font-size: 12px; font-weight: 600; color: var(--ink-2);
+  margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;
+}
+.gfx .titulo span { font-weight: 400; color: var(--ink-3); font-size: 11px; }
+
+/* Donut */
+.donut-wrap { display: flex; align-items: center; gap: 16px; }
+.donut { width: 104px; height: 104px; flex: none; }
+.leyenda { display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; min-width: 0; }
+.leyenda div { display: flex; align-items: center; gap: 7px; }
+.leyenda i { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+.leyenda span { color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.leyenda b { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Barras horizontales */
+.bars { display: flex; flex-direction: column; gap: 10px; }
+.bar-fila { font-size: 12.5px; }
+.bar-fila .top { display: flex; justify-content: space-between; margin-bottom: 5px; }
+.bar-fila .top span { color: var(--ink-2); }
+.bar-fila .top b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.bar-fila .pista { height: 7px; border-radius: var(--r-pill); background: var(--surface); overflow: hidden; }
+.bar-fila .pista i { display: block; height: 100%; border-radius: var(--r-pill); }
+
+/* Curva de caja */
+.spark { width: 100%; height: 92px; display: block; }
+
+/* Hallazgos */
+.hallazgos { padding: 4px 16px 16px; display: flex; flex-direction: column; gap: 9px; }
+.hallazgo { display: flex; gap: 9px; font-size: 13px; line-height: 1.45; }
+.hallazgo .pt { width: 6px; height: 6px; border-radius: 50%; margin-top: 6px; flex: none; background: var(--gold); }
+.hallazgo b { font-weight: 600; }
+
+/* ---------- Barra de entrada ---------- */
+.composer {
+  flex: none; background: rgba(255,255,255,.92);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--line);
+  padding: 10px 14px calc(10px + var(--safe-b));
+}
+.composer .fila { display: flex; align-items: flex-end; gap: 9px; }
+.composer textarea {
+  flex: 1; border: 1px solid var(--line); background: var(--surface);
+  border-radius: var(--r-md); padding: 11px 14px;
+  font-size: 15px; resize: none; min-height: 44px; max-height: 120px;
+  outline: none; line-height: 1.4;
+}
+.composer textarea:focus { border-color: var(--navy); background: var(--white); }
+.enviar {
+  width: 44px; height: 44px; border-radius: var(--r-pill); flex: none;
+  background: var(--gold); display: grid; place-items: center;
+}
+.enviar svg { width: 18px; height: 18px; fill: var(--navy); }
+
+/* Sugerencias */
+.sugerencias { display: flex; gap: 7px; overflow-x: auto; padding: 0 0 9px; scrollbar-width: none; }
+.sugerencias::-webkit-scrollbar { display: none; }
+.sugerencias button {
+  flex: none; font-size: 13px; font-weight: 500;
+  padding: 8px 13px; border-radius: var(--r-pill);
+  background: var(--surface-azul); color: var(--navy);
+  white-space: nowrap;
+}
+.sugerencias button:active { background: var(--navy); color: #fff; }
+
+/* ---------- Barra inferior (navegación de app) ---------- */
+.tabbar {
+  flex: none; height: calc(var(--nav-h) + var(--safe-b));
+  padding-bottom: var(--safe-b);
+  background: rgba(255,255,255,.94); backdrop-filter: blur(14px);
+  border-top: 1px solid var(--line);
+  display: grid; grid-template-columns: repeat(4, 1fr); align-items: center;
+}
+.tab {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  font-size: 10.5px; font-weight: 500; color: var(--ink-3);
+  padding: 6px 0 4px; height: 100%; justify-content: center;
+}
+.tab svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.tab.activo { color: var(--navy); }
+.tab.activo svg { stroke-width: 2.1; }
+
+/* ---------- Vistas ---------- */
+.vista { display: none; flex: 1; flex-direction: column; overflow-y: auto; }
+.vista.activa { display: flex; }
+
+/* Vista resumen */
+.resumen { padding: 16px 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+.resumen h2 { margin: 4px 0 2px; font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
+.resumen .sub { color: var(--ink-2); font-size: 13.5px; margin-bottom: 4px; }
+.panel {
+  background: var(--white); border: 1px solid var(--line);
+  border-radius: var(--r-card); overflow: hidden;
+}
+.panel .pt { padding: 14px 16px 12px; border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 600; }
+.panel .cuerpo { padding: 16px; }
+
+/* Vista perfil */
+.perfil { padding: 20px 16px; display: flex; flex-direction: column; gap: 12px; }
+.perfil .cab { display: flex; align-items: center; gap: 14px; padding: 6px 0 10px; }
+.perfil .cab .avatar { width: 54px; height: 54px; font-size: 18px; }
+.perfil .cab h3 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.02em; }
+.perfil .cab p { margin: 2px 0 0; font-size: 13px; color: var(--ink-2); }
+.fila-dato {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 13px 16px; border-bottom: 1px solid var(--line); font-size: 14.5px;
+}
+.fila-dato:last-child { border-bottom: 0; }
+.fila-dato .l { color: var(--ink-2); }
+.fila-dato .v { font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* Estados vacíos / placeholders */
+.vacio { padding: 40px 24px; text-align: center; color: var(--ink-3); font-size: 14px; }
+.vacio svg { width: 44px; height: 44px; stroke: var(--line); stroke-width: 1.5; fill: none; margin-bottom: 12px; }
+
+
+/* ---------- Subir / arrastrar extracto ---------- */
+.adjunto {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 14px; border-radius: var(--r-md);
+  background: var(--surface-azul); color: var(--navy);
+  font-size: 13.5px; margin: 0 4px;
+}
+.adjunto .ic { width: 32px; height: 32px; border-radius: var(--r-sm); background: #fff; display: grid; place-items: center; flex: none; }
+.adjunto .ic svg { width: 16px; height: 16px; fill: none; stroke: var(--navy); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.adjunto .txt { min-width: 0; flex: 1; }
+.adjunto .txt b { display: block; font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.adjunto .txt span { font-size: 11.5px; color: var(--navy-2); opacity: .8; }
+.adjunto .quitar { width: 26px; height: 26px; border-radius: var(--r-pill); display: grid; place-items: center; flex: none; }
+.adjunto .quitar svg { width: 13px; height: 13px; stroke: var(--navy); stroke-width: 2.2; fill: none; stroke-linecap: round; }
+
+/* Boton "+" para adjuntar */
+.adherir {
+  width: 44px; height: 44px; border-radius: var(--r-pill); flex: none;
+  background: var(--surface); display: grid; place-items: center;
+}
+.adherir svg { width: 19px; height: 19px; fill: none; stroke: var(--ink-2); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Overlay de arrastre a pantalla completa */
+.drop {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(10,53,80,.86); backdrop-filter: blur(6px);
+  display: none; place-items: center; text-align: center;
+  padding: 32px;
+}
+.drop.visible { display: grid; }
+.drop .caja {
+  border: 2px dashed rgba(241,198,87,.75); border-radius: var(--r-card);
+  padding: 40px 32px; color: #fff; max-width: 320px;
+}
+.drop .caja svg { width: 52px; height: 52px; stroke: var(--gold); fill: none; stroke-width: 1.5; margin-bottom: 14px; }
+.drop .caja b { display: block; font-size: 17px; font-weight: 600; margin-bottom: 6px; }
+.drop .caja span { font-size: 13.5px; opacity: .8; line-height: 1.45; }
+
+/* ---------- Orb de voz (patron UbotPay) ---------- */
+.orb {
+  width: 56px; height: 56px; border-radius: var(--r-pill);
+  background: var(--navy); display: grid; place-items: center;
+  position: relative; flex: none;
+  transition: transform .18s, background .25s;
+}
+.orb svg { width: 23px; height: 23px; fill: none; stroke: #fff; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.orb[data-mode="listening"] { background: var(--navy-2); }
+.orb[data-mode="speaking"]  { background: var(--gold); }
+.orb[data-mode="speaking"] svg { stroke: var(--navy); }
+.orb[data-mode="listening"]::after,
+.orb[data-mode="speaking"]::after {
+  content: ""; position: absolute; inset: -4px; border-radius: var(--r-pill);
+  border: 2px solid currentColor; opacity: .3;
+  animation: aura 1.5s ease-out infinite;
+}
+.orb[data-mode="speaking"]::after { border-color: var(--gold); opacity: .5; }
+@keyframes aura { 0% { transform: scale(.9); opacity:.5 } 100% { transform: scale(1.25); opacity:0 } }
+
+/* Medidor de nivel */
+.medidor { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--ink-3); padding: 0 2px 8px; }
+.medidor .barra { flex: 1; height: 3px; border-radius: var(--r-pill); background: var(--line); overflow: hidden; }
+.medidor .barra i { display: block; height: 100%; width: 0%; background: var(--gold); transition: width .08s linear; }
+.medidor.activo { color: var(--navy); }
+
+/* ---------- Anotaciones de maqueta ---------- */
+.nota {
+  position: fixed; top: 10px; right: 10px; z-index: 50;
+  background: var(--ink); color: #fff; font-size: 11px; font-weight: 500;
+  padding: 7px 11px; border-radius: var(--r-pill); opacity: .9;
+  display: flex; align-items: center; gap: 6px;
+}
+.nota i { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); }
+@media (max-width: 700px) { .nota { display: none; } }
+</style>
+</head>
+<body>
+
+<div class="nota"><i></i> MAQUETA — sin backend</div>
+
+<!-- Selector de ficheros (oculto). Va antes del script: si no, el JS
+     lo busca cuando todavia no existe. -->
+<input type="file" id="fichero" accept=".csv,.txt,.xlsx,.xls" hidden>
+
+<div class="app">
+
+  <!-- ══════════ CABECERA ══════════ -->
+  <header class="topbar">
+    <div class="logo">
+      <b>PlanificAND</b><span>MoraBanc</span>
+    </div>
+    <div class="spacer"></div>
+    <button class="iconbtn" aria-label="Cambiar idioma">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 2.5 15.3 0 18M12 3c-2.5 2.7-2.5 15.3 0 18"/></svg>
+    </button>
+    <div class="avatar">PA</div>
+  </header>
+
+  <!-- ══════════ VISTA: ASESOR (chat) ══════════ -->
+  <section class="vista activa" id="vistaAsesor">
+    <div class="thread" id="thread">
+
+      <div class="msg asesor">
+        <div class="burbuja">
+          Hola Pedro, soy tu asesor financiero de MoraBanc.<br><br>
+          Voy a hacerte unas preguntas y con lo que me digas calculo tu
+          CASS, tu IRPF y cómo va tu caja. <b>¿Cuánto ganas al año después de gastos?</b>
+        </div>
+      </div>
+
+      <div class="msg yo">
+        <div class="burbuja">Facturo <span class="cifra">30.000</span> al año</div>
+      </div>
+
+      <div class="msg asesor">
+        <div class="burbuja">Perfecto. ¿Y cuánto te queda en la cuenta ahora mismo?</div>
+      </div>
+
+      <div class="msg yo">
+        <div class="burbuja">Tengo <span class="cifra">8.500</span> euros</div>
+      </div>
+
+      <div class="msg asesor">
+        <div class="burbuja">
+          Con eso tengo lo esencial. Un último dato: ¿qué margen te queda
+          sobre lo que facturas?
+        </div>
+      </div>
+
+      <div class="msg yo">
+        <div class="burbuja">Un 70%</div>
+      </div>
+
+      <!-- Chips: confirmación sutil de lo capturado -->
+      <div class="contexto">
+        <span class="chip"><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg> Renta 30.000 €</span>
+        <span class="chip"><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg> Margen 70 %</span>
+        <span class="chip"><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg> Saldo 8.500 €</span>
+      </div>
+
+      <!-- Tarjeta de resultado DENTRO del chat -->
+      <div class="msg asesor" style="max-width:100%">
+        <div class="burbuja" style="margin-bottom:8px">
+          Listo, ya tengo lo que necesito. Aquí va:
+        </div>
+
+        <div class="resultado">
+          <div class="cabeza">
+            <span class="punto"></span>
+            <h4>Tu CASS de 2026</h4>
+          </div>
+
+          <div class="cifra-grande">
+            <div class="num">8.819,28 €</div>
+            <div class="et">cuota anual · tramo 125 %</div>
+            <div class="delta">
+              <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+              734,94 € al mes
+            </div>
+          </div>
+
+          <div class="kpis">
+            <div class="kpi">
+              <div class="n">587,95 €</div>
+              <div class="l">CASS mensual</div>
+            </div>
+            <div class="kpi">
+              <div class="n verde">127,96 €</div>
+              <div class="l">recuperable al mes</div>
+            </div>
+            <div class="kpi">
+              <div class="n rojo">-2.140 €</div>
+              <div class="l">peor mes de caja</div>
+            </div>
+            <div class="kpi">
+              <div class="n">3,2 meses</div>
+              <div class="l">colchón de caja</div>
+            </div>
+          </div>
+
+          <!-- Donut -->
+          <div class="gfx">
+            <div class="titulo">Reparto de tus ingresos <span>12 meses</span></div>
+            <div class="donut-wrap">
+              <svg class="donut" viewBox="0 0 42 42">
+                <circle cx="21" cy="21" r="15.915" fill="none" stroke="#e6e9ec" stroke-width="6"/>
+                <circle cx="21" cy="21" r="15.915" fill="none" stroke="#00a87e" stroke-width="6"
+                        stroke-dasharray="52 48" stroke-dashoffset="25"/>
+                <circle cx="21" cy="21" r="15.915" fill="none" stroke="#494fdf" stroke-width="6"
+                        stroke-dasharray="26 74" stroke-dashoffset="-27"/>
+                <circle cx="21" cy="21" r="15.915" fill="none" stroke="#ec7e00" stroke-width="6"
+                        stroke-dasharray="14 86" stroke-dashoffset="-53"/>
+                <circle cx="21" cy="21" r="15.915" fill="none" stroke="#e23b4a" stroke-width="6"
+                        stroke-dasharray="8 92" stroke-dashoffset="-67"/>
+              </svg>
+              <div class="leyenda">
+                <div><i style="background:#00a87e"></i><span>Servicios</span><b>52 %</b></div>
+                <div><i style="background:#494fdf"></i><span>Subcontratas</span><b>26 %</b></div>
+                <div><i style="background:#ec7e00"></i><span>Material</span><b>14 %</b></div>
+                <div><i style="background:#e23b4a"></i><span>Otros</span><b>8 %</b></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Curva de caja -->
+          <div class="gfx">
+            <div class="titulo">Tu caja mes a mes <span>enero → diciembre</span></div>
+            <svg class="spark" viewBox="0 0 320 92" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#00a87e" stop-opacity=".22"/>
+                  <stop offset="100%" stop-color="#00a87e" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <line x1="0" y1="58" x2="320" y2="58" stroke="#e23b4a" stroke-width="1" stroke-dasharray="3 3" opacity=".5"/>
+              <path d="M0,26 L29,22 L58,31 L87,28 L116,42 L145,46 L174,55 L203,52 L232,63 L261,59 L290,68 L320,64"
+                    fill="none" stroke="#00a87e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M0,26 L29,22 L58,31 L87,28 L116,42 L145,46 L174,55 L203,52 L232,63 L261,59 L290,68 L320,64 L320,92 L0,92 Z"
+                    fill="url(#g)"/>
+              <circle cx="116" cy="42" r="3.4" fill="#fff" stroke="#00a87e" stroke-width="2"/>
+            </svg>
+            <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-3);margin-top:5px">
+              <span>ene</span><span>abr</span><span>jul</span><span>oct</span><span>dic</span>
+            </div>
+          </div>
+
+          <!-- Hallazgos -->
+          <div class="hallazgos">
+            <div class="hallazgo"><span class="pt"></span><div><b>5 fugas en tu cuenta.</b> Recuperas 127,96 €/mes sin facturar un euro más.</div></div>
+            <div class="hallazgo"><span class="pt"></span><div><b>Tu colchón es de 3,2 meses.</b> En invierno baja a 2,4: conviene anticipar.</div></div>
+            <div class="hallazgo"><span class="pt"></span><div><b>Tramo 125 % de CASS.</b> Bajar 2.000 € de renta te ahorraría 402 €/año.</div></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Entrada -->
+    <div class="composer">
+      <div class="sugerencias">
+        <button>¿Y si subo mi precio un 10%?</button>
+        <button>¿Cuándo me sale mejor contratar?</button>
+        <button>Repíteme el CASS</button>
+      </div>
+      <div class="medidor" id="medidor">
+        <span id="medidorTexto">Toca el micro para hablar</span>
+        <span class="barra"><i id="medidorBarra"></i></span>
+      </div>
+      <div class="fila">
+        <button class="adherir" id="adherir" aria-label="Adjuntar extracto">
+          <svg viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+        </button>
+        <textarea id="entrada" rows="1" placeholder="Escribe o habla…"></textarea>
+        <button class="orb" id="orb" data-mode="idle" aria-label="Hablar con el asesor">
+          <svg viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0014 0v-1M12 18v4M8 22h8"/></svg>
+        </button>
+        <button class="enviar" aria-label="Enviar">
+          <svg viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-2.5-6.5L4 12z"/></svg>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ VISTA: RESUMEN ══════════ -->
+  <section class="vista" id="vistaResumen">
+    <div class="resumen">
+      <h2>Tu situación</h2>
+      <div class="sub">Actualizado a 7 nov 2026 · freelance de servicios</div>
+
+      <div class="panel">
+        <div class="cifra-grande" style="padding:20px 18px">
+          <div class="num">8.819,28 €</div>
+          <div class="et">CASS anual 2026 · tramo 125 %</div>
+        </div>
+        <div class="kpis">
+          <div class="kpi"><div class="n">30.000 €</div><div class="l">renta neta</div></div>
+          <div class="kpi"><div class="n">70 %</div><div class="l">margen</div></div>
+          <div class="kpi"><div class="n">8.500 €</div><div class="l">saldo actual</div></div>
+          <div class="kpi"><div class="n verde">127,96 €</div><div class="l">recuperable/mes</div></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="pt">Reparto de ingresos</div>
+        <div class="cuerpo">
+          <div class="donut-wrap">
+            <svg class="donut" viewBox="0 0 42 42">
+              <circle cx="21" cy="21" r="15.915" fill="none" stroke="#e6e9ec" stroke-width="6"/>
+              <circle cx="21" cy="21" r="15.915" fill="none" stroke="#00a87e" stroke-width="6" stroke-dasharray="52 48" stroke-dashoffset="25"/>
+              <circle cx="21" cy="21" r="15.915" fill="none" stroke="#494fdf" stroke-width="6" stroke-dasharray="26 74" stroke-dashoffset="-27"/>
+              <circle cx="21" cy="21" r="15.915" fill="none" stroke="#ec7e00" stroke-width="6" stroke-dasharray="14 86" stroke-dashoffset="-53"/>
+              <circle cx="21" cy="21" r="15.915" fill="none" stroke="#e23b4a" stroke-width="6" stroke-dasharray="8 92" stroke-dashoffset="-67"/>
+            </svg>
+            <div class="leyenda">
+              <div><i style="background:#00a87e"></i><span>Servicios</span><b>52 %</b></div>
+              <div><i style="background:#494fdf"></i><span>Subcontratas</span><b>26 %</b></div>
+              <div><i style="background:#ec7e00"></i><span>Material</span><b>14 %</b></div>
+              <div><i style="background:#e23b4a"></i><span>Otros</span><b>8 %</b></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="pt">Gastos por categoría</div>
+        <div class="cuerpo">
+          <div class="bars">
+            <div class="bar-fila">
+              <div class="top"><span>Alquiler y suministros</span><b>1.850 €</b></div>
+              <div class="pista"><i style="width:74%;background:#e23b4a"></i></div>
+            </div>
+            <div class="bar-fila">
+              <div class="top"><span>Material y subcontratas</span><b>1.240 €</b></div>
+              <div class="pista"><i style="width:50%;background:#ec7e00"></i></div>
+            </div>
+            <div class="bar-fila">
+              <div class="top"><span>Software y servicios</span><b>680 €</b></div>
+              <div class="pista"><i style="width:27%;background:#494fdf"></i></div>
+            </div>
+            <div class="bar-fila">
+              <div class="top"><span>Impuestos y CASS</span><b>735 €</b></div>
+              <div class="pista"><i style="width:29%;background:#00a87e"></i></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="pt">Caja mes a mes</div>
+        <div class="cuerpo">
+          <svg class="spark" viewBox="0 0 320 92" preserveAspectRatio="none" style="height:120px">
+            <defs>
+              <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#00a87e" stop-opacity=".22"/>
+                <stop offset="100%" stop-color="#00a87e" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <line x1="0" y1="58" x2="320" y2="58" stroke="#e23b4a" stroke-width="1" stroke-dasharray="3 3" opacity=".5"/>
+            <path d="M0,26 L29,22 L58,31 L87,28 L116,42 L145,46 L174,55 L203,52 L232,63 L261,59 L290,68 L320,64"
+                  fill="none" stroke="#00a87e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M0,26 L29,22 L58,31 L87,28 L116,42 L145,46 L174,55 L203,52 L232,63 L261,59 L290,68 L320,64 L320,92 L0,92 Z" fill="url(#g2)"/>
+          </svg>
+          <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-3);margin-top:6px">
+            <span>ene</span><span>abr</span><span>jul</span><span>oct</span><span>dic</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ VISTA: EXTRACTO ══════════ -->
+  <section class="vista" id="vistaExtracto">
+    <div class="resumen">
+      <h2>Movimientos</h2>
+      <div class="sub">12 movimientos · enero a diciembre 2026</div>
+      <div class="panel">
+        <div class="fila-dato"><span class="l">Ingresos</span><span class="v" style="color:var(--green)">+ 30.000 €</span></div>
+        <div class="fila-dato"><span class="l">Gastos</span><span class="v" style="color:var(--danger)">- 21.500 €</span></div>
+        <div class="fila-dato"><span class="l">Resultado</span><span class="v">+ 8.500 €</span></div>
+      </div>
+      <div class="vacio">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>
+        Aquí aparecerán los movimientos de tu extracto cuando subas el CSV
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ VISTA: PERFIL ══════════ -->
+  <section class="vista" id="vistaPerfil">
+    <div class="perfil">
+      <div class="cab">
+        <div class="avatar">PA</div>
+        <div>
+          <h3>Pedro Andre Miranda Gomez</h3>
+          <p>12TJ28 · Freelance de servicios</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="fila-dato"><span class="l">Renta neta anual</span><span class="v">30.000 €</span></div>
+        <div class="fila-dato"><span class="l">Margen</span><span class="v">70 %</span></div>
+        <div class="fila-dato"><span class="l">Saldo actual</span><span class="v">8.500 €</span></div>
+        <div class="fila-dato"><span class="l">Actividad</span><span class="v">Freelance de servicios</span></div>
+      </div>
+
+      <div class="panel">
+        <div class="pt">Editar con el asesor</div>
+        <div class="cuerpo" style="font-size:13.5px;color:var(--ink-2);line-height:1.5">
+          Di «cambia mi renta a 35.000» y el asesor lo actualiza solo.
+          O vuelve a empezar la conversación.
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="fila-dato"><span class="l">Idioma</span><span class="v">Español</span></div>
+        <div class="fila-dato"><span class="l">Notificaciones</span><span class="v">Activadas</span></div>
+        <div class="fila-dato"><span class="l">Privacidad</span><span class="v">Tus datos no se comparten</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ NAVEGACIÓN ══════════ -->
+  <nav class="tabbar">
+    <button class="tab activo" data-vista="vistaAsesor">
+      <svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
+      <span>Asesor</span>
+    </button>
+    <button class="tab" data-vista="vistaResumen">
+      <svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 16l4-6 4 3 5-8"/></svg>
+      <span>Resumen</span>
+    </button>
+    <button class="tab" data-vista="vistaExtracto">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>
+      <span>Extracto</span>
+    </button>
+    <button class="tab" data-vista="vistaPerfil">
+      <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <span>Perfil</span>
+    </button>
+  </nav>
+
+</div>
+
+<script>
+// ---- Mock de conversacion (solo maqueta) --------------------------
+// Al enviar, el asesor responde con una animacion de "escribiendo" y
+// un mensaje. Sirve para ver como se siente la interaccion.
+var thread = document.getElementById('thread');
+var entrada = document.getElementById('entrada');
+
+function añadirMensaje(texto, quien) {
+  var d = document.createElement('div');
+  d.className = 'msg ' + quien;
+  var b = document.createElement('div');
+  b.className = 'burbuja';
+  b.innerHTML = texto;
+  d.appendChild(b);
+  thread.appendChild(d);
+  thread.scrollTop = thread.scrollHeight;
+  return d;
+}
+
+function añadirEscribiendo() {
+  var d = document.createElement('div');
+  d.className = 'msg asesor';
+  d.innerHTML = '<div class="burbuja typing"><i></i><i></i><i></i></div>';
+  thread.appendChild(d);
+  thread.scrollTop = thread.scrollHeight;
+  return d;
+}
+
+function responder(texto) {
+  var t = añadirEscribiendo();
+  setTimeout(function(){
+    t.remove();
+    añadirMensaje(texto, 'asesor');
+  }, 1100);
+}
+
+function enviar() {
+  var v = entrada.value.trim();
+  if (!v) return;
+  añadirMensaje(v.replace(/</g,'&lt;'), 'yo');
+  entrada.value = '';
+  entrada.style.height = 'auto';
+
+  // Respuesta contextual (mock)
+  var t = v.toLowerCase();
+  if (t.indexOf('precio') >= 0 || t.indexOf('subir') >= 0) {
+    responder('Si subes tu precio un 10 %, tu margen pasa de <b>70 %</b> a <b>72 %</b> y la CASS no cambia (depende de la renta neta). <b>Son 3.000 € más al año</b> sin trabajar un día más.');
+  } else if (t.indexOf('contratar') >= 0) {
+    responder('Con un colchón de <b>3,2 meses</b>, contratar antes de enero es viable: entra en vigor en enero y lo amortizas en 8 meses.');
+  } else {
+    responder('Tu CASS de este año es de <b>8.819,28 €</b> (tramo 125 %). ¿Quieres que mire el detalle de tu caja mes a mes?');
+  }
+}
+
+document.querySelector('.enviar').addEventListener('click', enviar);
+entrada.addEventListener('keydown', function(e){
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar(); }
+});
+
+// Sugerencias
+document.querySelectorAll('.sugerencias button').forEach(function(b){
+  b.addEventListener('click', function(){
+    entrada.value = b.textContent;
+    enviar();
+  });
+});
+
+
+// ═══════════════════════════════════════════════════════════
+//  Adjuntar extracto: click o arrastrar
+// ═══════════════════════════════════════════════════════════
+var drop = document.getElementById('drop');
+var fichero = document.getElementById('fichero');
+
+document.getElementById('adherir').addEventListener('click', function(){ fichero.click(); });
+
+fichero.addEventListener('change', function(e){
+  if (e.target.files && e.target.files[0]) procesarArchivo(e.target.files[0]);
+});
+
+// Arrastrar y soltar sobre toda la pagina
+var dragDepth = 0;
+window.addEventListener('dragenter', function(e){
+  if (!e.dataTransfer || Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') < 0) return;
+  e.preventDefault();
+  dragDepth++;
+  drop.classList.add('visible');
+});
+window.addEventListener('dragover', function(e){
+  if (!e.dataTransfer) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+});
+window.addEventListener('dragleave', function(e){
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) drop.classList.remove('visible');
+});
+window.addEventListener('drop', function(e){
+  e.preventDefault();
+  dragDepth = 0;
+  drop.classList.remove('visible');
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+    procesarArchivo(e.dataTransfer.files[0]);
+  }
+});
+
+function procesarArchivo(f){
+  var kb = Math.round(f.size / 1024);
+  var esCSV = /\.csv$/i.test(f.name);
+
+  // Tarjeta del fichero adjunto en el hilo
+  var d = document.createElement('div');
+  d.className = 'msg yo';
+  d.style.maxWidth = '100%';
+  d.innerHTML = '<div class="adjunto">' +
+    '<span class="ic"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg></span>' +
+    '<span class="txt"><b>' + f.name.replace(/</g,'&lt;') + '</b>' +
+    '<span>' + (kb > 1024 ? (kb/1024).toFixed(1) + ' MB' : kb + ' KB') + ' · procesando…</span></span>' +
+    '<span class="quitar" role="button"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></span>' +
+    '</div>';
+  thread.appendChild(d);
+  thread.scrollTop = thread.scrollHeight;
+
+  setTimeout(function(){
+    d.querySelector('.txt span').textContent = esCSV
+      ? (kb > 1024 ? (kb/1024).toFixed(1) + ' MB' : kb + ' KB') + ' · 248 movimientos'
+      : (kb > 1024 ? (kb/1024).toFixed(1) + ' MB' : kb + ' KB') + ' · leído';
+    d.querySelector('.quitar').addEventListener('click', function(){ d.remove(); });
+    responder('He leido tu extracto: <b>248 movimientos</b> entre enero y diciembre. Veo <b>5 fugas</b> en la cuenta que suman <b>127,96 €/mes</b>. ¿Quieres que mire la CASS o prefieres ver primero el detalle?');
+  }, 1400);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Orb de voz (patron UbotPay: Conversation + WebRTC)
+// ═══════════════════════════════════════════════════════════
+var orb = document.getElementById('orb');
+var medidor = document.getElementById('medidor');
+var medidorBarra = document.getElementById('medidorBarra');
+var medidorTexto = document.getElementById('medidorTexto');
+var nivel = 0, raf = null, conv = null;
+
+orb.addEventListener('click', function(){
+  if (conv) { pararVoz(); return; }
+  arrancarVoz();
+});
+
+function arrancarVoz(){
+  // Aqui va la sesion real de ElevenLabs (Conversation.startSession).
+  // En la maqueta se simula el ciclo listening -> speaking.
+  conv = { simulado: true };
+  orb.dataset.mode = 'listening';
+  medidor.classList.add('activo');
+  medidorTexto.textContent = 'Escuchando…';
+
+  // Medidor de nivel simulado
+  var t0 = Date.now();
+  (function tick(){
+    if (!conv) return;
+    var t = Date.now() - t0;
+    nivel = Math.min(100, Math.max(6, 30 + Math.sin(t / 180) * 26 + Math.random() * 22));
+    medidorBarra.style.width = nivel + '%';
+    raf = requestAnimationFrame(tick);
+  })();
+
+  setTimeout(function(){
+    if (!conv) return;
+    // El asistente responde hablando
+    orb.dataset.mode = 'speaking';
+    medidorTexto.textContent = 'El asesor está hablando…';
+    nivel = 0;
+    medidorBarra.style.width = '0%';
+
+    var d = añadirEscribiendo();
+    setTimeout(function(){
+      d.remove();
+      añadirMensaje('Te escucho. Para empezar: <b>¿cuánto ganas al año después de gastos?</b>', 'asesor');
+    }, 900);
+
+    setTimeout(function(){
+      if (!conv) return;
+      pararVoz();
+      // Y el micro "oyente" recoge la voz del usuario
+      setTimeout(function(){
+        var d2 = añadirEscribiendo();
+        setTimeout(function(){
+          d2.remove();
+          añadirMensaje('Facturo <b>30.000</b> al año', 'yo');
+          var d3 = añadirEscribiendo();
+          setTimeout(function(){
+            d3.remove();
+            añadirMensaje('Perfecto. <b>¿Y cuánto tienes en la cuenta?</b>', 'asesor');
+          }, 1000);
+        }, 1400);
+      }, 600);
+    }, 3200);
+  }, 1800);
+}
+
+function pararVoz(){
+  conv = null;
+  if (raf) cancelAnimationFrame(raf);
+  orb.dataset.mode = 'idle';
+  medidor.classList.remove('activo');
+  medidorTexto.textContent = 'Toca el micro para hablar';
+  medidorBarra.style.width = '0%';
+}
+
+</script>
+
+<!-- Overlay de arrastre (escritorio) -->
+<div class="drop" id="drop">
+  <div class="caja">
+    <svg viewBox="0 0 24 24">
+      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+      <path d="M7 10l5-5 5 5"/><path d="M12 5v13"/>
+    </svg>
+    <b>Suelta tu extracto aqui</b>
+    <span>Procesaré los movimientos en tu navegador.<br>Ningun archivo sale de tu dispositivo.</span>
+  </div>
+</div>
+
+</body>
+</html>
