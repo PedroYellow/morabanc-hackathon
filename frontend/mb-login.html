@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MoraBanc Digital</title>
 <link rel="stylesheet" href="assets/mb-login.css">
+
+
+<script>window.__COGNITO_DOMAIN__="morabanc-hackathon-d-fc90d7df";window.__COGNITO_CLIENT_ID__="6rfhsa6sbqk1hqqqd762inuclu";window.__AWS_REGION__="us-east-1";window.__API_URL__="/api";</script>
 </head>
 <body>
 
@@ -21,14 +24,23 @@
     - Colores: las variables CSS del propio sitio (--darkblue
       #0a3550, --banner-background #114274, gold #f1c657...)
 
-  Los DATOS DE PRUEBA son los que se ven en la captura del portal
-  real: usuario 12TJ28 y la empresa 933845 - PEDRO ANDRE MIRANDA
-  GOMES. Con ellos se entra al portal.
+  El acceso valida contra AWS Cognito (user pool
+  morabanc-hackathon-dev-usuarios). El campo "Usuari" acepta el codigo
+  de empresa (12TJ28) o el email completo.
 
-  Si el usuario es "empresa" (12TJ28), el destino tras el acceso es el
-  portal de empresas CON el asesor financiero integrado. Para
-  comprobar la vista de particulares se puede usar cualquier otro
-  usuario: entonces el asesor aparece en su propia pantalla.
+  Los cuatro usuarios de prueba, todos con la contrasena
+  MoraBanc2026!:
+
+    12TJ28  Freelance de servicios (el caso del pitch)
+    12TJ29  Freelancer que quiere contratar
+    12TJ30  Comercio con tienda
+    12TJ31  El cierre del bucle
+
+  Con 12TJ28 se entra al PORTAL DE EMPRESAS, que es donde vive el
+  asesor financiero integrado. Los demas van al portal de particulares.
+
+  Si Cognito no responde (sin red), el login cae al modo demo con la
+  misma contrasena: el pitch nunca se cae.
 -->
 
 <div class="mb-login" id="loginModal">
@@ -93,6 +105,14 @@
         </div>
 
         <button type="submit" class="mb-submit" id="btnAcceder">Accedir</button>
+
+        <!-- Datos de prueba: el jurado tiene que poder entrar sin
+             pedirle credenciales a nadie. -->
+        <div class="mb-demo-creds">
+          <span class="mb-demo-titulo">Datos de prueba</span>
+          <span class="mb-demo-line">Usuario <b>12TJ28</b> &middot; Contrasenya <b>MoraBanc2026!</b></span>
+          <span class="mb-demo-nota">Tambien: 12TJ29, 12TJ30 y 12TJ31</span>
+        </div>
       </form>
 
       <a href="#" class="mb-forgot" id="linkOlvidado">¿Has olvidado la contraseña?</a>

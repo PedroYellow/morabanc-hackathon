@@ -78,6 +78,22 @@ if not marker:
 s = s.replace(marker.group(0), cfg + "\n" + marker.group(0))
 open(path, "w", encoding="utf-8").write(s)
 print("    config inyectada en index.html")
+
+# El login tambien necesita la config: valida contra Cognito.
+# Sin esto, el login no sabe a que user pool conectarse y cae siempre
+# al modo demo.
+login = "frontend/mb-login.html"
+if os.path.exists(login):
+    t = open(login, encoding="utf-8").read()
+    cfg2 = ('<script>window.__COGNITO_DOMAIN__=%s;'
+            'window.__COGNITO_CLIENT_ID__=%s;'
+            'window.__AWS_REGION__=%s;</script>') % (
+        json.dumps(cognito_domain), json.dumps(cognito_client_id), json.dumps(region))
+    t = re.sub(r"<script>window\.__COGNITO_DOMAIN__=.*?</script>", "", t, flags=re.S)
+    if "</head>" in t:
+        t = t.replace("</head>", cfg2 + "\n</head>", 1)
+        open(login, "w", encoding="utf-8").write(t)
+        print("    config inyectada en mb-login.html")
 PY
   else
     echo "    (terraform aun sin aplicar: el front queda en MODO DEMO)"

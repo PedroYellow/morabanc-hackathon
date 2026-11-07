@@ -562,6 +562,15 @@ resource "aws_iam_role_policy" "api" {
         Action   = ["bedrock:Retrieve", "bedrock:RetrieveAndGenerate"]
         Resource = "*"
       },
+      {
+        # Autenticar contra Cognito en la ruta /login. Solo
+        # admin-initiate-auth (validar usuario y contrasena). No se
+        # permite listar usuarios ni cambiar contrasenas: el front solo
+        # necesita saber si la credencial es correcta.
+        Effect   = "Allow"
+        Action   = ["cognito-idp:AdminInitiateAuth"]
+        Resource = aws_cognito_user_pool.usuarios.arn
+      },
     ]
   })
 }

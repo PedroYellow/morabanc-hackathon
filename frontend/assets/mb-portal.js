@@ -19,7 +19,25 @@
   // Parametros
   // ---------------------------------------------------------------
   var params = new URLSearchParams(window.location.search);
-  var usuario = (params.get("user") || "12TJ28").toUpperCase();
+
+  // El codigo de empresa sale del token de Cognito (preferred_username).
+  // La URL (?user=...) es solo el respaldo para el modo demo: con sesion
+  // iniciada, el token manda, porque es lo que el banco firmo.
+  function codigoDeLaSesion() {
+    try {
+      var t = localStorage.getItem("mb-token");
+      if (!t) return null;
+      var claims = JSON.parse(decodeURIComponent(t.split(".")[1] || "{}"));
+      return claims.preferred_username || null;
+    } catch (e) { return null; }
+  }
+
+  var usuario = (codigoDeLaSesion() ||
+                 params.get("user") ||
+                 (function () {
+                   try { return localStorage.getItem("mb-codigo") || ""; } catch (e) { return ""; }
+                 })() ||
+                 "12TJ28").toUpperCase();
 
   // ---------------------------------------------------------------
   // Escenarios

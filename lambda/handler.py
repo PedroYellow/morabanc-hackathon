@@ -6,6 +6,7 @@ empaquetados en el mismo zip (ver terraform/main.tf, archive_file "motor").
 
 Rutas:
   GET  /salud     -> health check
+  POST /login     -> autentica contra Cognito y devuelve el token
   POST /preguntar  -> pregunta al agente
 
 Formato de entrada de /preguntar:
@@ -66,6 +67,91 @@ def _salud(event, context):
     })
 
 
+def _login(event, context):
+    """Autentica contra el user pool de Cognito y devuelve los tokens.
+
+    Se usa ADMIN_USER_PASSWORD_AUTH porque el app client de Cognito es
+    publico (sin client secret) y el token endpoint rechaza el grant
+    "password" en ese caso. El resultado es el mismo: un id_token
+    firmado por Cognito con los claims del usuario.
+
+    El codigo de empresa (12TJ28) se busca en preferred_username. Si
+    el usuario escribe el codigo, se traduce al email de ese usuario.
+    """
+    try:
+        payload = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "JSON invalido"})
+
+    usuario = str(payload.get("usuario") or "").strip()
+    contrasena = str(payload.get("contrasena") or "")
+    if not usuario or not contrasena:
+        return _resp(400, {"error": "Faltan usuario o contrasena"})
+
+    user_pool_id = os.environ.get("COGNITO_USER_POOL_ID", "")
+    client_id = os.environ.get("COGNITO_CLIENT_ID", "")
+    if not user_pool_id or not client_id:
+        return _resp(503, {"error": "Cognito no configurado"})
+
+    # Los codigos de empresa de prueba se traducen a su email: el pool
+    # esta configurado con UsernameAttributes=['email'].
+    codigos = {
+        "12TJ28": "pedro.andre.miranda@morabanc-demo.ad",
+        "12TJ29": "finanzas.andorradigital@morabanc-demo.ad",
+        "12TJ30": "admin.barnesifils@morabanc-demo.ad",
+        "12TJ31": "finanzas.ceramicacanillo@morabanc-demo.ad",
+    }
+    codigo = usuario.upper()
+    email = codigos.get(codigo)
+    if not email:
+        email = usuario.lower() if "@" in usuario else None
+    if not email:
+        return _resp(401, {"error": "Usuari desconegut"})
+
+    try:
+        import boto3
+
+        cognito = boto3.client("cognito-idp")
+        auth = cognito.admin_initiate_auth(
+            UserPoolId=user_pool_id,
+            ClientId=client_id,
+            AuthFlow="ADMIN_USER_PASSWORD_AUTH",
+            AuthParameters={"USERNAME": email, "PASSWORD": contrasena},
+        )
+    except Exception as e:  # noqa: BLE001
+        print("ERROR login:", str(e), file=sys.stderr)
+        # NotAuthorizedException -> contrasena incorrecta
+        msg = str(e)
+        if "NotAuthorizedException" in msg or "incorrect password" in msg:
+            return _resp(401, {"error": "Contrasenya incorrecta"})
+        if "UserNotFoundException" in msg:
+            return _resp(401, {"error": "Usuari desconegut"})
+        return _resp(500, {"error": "No s'ha pogut autenticar"})
+
+    resultado = auth.get("AuthenticationResult") or {}
+    id_token = resultado.get("IdToken", "")
+    refresh_token = resultado.get("RefreshToken", "")
+
+    claims = {}
+    try:
+        import base64
+
+        parte = id_token.split(".")[1]
+        parte += "=" * (-len(parte) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(parte).decode("utf-8"))
+    except Exception:  # noqa: BLE001
+        pass
+
+    return _resp(200, {
+        "ok": True,
+        "id_token": id_token,
+        "refresh_token": refresh_token,
+        "codigo": claims.get("preferred_username") or codigo,
+        "nombre": claims.get("name") or "",
+        "email": claims.get("email") or email,
+    })
+
+
 def lambda_handler(event, context):
     try:
         ruta = event.get("rawPath") or event.get("resource") or ""
@@ -76,6 +162,11 @@ def lambda_handler(event, context):
 
         if "salud" in ruta or "health" in ruta:
             return _salud(event, context)
+
+        # El login va antes de la validacion de la API key: es el
+        # punto de entrada al sistema y el edge ya anade la clave.
+        if ruta.endswith("/login") or "/login" in ruta:
+            return _login(event, context)
 
         # Defensa en profundidad: el authorizer de API Gateway ya valida la
         # clave, pero si alguien invoca la Lambda directamente (o se cambia

@@ -338,3 +338,18 @@ html, body {
   .mb-login-lead { font-size: 20px; }
   .mb-vk-keys { grid-template-columns: repeat(8, 1fr); }
 }
+
+/* Aviso de datos de prueba */
+.mb-demo-creds {
+  margin-top: 14px; padding: 11px 13px;
+  background: #eef4fa; border: 1px solid #d3e2f0;
+  border-radius: 10px;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.mb-demo-titulo {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .07em;
+  text-transform: uppercase; color: #0a3550;
+}
+.mb-demo-line { font-size: 13px; color: #22496b; }
+.mb-demo-line b { font-weight: 700; color: #0a3550; }
+.mb-demo-nota { font-size: 11.5px; color: #5b7793; }

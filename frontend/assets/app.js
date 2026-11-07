@@ -2146,14 +2146,31 @@
           // lo hubiera escrito, para que la captura de slots sea igual.
           enviar(texto, { voz: true });
         } else if (m.source === "ai") {
-          // La respuesta del agente de voz ya suena: no la duplicamos
-          // en el chat. Solo la registramos en la traza.
+          // La respuesta del agente ya suena por los altavoces, pero
+          // TAMBIEN se escribe en el chat: si el micro esta apagado,
+          // muted, o la sesion se corta, el usuario tiene que poder
+          // leer lo que le han dicho. Ademas el chat es lo que se
+          // captura en el pitch.
           registrarEnTraza(texto);
+          const chat = $("#chatMessages");
+          if (chat) {
+            chat.appendChild(divMsg("asesor", escapar(texto)));
+            chat.scrollTop = chat.scrollHeight;
+          }
         }
       },
       onError: (e) => {
+        const msg = (e && e.message) || e || "";
+        // "audio-capture" lo emite el reconocimiento NATIVO cuando el
+        // navegador no le deja capturar el microfono a la vez que
+        // WebRTC. No es un fallo de esta sesion: si estamos
+        // conectados, el aviso molesta y confunde.
+        if (/audio-capture/i.test(msg) && state.conv) {
+          console.warn("[MoraBanc] aviso de captura del fallback (sesion WebRTC viva)");
+          return;
+        }
         setStatus("error", "Error de voz");
-        aviso("No se pudo conectar la voz: " + escapar((e && e.message) || e));
+        aviso("No se pudo conectar la voz: " + escapar(msg));
       },
     });
   }
@@ -2201,6 +2218,14 @@
 
     rec.onerror = (ev) => {
       const err = ev && ev.error;
+      // Si la sesion de ElevenLabs es la que manda, los errores del
+      // reconocimiento nativo no cuentan: se pisan entre si (el
+      // navegador no deja dos capturas de audio a la vez) y el aviso
+      // que se ve es del fallback, no del camino que esta funcionando.
+      if (state.conv) {
+        state.recogiendo = false;
+        return;
+      }
       if (err === "no-speech") {
         aviso("No he oído nada. Inténtalo de nuevo.");
       } else if (err === "not-allowed" || err === "service-not-allowed") {
