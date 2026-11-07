@@ -57,7 +57,7 @@ s = open(p, encoding="utf-8").read()
 s = re.sub(r"\n?<script>window\.__API_URL__=.*?</script>", "", s, flags=re.S)
 cfg = ('<script>window.__API_URL__=%s;window.__COGNITO_DOMAIN__=%s;'
        'window.__COGNITO_CLIENT_ID__=%s;window.__AWS_REGION__=%s;</script>'
-       % (json.dumps(api_url), json.dumps(""), json.dumps(""), json.dumps("eu-west-1")))
+       % (json.dumps(api_url), json.dumps(""), json.dumps(""), json.dumps("us-east-1")))
 marker = '<script src="assets/app.js"></script>'
 assert marker in s, "no se encontro el marker app.js"
 open(p, "w", encoding="utf-8").write(s.replace(marker, cfg + "\n" + marker))

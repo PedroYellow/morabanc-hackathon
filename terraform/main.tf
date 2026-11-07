@@ -44,9 +44,16 @@ provider "aws" {
 # ---------------------------------------------------------------------------
 
 variable "aws_region" {
-  description = "Region de AWS. Eur-west-1 (Irlanda) por latencia baja desde Andorra."
+  description = <<-EOT
+    Region de AWS.
+
+    OJO: la cuenta del hackathon (WSParticipantRole) tiene una politica
+    "DenyAllOutsideAllowedRegions" que SOLO permite crear recursos en
+    us-east-1. En eu-west-1 todo falla con "not authorized to perform".
+    Por defecto va us-east-1, que es la region de las credenciales.
+  EOT
   type        = string
-  default     = "eu-west-1"
+  default     = "us-east-1"
 }
 
 variable "environment" {
@@ -76,6 +83,12 @@ variable "bedrock_kb_id" {
   description = "Knowledge Base de Bedrock con la normativa andorrana (opcional)."
   type        = string
   default     = ""
+}
+
+variable "enable_kb" {
+  description = "Crear la Knowledge Base de Bedrock + la coleccion de vectores. Requiere permisos de OpenSearch Serverless y Bedrock Agent que la cuenta del workshop no tiene; se puede desactivar para desplegar el resto."
+  type        = bool
+  default     = true
 }
 
 variable "enable_guardrails" {
@@ -331,7 +344,12 @@ data "aws_iam_policy_document" "lambda_exec" {
     sid       = "Logs"
     effect    = "Allow"
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
-    resources = ["${aws_cloudwatch_log_group.lambda.arn}:*"]
+    # Los dos log groups: el del motor y el de la API. Con solo uno, la
+    # otra Lambda falla con "not allowed to be used with Arn ...".
+    resources = [
+      "${aws_cloudwatch_log_group.lambda.arn}:*",
+      "${aws_cloudwatch_log_group.api.arn}:*",
+    ]
   }
 
   statement {
@@ -485,7 +503,7 @@ resource "aws_lambda_function" "api" {
       TABLE_PRINCIPAL = aws_dynamodb_table.principal.name
       ENVIRONMENT     = var.environment
       # La misma clave que valida el authorizer: defensa en profundidad.
-      API_KEY         = random_password.api_key.result
+      API_KEY = random_password.api_key.result
     }
   }
 
@@ -636,7 +654,24 @@ resource "aws_cognito_user_pool" "usuarios" {
     temporary_password_validity_days = 3
   }
 
+  # MFA opcional para el usuario.
+  #
+  # Sin habilitar ningun metodo, el apply falla con "Invalid MFA
+  # Configuration given. SMS MFA, Email MFA, or Software Token MFA must be
+  # enabled": el atributo mfa_configuration = "OPTIONAL" no habilita por si
+  # solo ningun metodo.
+  #
+  # El software token (TOTP) va como bloque hijo DIRECTO del user pool: el
+  # provider no admite un bloque "mfa_configuration { }" aqui, ni existe
+  # un recurso aws_cognito_user_pool_mfa_config.
+  #
+  # El software token es el unico metodo que no cuesta ni manda SMS: el
+  # usuario genera el codigo en su telefono.
   mfa_configuration = "OPTIONAL"
+
+  software_token_mfa_configuration {
+    enabled = true
+  }
 
   account_recovery_setting {
     recovery_mechanism {
@@ -713,7 +748,10 @@ resource "aws_cloudfront_distribution" "web" {
 
   # Origen 2: la API (comportamiento propio, sin cache)
   origin {
-    domain_name = aws_apigatewayv2_api.api.api_endpoint
+    # OJO: api_endpoint viene como "https://xxx.execute-api..." y CloudFront
+    # rechaza el origin si lleva el esquema ("The parameter origin name
+    # cannot contain a colon"). Hay que quitarlo.
+    domain_name = replace(aws_apigatewayv2_api.api.api_endpoint, "https://", "")
     origin_id   = "api-${aws_apigatewayv2_api.api.id}"
 
     custom_origin_config {
@@ -837,6 +875,14 @@ resource "aws_s3_bucket_policy" "front" {
 #  Bedrock Guardrails — bloquea advice financiero no permitido y PII
 # ---------------------------------------------------------------------------
 
+# El Guardrail y la KB son DEFENSAS, no el nucleo: el motor de decision y el
+# RAG (que ya es opcional en el agente) funcionan sin ellos. Se pueden
+# desactivar con enable_guardrails / enable_kb cuando la cuenta no da
+# permisos (la del workshop los deniega explicitamente).
+#
+# NOTA: en cuanto un recurso con count se crea, terraform lo gestiona en el
+# estado. Si el apply falla a mitad por permisos, un reintento con la
+# variable a false lo deja fuera sin romper lo demas.
 resource "aws_bedrock_guardrail" "principal" {
   count = var.enable_guardrails ? 1 : 0
 
@@ -901,11 +947,11 @@ resource "aws_bedrock_guardrail" "principal" {
 # ---------------------------------------------------------------------------
 
 resource "aws_bedrockagent_knowledge_base" "normativa" {
-  count = var.bedrock_kb_id != "" ? 0 : 1
+  count = (var.bedrock_kb_id != "" || !var.enable_kb) ? 0 : 1
 
   name        = "${local.name}-kb"
   description = "Normativa fiscal andorrana (IRPF, IGI, CASS) y productos de MoraBanc"
-  role_arn    = aws_iam_role.bedrock_kb[0].arn
+  role_arn    = one(aws_iam_role.bedrock_kb[*].arn)
 
   # La coleccion de OpenSearch Serverless tarda ~1-2 minutos en estar lista
   # para recibir indices. Si la KB se crea antes, el apply falla con un
@@ -924,7 +970,7 @@ resource "aws_bedrockagent_knowledge_base" "normativa" {
     type = "OPENSEARCH_SERVERLESS"
 
     opensearch_serverless_configuration {
-      collection_arn    = aws_opensearchserverless_collection.vector[0].arn
+      collection_arn    = one(aws_opensearchserverless_collection.vector[*].arn)
       vector_index_name = "default"
 
       field_mapping {
@@ -941,11 +987,11 @@ resource "aws_bedrockagent_knowledge_base" "normativa" {
 # El data source (los PDFs de normativa) va aparte: la KB es el indice,
 # el data source es lo que se ingesta.
 resource "aws_bedrockagent_data_source" "normativa" {
-  count = var.bedrock_kb_id != "" ? 0 : 1
+  count = (var.bedrock_kb_id != "" || !var.enable_kb) ? 0 : 1
 
   name              = "${local.name}-normativa-s3"
   description       = "Normativa fiscal andorrana y productos MoraBanc desde S3"
-  knowledge_base_id = aws_bedrockagent_knowledge_base.normativa[0].id
+  knowledge_base_id = one(aws_bedrockagent_knowledge_base.normativa[*].id)
 
   # ORDEN CRITICO: el data source ingesta de S3, asi que los .md de
   # normativa/ tienen que estar SUBIDOS antes de que se cree. Sin esta
@@ -977,8 +1023,33 @@ resource "aws_bedrockagent_data_source" "normativa" {
   }
 }
 
+# Security policy de OpenSearch Serverless: es OBLIGATORIA. Sin ella, la
+# coleccion falla con "No matching security policy of encryption type found".
+# La politica define una regla de cifrado (AWS KMS) y a quien se aplica.
+resource "aws_opensearchserverless_security_policy" "cifrado" {
+  count = (var.bedrock_kb_id != "" || !var.enable_kb) ? 0 : 1
+
+  name        = "${local.name}-cifrado"
+  description = "Cifrado de la coleccion de vectores con la KMS del proyecto"
+  type        = "encryption"
+
+  policy = jsonencode({
+    Rules = [
+      {
+        ResourceType = "collection"
+        Resource     = ["collection/${local.name}-vector"]
+      },
+      {
+        ResourceType = "dashboard"
+        Resource     = ["collection/${local.name}-vector"]
+      },
+    ]
+    AWSOwnedKey = true
+  })
+}
+
 resource "aws_opensearchserverless_collection" "vector" {
-  count = var.bedrock_kb_id != "" ? 0 : 1
+  count = (var.bedrock_kb_id != "" || !var.enable_kb) ? 0 : 1
 
   name = "${local.name}-vector"
   type = "VECTORSEARCH"
@@ -999,7 +1070,7 @@ data "aws_iam_policy_document" "bedrock_kb_assume" {
 }
 
 resource "aws_iam_role" "bedrock_kb" {
-  count = var.bedrock_kb_id != "" ? 0 : 1
+  count = (var.bedrock_kb_id != "" || !var.enable_kb) ? 0 : 1
 
   name               = "${local.name}-kb-role"
   assume_role_policy = data.aws_iam_policy_document.bedrock_kb_assume.json
@@ -1007,17 +1078,17 @@ resource "aws_iam_role" "bedrock_kb" {
 }
 
 resource "aws_iam_role_policy" "bedrock_kb" {
-  count = var.bedrock_kb_id != "" ? 0 : 1
+  count = (var.bedrock_kb_id != "" || !var.enable_kb) ? 0 : 1
 
   name = "${local.name}-kb-policy"
-  role = aws_iam_role.bedrock_kb[0].id
+  role = one(aws_iam_role.bedrock_kb[*].id)
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
         Effect   = "Allow"
         Action   = ["aoss:APIAccessAll"]
-        Resource = [aws_opensearchserverless_collection.vector[0].arn]
+        Resource = aws_opensearchserverless_collection.vector[*].arn
       },
       {
         Effect   = "Allow"
@@ -1169,12 +1240,6 @@ output "cognito_user_pool_id" {
   value       = aws_cognito_user_pool.usuarios.id
 }
 
-output "api_key" {
-  description = "Clave que el front envia en la cabecera x-api-key"
-  value       = random_password.api_key.result
-  sensitive   = true
-}
-
 output "cognito_client_id" {
   description = "ID del client de Cognito para el front."
   value       = aws_cognito_user_pool_client.web.id
@@ -1202,6 +1267,9 @@ output "guardrail_id" {
 
 output "frontend_url_config" {
   description = "URL a configurar en el front."
+  # Contiene la API key, asi que el output entero es sensitive: terraform no
+  # permite que un output normal referencie un valor sensitive.
+  sensitive = true
   value = jsonencode({
     api_url          = aws_apigatewayv2_stage.api.invoke_url
     cognito_client   = aws_cognito_user_pool_client.web.id

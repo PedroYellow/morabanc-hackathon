@@ -130,8 +130,13 @@ check("la API tiene la clave en su entorno",
       "API_KEY" in tf)
 check("la clave se genera con random_password",
       'random_password" "api_key"' in tf)
-check("el output api_key es sensitive",
-      'value       = random_password.api_key.result' in tf and "sensitive   = true" in tf)
+# La key vive dentro del output "frontend_url_config" (que es sensitive por
+# eso). Terraform no permite que un output normal referencie un valor
+# sensitive: por eso el config entero lleva sensitive = true.
+check("el output con la key es sensitive",
+      'output "frontend_url_config"' in tf and "sensitive = true" in tf)
+check("la key se inyecta en el output del front",
+      "api_key = random_password.api_key.result" in tf)
 check("la Lambda del authorizer tiene permiso de invocacion",
       'aws_lambda_permission" "authorizer_api_gateway"' in tf)
 

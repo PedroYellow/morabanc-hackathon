@@ -29,7 +29,7 @@ run_suite() {
   f=$(echo "$out" | grep -cE "^\s+FAIL")
   TOTAL_PASS=$((TOTAL_PASS + p))
   TOTAL_FAIL=$((TOTAL_FAIL + f))
-  if echo "$out" | grep -qE "TODOS LOS TESTS PASAN|LA LAMBDA FUNCIONA|Success! The configuration is valid"; then
+  if echo "$out" | grep -qE "TODOS LOS TESTS( DEL AUTHORIZER)? PASAN|LA LAMBDA FUNCIONA|Success! The configuration is valid"; then
     echo "  ✔ $nombre — $p asserts"
   else
     echo "  ✘ $nombre — $f fallos"

@@ -33,7 +33,7 @@ cfg = json.loads(sys.argv[1])
 print(cfg.get('api_url', ''),
       cfg.get('cognito_domain', ''),
       cfg.get('cognito_client', ''),
-      cfg.get('region', 'eu-west-1'),
+      cfg.get('region', 'us-east-1'),
       cfg.get('api_key', ''))
 " "$CFG_JSON")
 EOF

@@ -108,8 +108,17 @@ if kb_match:
     check("la KB usa el embedding model de Bedrock",
           "embedding_model_arn" in kb_body)
 
-check("la KB se puede desactivar con bedrock_kb_id",
-      'var.bedrock_kb_id != "" ? 0 : 1' in SRC)
+check("la KB se puede desactivar con bedrock_kb_id o con enable_kb",
+      'var.bedrock_kb_id != ""' in SRC and "enable_kb" in SRC)
+check("existe la variable enable_kb", 'variable "enable_kb"' in SRC)
+check("existe la variable enable_guardrails", 'variable "enable_guardrails"' in SRC)
+# Con enable_kb=false los recursos condicionales tienen count=0 y las
+# referencias usan one()/splat: sin eso, el plan falla con "Invalid index".
+check("las referencias a recursos condicionales no usan [0] a secas",
+      not re.search(r'aws_iam_role\.bedrock_kb\[0\]', SRC)
+      and not re.search(r'aws_opensearchserverless_collection\.vector\[0\]', SRC)
+      and not re.search(r'aws_bedrockagent_knowledge_base\.normativa\[0\]', SRC),
+      "con count=0, [0] es un error: hay que usar one() o el splat")
 
 
 # ==========================================================================
@@ -140,10 +149,27 @@ if cognito:
         # El nombre del proyecto por defecto son 24 caracteres.
         nombre_real = "morabanc-hackathon-dev"
         prefijo = f"{nombre_real[:largo_nombre]}-fc90d7df"
-        sufijo = ".auth.eu-west-1.amazoncognito.com"
+        # El sufijo automatico de AWS depende de la region: hay que probar
+        # con la region por defecto del proyecto, no con una fija.
+        region = "us-east-1"
+        m_reg = re.search(r'variable\s+"aws_region"\s*\{.*?default\s*=\s*"([^"]+)"',
+                          SRC, re.S)
+        if m_reg:
+            region = m_reg.group(1)
+        sufijo = f".auth.{region}.amazoncognito.com"
         total = len(prefijo + sufijo)
         check("el dominio de Cognito cabe en el limite de AWS (63)",
               total <= 63, f"{total} caracteres: {prefijo}{sufijo}")
+
+# La region por defecto tiene que ser la que permite la cuenta del hackathon.
+m_region = re.search(r'variable\s+"aws_region"\s*\{.*?default\s*=\s*"([^"]+)"',
+                      SRC, re.S)
+check("la region por defecto es us-east-1", m_region is not None
+      and m_region.group(1) == "us-east-1",
+      m_region.group(1) if m_region else "no encontrada")
+check("el comentario explica el deny por region",
+      "DenyAllOutsideAllowedRegions" in SRC,
+      "la cuenta del hackathon solo permite crear en us-east-1")
 
 s3 = re.search(r'resource\s+"aws_s3_bucket"\s+"datos"\s*\{(.*?)\n\}', SRC, re.S)
 check("existe el bucket de S3", s3 is not None)
@@ -241,6 +267,56 @@ for r in ["aws_kms_key", "aws_s3_bucket", "aws_dynamodb_table",
 
 # ==========================================================================
 print("\n=== 8. OUTPUTS ===")
+
+# ==========================================================================
+# Regresiones de bugs reales encontrados al hacer `terraform apply`
+# Cada una fue un apply fallido en la cuenta del hackathon.
+# ==========================================================================
+
+# BUG 1: CloudFront rechazaba el origin de API Gateway.
+# "The parameter origin name cannot contain a colon" -> api_endpoint viene
+# como "https://xxx.execute-api..." y hay que quitarle el esquema.
+check("el origin de API Gateway no lleva el esquema https://",
+      'replace(aws_apigatewayv2_api.api.api_endpoint, "https://", "")' in SRC,
+      "CloudFront no acepta un origin con ':'")
+
+# BUG 2: Cognito rechazaba el user pool.
+# "Invalid MFA Configuration given. SMS MFA, Email MFA, or Software Token MFA
+# must be enabled" -> hay que habilitar un metodo concreto.
+check("el user pool habilita el software token (TOTP)",
+      "software_token_mfa_configuration" in SRC
+      and re.search(r"software_token_mfa_configuration\s*\{[^}]*enabled\s*=\s*true", SRC, re.S) is not None,
+      "sin un metodo habilitado, Cognito rechaza el pool")
+
+# BUG 3: la policy de IAM de la lambda "api" solo cubria el log group del
+# motor: "not allowed to be used with Arn ...log-group:/aws/lambda/...-api".
+check("la policy de logs cubre los dos log groups",
+      "aws_cloudwatch_log_group.api.arn" in SRC,
+      "la lambda api necesita permisos sobre su propio log group")
+
+# BUG 4: OpenSearch Serverless exige una security policy.
+# "No matching security policy of encryption type found for collection".
+check("hay security policy de OpenSearch Serverless",
+      'resource "aws_opensearchserverless_security_policy"' in SRC)
+check("la security policy es de tipo encryption",
+      re.search(r'aws_opensearchserverless_security_policy"\s+"\w+"\s*\{.*?type\s*=\s*"encryption"', SRC, re.S) is not None)
+
+# La security policy debe existir ANTES que la coleccion (la coleccion la
+# necesita para crearse).
+m_sp = SRC.find('aws_opensearchserverless_security_policy"')
+m_col = SRC.find('aws_opensearchserverless_collection"')
+check("la security policy se declara antes que la coleccion",
+      m_sp != -1 and m_col != -1 and m_sp < m_col,
+      "la coleccion falla si no existe la security policy")
+
+# BUG 5: con count=0, referenciar [0] es un error de plan.
+check("las referencias condicionales no usan [0]",
+      not re.search(r"aws_iam_role\.bedrock_kb\[0\]", SRC)
+      and not re.search(r"aws_opensearchserverless_collection\.vector\[0\]", SRC)
+      and not re.search(r"aws_bedrockagent_knowledge_base\.normativa\[0\]", SRC),
+      "con count=0 el plan falla con 'Invalid index': usar one() o splat")
+
+
 # ==========================================================================
 
 for o in ["api_url", "front_url", "bucket_datos", "guardrail_id",

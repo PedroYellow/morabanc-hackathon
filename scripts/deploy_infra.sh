@@ -20,14 +20,15 @@
 #
 # VARIABLES
 #   AWS_PROFILE / AWS_ACCESS_KEY_ID...   credenciales (las da MoraBanc)
-#   TF_REGION     region (por defecto eu-west-1)
+#   TF_REGION     region (por defecto us-east-1: la cuenta del hackathon
+#                 solo permite crear recursos ahi)
 #   TF_RETRIES    reintentos del apply (por defecto 3)
 set -uo pipefail
 
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$RAIZ/terraform"
 
-REGION="${TF_REGION:-eu-west-1}"
+REGION="${TF_REGION:-us-east-1}"
 RETRIES="${TF_RETRIES:-3}"
 PLAN_ONLY=0
 [ "${1:-}" = "--plan-only" ] && PLAN_ONLY=1
@@ -80,6 +81,9 @@ if ! credenciales_validas; then
   echo "  export AWS_DEFAULT_REGION=$REGION" >&2
   echo "  unset AWS_REGION   # si esta a otra region, pisa el valor" >&2
   echo "" >&2
+  echo "OJO: la cuenta del hackathon solo permite crear en us-east-1." >&2
+  echo "En eu-west-1 todo falla con 'not authorized to perform'." >&2
+  echo "" >&2
   echo "Diagnostico del fallo real:" >&2
   aws sts get-caller-identity 2>&1 | head -4 | sed 's/^/  /' >&2
   exit 2
@@ -125,17 +129,44 @@ fi
 echo ""
 echo "==> terraform apply (hasta $RETRIES intentos)"
 
+# El log del apply se guarda: hace falta para detectar si el fallo es de
+# PERMISOS (falta de permiso en la cuenta) o transitorio (AWS propagando).
+LOG_APPLY=/tmp/morabanc_apply.log
+
 intento=1
 while [ "$intento" -le "$RETRIES" ]; do
   echo ""
   echo "--- Intento $intento/$RETRIES ---"
-  if "$TF" apply -input=false -auto-approve /tmp/morabanc.tfplan 2>&1 | tail -30; then
+  if "$TF" apply -input=false -auto-approve /tmp/morabanc.tfplan 2>&1 | tee "$LOG_APPLY" | tail -30; then
     echo ""
     echo "==> APLICADO"
     break
   fi
   echo ""
   echo "    el apply fallo (intento $intento/$RETRIES)"
+
+  # --- Si el fallo es de permisos, reintentar sin las defensas opcionales --
+  # La cuenta del workshop deniega explicitamente bedrock:TagResource y
+  # aoss:CreateCollection. Guardrail y Knowledge Base son DEFENSAS: el
+  # motor de decision y el RAG (ya opcional en el agente) funcionan sin
+  # ellos. Es preferible desplegar el 90% que no desplegar nada.
+  if grep -qE "not authorized to perform (bedrock:TagResource|aoss:CreateCollection|bedrock:CreateGuardrail)" "$LOG_APPLY" 2>/dev/null; then
+    echo ""
+    echo "    El fallo es de PERMISOS en la cuenta (no de codigo)."
+    echo "    Reintentando sin el Guardrail y la Knowledge Base (opcionales)."
+    echo ""
+    "$TF" plan -input=false -out=/tmp/morabanc.tfplan \
+      -var="enable_guardrails=false" -var="enable_kb=false" >/dev/null 2>&1
+    if "$TF" apply -input=false -auto-approve /tmp/morabanc.tfplan 2>&1 | tee "$LOG_APPLY" | tail -20; then
+      echo ""
+      echo "==> APLICADO (sin Guardrail ni Knowledge Base: la cuenta no da permisos)"
+      echo "    El motor y el RAG siguen funcionando; el RAG es opcional en el agente."
+      break
+    fi
+    echo ""
+    echo "    tambien fallo sin las defensas opcionales."
+  fi
+
   if [ "$intento" -lt "$RETRIES" ]; then
     echo "    esperando 45 s y reintentando (AWS tarda en propagar IAM y OpenSearch)"
     sleep 45
@@ -148,6 +179,10 @@ done
 if [ "$intento" -gt "$RETRIES" ]; then
   echo ""
   echo "ERROR: el apply fallo $RETRIES veces. Ver DEPLOY.md, seccion 'Plan B'." >&2
+  echo "" >&2
+  echo "Lo que suele ser:" >&2
+  grep -E "not authorized to perform|Error:" "$LOG_APPLY" 2>/dev/null | head -5 | sed 's/^/  /' >&2
+  echo "" >&2
   echo "El modo demo local funciona sin AWS: no sacrifiques el motor por el cloud." >&2
   exit 1
 fi
@@ -161,6 +196,15 @@ echo "==> Outputs"
 echo ""
 echo "==> Verificando que la API responde"
 API_URL=$("$TF" output -raw api_url 2>/dev/null || echo "")
+# La API key vive dentro del output "frontend_url_config" (que es sensitive
+# por eso). Se lee de ahi en vez de tener un output aparte.
+API_KEY=$("$TF" output -json frontend_url_config 2>/dev/null | python3 -c "
+import json, sys
+try:
+    print(json.load(sys.stdin).get('api_key', ''))
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
 if [ -n "$API_URL" ]; then
   echo "    API: $API_URL"
   for i in $(seq 1 10); do
