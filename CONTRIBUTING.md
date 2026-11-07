@@ -79,6 +79,7 @@ python3 tests/test_fiscal.py           # motor fiscal
 python3 tests/test_tesoreria.py        # tesoreria y fugas
 python3 tests/test_cierre.py           # bucle de cierre
 python3 tests/test_agente.py           # agente y contrato de herramientas
+python3 tests/test_terraform.py        # orden de creacion y IaC de la infra
 bash scripts/test_lambda.sh            # Lambda empaquetada y ejecutada
 cd terraform && terraform validate     # infra AWS
 node scripts/test_frontend.js http://localhost:8899/   # front en Chromium

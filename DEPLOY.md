@@ -10,30 +10,35 @@ documento se actualizó por última vez el 24 de octubre de 2026.
 
 ---
 
-## TL;DR — Los 5 comandos del día 7
+## TL;DR — Los 4 comandos del día 7
 
 ```bash
 # 1. Instalar Terraform (si no lo tienes)
 #    https://developer.hashicorp.com/terraform/downloads
 
 # 2. Credenciales de AWS que da MoraBanc
-aws configure                       # o: export AWS_PROFILE=morabanc
+export AWS_ACCESS_KEY_ID=...
+export AWS_SECRET_ACCESS_KEY=...
+export AWS_SESSION_TOKEN=...      # si es sesion temporal
+export AWS_DEFAULT_REGION=eu-west-1
 
-# 3. Variables del proyecto
-cd terraform
-terraform init
-terraform apply -auto-approve       # crea TODA la infraestructura
+# 3. Desplegar TODA la infraestructura (init + validate + plan + apply
+#    con reintentos) y publicar el front con la config real
+bash scripts/deploy_infra.sh
 
-# 4. Inyectar la config de la API en el front y publicarlo
-cd ..
-bash scripts/deploy_front.sh
-
-# 5. Comprobar que todo vive
-curl -s https://<api>.execute-api.eu-west-1.amazonaws.com/salud
+# 4. Comprobar que Bedrock responde de verdad (no en mock)
+python3 scripts/test_bedrock_live.py
 ```
+
+Los pasos 3 y 4 cubren: la infra, el front publicado y el agente contra
+Bedrock real (11 herramientas y el número de la respuesta contrastado con el
+del motor).
 
 Si algo falla, **no sigas adelante**: hay un "Plan B" al final de este
 documento (§8) que te da una demo funcional sin AWS.
+
+> **El código ya está en los dos repos** (GitHub maestro y GitLab de
+> MoraBanc). Si se os cae la red, el modo demo local funciona sin AWS.
 
 ---
 
@@ -51,7 +56,7 @@ documento (§8) que te da una demo funcional sin AWS.
 | Corpus normativo para el RAG (5 docs) | **Listo** | Cifras clave verificadas |
 | Front servido desde CloudFront con API real | **Pendiente** | Requiere `terraform apply` |
 
-**316 asserts en verde.** Verificación completa en un comando:
+**389 asserts en verde.** Verificación completa en un comando:
 
 ```bash
 bash scripts/verificar.sh
@@ -117,7 +122,7 @@ cd morabanc_hackathon
 bash scripts/verificar.sh        # que todo sigue verde
 ```
 
-Si algo falla, **para todo el equipo y arregladlo**. Con 316 asserts en verde,
+Si algo falla, **para todo el equipo y arregladlo**. Con 389 asserts en verde,
 un fallo significa que alguien cambió algo.
 
 ### 09:00 — Credenciales
@@ -131,13 +136,25 @@ Lo primero que se pide a MoraBanc (tel. **+376 884 884**):
 > MoraBanc. Si el acceso no llega el día 7, **preguntadlo a primera hora**: es un
 > requisito de descalificación, no un detalle.
 
-### 09:30 — `terraform apply` (Persona 1)
+### 09:30 — Desplegar la infraestructura (Persona 1)
 
 ```bash
-cd terraform
-terraform init
-terraform plan          # LÉELO antes de aplicar
-terraform apply -auto-approve
+bash scripts/deploy_infra.sh
+```
+
+Un comando hace todo: comprueba credenciales → `init` → `validate` → `plan`
+→ `apply` **con 3 reintentos** → verifica que la API responde → publica el
+front con la config real.
+
+Los reintentos no son paranoia: la primera vez, la colección de OpenSearch
+tarda 1-2 minutos en estar lista y el IAM tarda en propagarse. Sin reintentos,
+eso es un `apply` fallido a mitad con la infra a medias y sin tiempo para
+arreglarlo.
+
+Si solo quieres ver qué se va a crear **sin crear nada**:
+
+```bash
+bash scripts/deploy_infra.sh --plan-only
 ```
 
 Qué crea (todo en 4-6 minutos):
@@ -163,6 +180,11 @@ Qué crea (todo en 4-6 minutos):
 terraform output                 # api_url, front_url, cognito_*, bucket_datos, guardrail_id
 terraform output -json frontend_url_config
 ```
+
+> **Si el apply falla 3 veces**, no sigas reintentando a mano: ve al §8 (Plan
+> B). El modo demo local funciona sin AWS y es una demo legítima. Un
+> prototipo local que funciona y explica el insight fiscal gana a un
+> prototipo en AWS que no llega a tiempo.
 
 ### 10:00 — Probar Bedrock en vivo (Persona 1) ← **lo más crítico**
 
@@ -524,4 +546,4 @@ prototipo en AWS que no llega a tiempo.** No sacrifiques el motor por el cloud.
 ---
 
 **Documento preparado el 24 de octubre de 2026.** Estado verificado:
-316 asserts en verde, Terraform validado, front probado en Chromium real.
+389 asserts en verde, Terraform validado, front probado en Chromium real.

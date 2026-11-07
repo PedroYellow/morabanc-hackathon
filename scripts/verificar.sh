@@ -45,6 +45,7 @@ run_suite "Motor fiscal andorrano" "python3 tests/test_fiscal.py"
 run_suite "Motor de tesoreria"    "python3 tests/test_tesoreria.py"
 run_suite "Bucle de cierre"        "python3 tests/test_cierre.py"
 run_suite "Agente de Bedrock"     "python3 tests/test_agente.py"
+run_suite "Terraform (orden y IaC)" "python3 tests/test_terraform.py"
 run_suite "Lambda empaquetada"    "bash scripts/test_lambda.sh"
 
 # El test del frontend necesita Chromium + Playwright. Si no estan, se omite

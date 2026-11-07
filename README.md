@@ -34,13 +34,13 @@ Eso es a la vez la garantía de correctitud y la respuesta al jurado a
 | `engine/cierre.py` | Bucle de cierre: el motor sobre su propio consejo | **46 tests verdes** |
 | `agent/bedrock_agent.py` | Bedrock Converse + tool-use (11 tools) | **69 tests verdes** |
 | `lambda/handler.py` | Handler API (empaquetado y ejecutado de verdad) | **12 checks verdes** |
-| `terraform/main.tf` | Infra AWS 100% IaC + publicacion del front | **`terraform validate` → Success** |
+| `terraform/main.tf` | Infra AWS 100% IaC + publicacion del front | **73 asserts + `terraform validate` → Success** |
 | `frontend/` | App estatica mobile-first (HTML/CSS/JS puro) | **39 asserts en Chromium real** |
 | `frontend/generar_demo_data.py` | Datos demo generados por el motor real | — |
 | `data/generar_demo.py` | 4 perfiles de extracto sintéticos | — |
 | `normativa/generar_corpus.py` | Corpus para el RAG (5 documentos) | verificado |
 
-**316 asserts en verde + Lambda validada + Terraform validado + front tested en navegador real.**
+**389 asserts en verde + Lambda validada + Terraform validado + front tested en navegador real.**
 
 ```
 $ bash scripts/verificar.sh
@@ -48,12 +48,13 @@ $ bash scripts/verificar.sh
   ✔ Motor de tesoreria — 57 asserts
   ✔ Bucle de cierre — 46 asserts
   ✔ Agente de Bedrock — 69 asserts
+  ✔ Terraform (orden y IaC) — 73 asserts
   ✔ Lambda empaquetada — 12 asserts
   ✔ Frontend — 39 asserts
   ✔ Terraform — configuracion valida
   ✔ Sintaxis JS valida
   ✔ 5 documentos normativos
-  Asserts correctos: 316
+  Asserts correctos: 389
   Fallos:            0
 ```
 

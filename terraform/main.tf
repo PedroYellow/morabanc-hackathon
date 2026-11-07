@@ -417,10 +417,10 @@ resource "aws_lambda_function" "motor" {
   # __init__.py: el modulo es "lambda.handler" y la funcion "lambda_handler".
   # Con "handler.lambda_handler" la Lambda no encuentra el modulo y falla
   # con ModuleNotFoundError en la primera invocacion.
-  handler       = "lambda.handler.lambda_handler"
-  runtime       = local.python_runtime
-  timeout       = 60
-  memory_size   = 1024
+  handler     = "lambda.handler.lambda_handler"
+  runtime     = local.python_runtime
+  timeout     = 60
+  memory_size = 1024
 
   filename         = data.archive_file.motor.output_path
   source_code_hash = data.archive_file.motor.output_base64sha256
@@ -454,10 +454,10 @@ resource "aws_lambda_function" "api" {
   function_name = "${local.name}-api"
   role          = aws_iam_role.api.arn
   # Mismo criterio que la Lambda "motor": el modulo es "lambda.handler".
-  handler       = "lambda.handler.lambda_handler"
-  runtime       = local.python_runtime
-  timeout       = 30
-  memory_size   = 512
+  handler     = "lambda.handler.lambda_handler"
+  runtime     = local.python_runtime
+  timeout     = 30
+  memory_size = 512
 
   filename         = data.archive_file.motor.output_path
   source_code_hash = data.archive_file.motor.output_base64sha256
@@ -588,7 +588,11 @@ resource "aws_cognito_user_pool_client" "web" {
 }
 
 resource "aws_cognito_user_pool_domain" "dominio" {
-  domain       = "${local.name}.auth.eu-west-1.amazoncognito.com"
+  # El prefijo de un dominio Cognito es GLOBAL: si otro equipo del hackathon
+  # usa el mismo nombre de proyecto en esta region, el apply falla con
+  # "Domain already exists" y no es recuperable sin destroy. Anadimos el id
+  # de cuenta (igual que el bucket de S3) para que cada equipo tenga el suyo.
+  domain       = "${local.name}-${local.bucket_suffix}.auth.${var.aws_region}.amazoncognito.com"
   user_pool_id = aws_cognito_user_pool.usuarios.id
 }
 
@@ -819,6 +823,11 @@ resource "aws_bedrockagent_knowledge_base" "normativa" {
   description = "Normativa fiscal andorrana (IRPF, IGI, CASS) y productos de MoraBanc"
   role_arn    = aws_iam_role.bedrock_kb[0].arn
 
+  # La coleccion de OpenSearch Serverless tarda ~1-2 minutos en estar lista
+  # para recibir indices. Si la KB se crea antes, el apply falla con un
+  # error de coleccion no encontrada y hay que reintentar a mano.
+  depends_on = [aws_opensearchserverless_collection.vector]
+
   knowledge_base_configuration {
     type = "VECTOR"
 
@@ -853,6 +862,12 @@ resource "aws_bedrockagent_data_source" "normativa" {
   name              = "${local.name}-normativa-s3"
   description       = "Normativa fiscal andorrana y productos MoraBanc desde S3"
   knowledge_base_id = aws_bedrockagent_knowledge_base.normativa[0].id
+
+  # ORDEN CRITICO: el data source ingesta de S3, asi que los .md de
+  # normativa/ tienen que estar SUBIDOS antes de que se cree. Sin esta
+  # dependencia explicita Terraform no garantiza el orden y la KB indexa
+  # un bucket vacio (y luego no se vuelve a indexar solo).
+  depends_on = [aws_s3_object.normativa]
 
   data_source_configuration {
     type = "S3"
