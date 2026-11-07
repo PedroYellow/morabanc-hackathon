@@ -353,3 +353,19 @@ html, body {
 .mb-demo-line { font-size: 13px; color: #22496b; }
 .mb-demo-line b { font-weight: 700; color: #0a3550; }
 .mb-demo-nota { font-size: 11.5px; color: #5b7793; }
+
+/* Aviso de error del login */
+.mb-login-error {
+  margin: 10px 0 0; padding: 9px 12px;
+  background: #fdeeee; border: 1px solid #f2c4c4;
+  border-left: 3px solid #c0392b;
+  border-radius: 6px;
+  font-size: 13px; color: #8c2f22; line-height: 1.4;
+}
+.mb-login-error[hidden] { display: none; }
+.mb-submit.error { animation: mb-shake .4s; }
+@keyframes mb-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}

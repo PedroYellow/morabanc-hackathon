@@ -116,7 +116,7 @@ variable "enable_kb" {
     completa con el corpus normativo.
   EOT
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "enable_guardrails" {
@@ -692,6 +692,9 @@ resource "aws_lambda_function" "api" {
       # Para validar el id_token de Cognito en /preguntar y /login.
       COGNITO_USER_POOL_ID = aws_cognito_user_pool.usuarios.id
       COGNITO_CLIENT_ID    = aws_cognito_user_pool_client.web.id
+      # AWS_REGION esta reservada en Lambda; el cliente de Cognito la
+      # necesita explicita para construir su endpoint.
+      COGNITO_REGION = var.aws_region
       # /preguntar exige sesion valida. La x-api-key la inyecta la
       # CloudFront Function en el edge para cualquier peticion, asi que
       # sola no prueba que quien llama sea un cliente del banco.
@@ -987,6 +990,15 @@ resource "aws_apigatewayv2_stage" "api" {
   auto_deploy = false
   tags        = local.tags
 
+  # El deployment explicito va aqui. Sin esto, el stage se queda
+  # apuntando al deployment viejo y las rutas nuevas ("/login")
+  # devuelven 404 aunque existan en la API.
+  #
+  # (El update-stage por CLI esta bloqueado por IAM en esta cuenta:
+  # "Unable to determine service/operation name to be authorized".
+  # Terraform si tiene permisos para actualizar el stage.)
+  deployment_id = aws_apigatewayv2_deployment.api.id
+
   # Limite de peticiones. Cada llamada a /preguntar cuesta dinero (Bedrock
   # Nova Pro) y la ruta solo tiene una sesion legitima detras (un
   # id_token de Cognito), asi que un volumen alto es, por definicion, un
@@ -1121,23 +1133,29 @@ resource "aws_cognito_user_pool_client" "web" {
   callback_urls                        = var.cors_allowed_origins
   allowed_oauth_flows                  = ["code", "implicit"]
   allowed_oauth_scopes                 = ["email", "openid", "profile"]
-  # Validez de los tokens en HORAS (el provider las interpreta como horas).
+  # Validez de los tokens.
   #
-  # OJO: no se puede declarar "token_validity_units" aqui. El provider
-  # de Cognito lo devuelve como bloque y produce "Provider produced
+  # OJO: no se declaran access_token_validity / id_token_validity /
+  # refresh_token_validity. El provider de Cognito los convierte en un
+  # bloque "token_validity_units" que devuelve con una forma distinta
+  # a la declarada, y el apply falla con "Provider produced
   # inconsistent result after apply" (.token_validity_units: block count
-  # changed from 0 to 1), que aborta el apply entero. Los valores de
-  # arriba ya son los que se necesitan.
-  access_token_validity   = 1
-  id_token_validity       = 1
-  refresh_token_validity  = 720
+  # changed from 0 to 1), tumbando el despliegue entero.
+  #
+  # Con los valores por defecto del provider: 1 hora de access token,
+  # 1 hora de id token y 30 dias de refresh token. Es lo que necesita
+  # el front (la sesion dura lo que dura el pitch).
   enable_token_revocation = true
 
-  lifecycle {
-    # El apply debe tolerar el bloque extra que el provider devuelve
-    # (token_validity_units), sin abortar el despliegue entero.
-    ignore_changes = [explicit_auth_flows]
-  }
+  # SIN ignore_changes en explicit_auth_flows: los flows SI tienen que
+  # gestionarlos Terraform. Con el ignore, el apply devolvia el cliente
+  # a su estado anterior (sin ALLOW_ADMIN_USER_PASSWORD_AUTH) y la
+  # ruta /login respondia "Auth flow not enabled for this client".
+  #
+  # El problema real del provider ("Provider produced inconsistent
+  # result after apply" con .token_validity_units) se evita quitando
+  # las claves de validez: se dejan los valores por defecto, que ya
+  # son los que se necesitan.
 }
 
 resource "aws_cognito_user_pool_domain" "dominio" {

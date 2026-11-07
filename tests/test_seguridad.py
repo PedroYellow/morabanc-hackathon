@@ -196,10 +196,25 @@ casos = [
     ("token de otra app client", {"aud": "otro_cliente"}),
     ("access_token en vez de id_token", {"token_use": "access"}),
     ("token sin exp", {"exp": None}),
+    # El issuer real de Cognito trae la URL completa del servicio, y el
+    # dominio del SERVICIO es "amazonaws.com" (no "amazoncognito.com",
+    # que es el del dominio del user pool). Este caso real salio de un
+    # token de produccion: sin esta cobertura, /preguntar daba 401 con
+    # un token perfectamente valido.
+    ("issuer con la URL real del servicio",
+     {"iss": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_TESTPOOL"}),
 ]
 for nombre, claims in casos:
     resp = _llamar({"pregunta": "hola"}, {**KEY_BUENA, "authorization": "Bearer " + _token(claims)})
-    check(f"{nombre} se rechaza con 401", _status(resp) == 401, f"status={_status(resp)}")
+    if nombre.startswith("issuer con la URL real"):
+        check(f"{nombre} se ACEPTA", _status(resp) != 401, f"status={_status(resp)}")
+    else:
+        check(f"{nombre} se rechaza con 401", _status(resp) == 401, f"status={_status(resp)}")
+
+# Un issuer con el pool correcto pero de otro host tiene que rechazarse.
+resp = _llamar({"pregunta": "hola"}, {**KEY_BUENA, "authorization": "Bearer " + _token(
+    {"iss": "https://cognito-idp.evil.example.com/us-east-1_TESTPOOL"})})
+check("un issuer con otro host se rechaza con 401", _status(resp) == 401, f"status={_status(resp)}")
 
 # ---------------------------------------------------------------------------
 print("\n=== 5b. LIMITE DE PETICIONES POR USUARIO ===")

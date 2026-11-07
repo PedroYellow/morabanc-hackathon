@@ -194,11 +194,27 @@ def _verificar_token_cognito(token: str) -> bool:
     if not isinstance(claims, dict):
         return False
 
-    # El issuer de un user pool es su id (o su id con la region en algunos
-    # casos). Se comparan los dos formatos aceptados.
+    # El issuer de un user pool es su id ("us-east-1_XXXX"). El claim
+    # "iss" del token trae la forma completa:
+    #   https://cognito-idp.<region>.amazonaws.com/us-east-1_XXXX
+    #
+    # OJO: el dominio del SERVICIO es "amazonaws.com", no
+    # "amazoncognito.com" (ese es el del DOMINIO del user pool, que es
+    # distinto). Se compara el final del issuer con el id del pool, que
+    # es lo unico que identifica al pool de forma fiable.
     issuer = str(claims.get("iss") or "")
     esperado = user_pool_id
-    if not (issuer == esperado or issuer == f"https://cognito-idp.{REGION}.amazoncognito.com/{esperado}"):
+    if not issuer:
+        return False
+    if issuer == esperado:
+        pass
+    elif issuer.endswith("/" + esperado):
+        # "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_XXXX"
+        prefijo = issuer[: -len(esperado)].rstrip("/")
+        if not (prefijo.startswith("https://cognito-idp.") and
+                prefijo.endswith(".amazonaws.com")):
+            return False
+    else:
         return False
 
     audience = claims.get("aud")
@@ -349,7 +365,11 @@ def _login(event, context):
     try:
         import boto3
 
-        cognito = boto3.client("cognito-idp")
+        # La region va explicita: en Lambda AWS_REGION esta reservada
+        # (no se puede inyectar) y el cliente la deduce de la sesion,
+        # que puede no ser us-east-1.
+        region = os.environ.get("COGNITO_REGION", "us-east-1")
+        cognito = boto3.client("cognito-idp", region_name=region)
         auth = cognito.admin_initiate_auth(
             UserPoolId=user_pool_id,
             ClientId=client_id,
@@ -364,7 +384,9 @@ def _login(event, context):
             return _resp(401, {"error": "Contrasenya incorrecta"})
         if "UserNotFoundException" in msg:
             return _resp(401, {"error": "Usuari desconegut"})
-        return _resp(500, {"error": "No s'ha pogut autenticar"})
+        # Cualquier otro fallo (permisos, region, config) se devuelve
+        # con detalle: en un hackathon, un error mudo es un pitch muerto.
+        return _resp(500, {"error": "No s'ha pogut autenticar", "detall": msg[:300]})
 
     resultado = auth.get("AuthenticationResult") or {}
     id_token = resultado.get("IdToken", "")

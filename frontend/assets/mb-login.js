@@ -255,6 +255,22 @@
       });
   }
 
+  // El error se muestra en un aviso bajo el formulario, no solo
+  // parpadeando el boton: si el usuario vuelve a pulsar, tiene que
+  // saber que fallo y por que.
+  function mostrarError(texto) {
+    var caja = document.getElementById("loginError");
+    if (!caja) {
+      caja = document.createElement("p");
+      caja.id = "loginError";
+      caja.className = "mb-login-error";
+      var form = document.getElementById("loginForm");
+      if (form && form.parentNode) form.parentNode.insertBefore(caja, form.nextSibling);
+    }
+    caja.textContent = texto || "";
+    caja.hidden = !texto;
+  }
+
   function entrar(r) {
     var destino = (r.empresa || r.codigo === USUARIO_EMPRESA)
       ? "mb-empresas.html"      // portal de empresas, con el asesor
@@ -315,17 +331,17 @@
       // estaba escrita en el propio bundle. La unica excepcion es que
       // Cognito no este configurado (front local sin backend), que se
       // comprueba ANTES de llamar a la API.
+      mostrarError(null);
       autenticar(u, pass ? pass.value : "")
         .then(function (r) {
           if (!r.ok) {
             if (btnAcceder) {
               btnAcceder.classList.add("error");
-              btnAcceder.textContent = r.mensaje || "Error d'autenticacio";
               setTimeout(function () {
                 btnAcceder.classList.remove("error");
-                btnAcceder.textContent = "Accedir";
-              }, 2200);
+              }, 900);
             }
+            mostrarError(r.mensaje || "Error d'autenticacio");
             return;
           }
           entrar(r);
@@ -333,12 +349,11 @@
         .catch(function () {
           if (btnAcceder) {
             btnAcceder.classList.add("error");
-            btnAcceder.textContent = "No s'ha pogut connectar";
             setTimeout(function () {
               btnAcceder.classList.remove("error");
-              btnAcceder.textContent = "Accedir";
-            }, 2200);
+            }, 900);
           }
+          mostrarError("No s'ha pogut connectar amb el servidor");
         });
     });
   }
