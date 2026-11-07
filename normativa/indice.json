@@ -1,0 +1,25 @@
+{
+  "documentos": [
+    {
+      "titulo": "CASS — Cotización por cuenta propia 2026",
+      "fuente": "BOPA Decret 28/2026 (28-ene-2026) · CASS · Llei 11/2023"
+    },
+    {
+      "titulo": "IRPF — Impost sobre la renda de les persones fisiques",
+      "fuente": "Llei 5/2014 de l'IRPF (consolidada amb Llei 5/2025) · Departament de Tributs i de Fronteres"
+    },
+    {
+      "titulo": "IGI — Impost sobre les activitats economiques",
+      "fuente": "Impost sobre activitats economiques · Departament de Tributs i de Fronteres"
+    },
+    {
+      "titulo": "IRNR — Impost sobre la renda dels no residents fiscals",
+      "fuente": "Impost sobre la renda dels no residents fiscals · Departament de Tributs i de Fronteres"
+    },
+    {
+      "titulo": "Guía de simulación — Preguntas frecuentes de los autónomos",
+      "fuente": "Simulador construido sobre las reglas de CASS, IRPF e IGI"
+    }
+  ],
+  "nota": "Corpus generado por normativa/generar_corpus.py. Los importes están verificados contra BOPA, CASS y Govern d'Andorra (23-oct-2026)."
+}

@@ -1,0 +1,62 @@
+name: Verificar
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verificar:
+    name: Motor + agente + lambda + terraform + frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      - name: Instalar Playwright (Chromium)
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install --no-audit --no-fund playwright@1.62.0
+          npx playwright install --with-deps chromium
+
+      - name: Servir el frontend
+        run: |
+          cd frontend
+          nohup python3 -m http.server 8899 >/dev/null 2>&1 &
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:8899/ >/dev/null; then break; fi
+            sleep 0.5
+          done
+          curl -sf http://localhost:8899/ >/dev/null && echo "front servido"
+
+      - name: Verificacion completa
+        env:
+          FRONT_TEST_DIR: ${{ github.workspace }}
+          FRONT_SHOT_DIR: ${{ github.workspace }}/artifacts
+        run: |
+          mkdir -p artifacts
+          bash scripts/verificar.sh
+
+      - name: Subir capturas del frontend
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capturas-frontend
+          path: artifacts/*.png
+          if-no-files-found: ignore
+
+  demo:
+    name: Demo en modo motor (sin AWS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ejecutar la demo integrada (mock)
+        env:
+          BEDROCK_MOCK: "1"
+        run: python3 demo_integrada.py

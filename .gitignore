@@ -1,0 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Terraform
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+terraform.tfvars
+*.auto.tfvars
+!example.tfvars
+
+# AWS / credenciales — NUNCA subir esto
+.aws/
+*.pem
+*.key
+lambda/.env
+.env
+.env.*
+!.env.example
+cognito_local_defaults.json
+
+# Node (solo para el test end-to-end del frontend)
+node_modules/
+package-lock.json
+
+# Deploy / build
+dist/
+build/
+*.zip
+!lambda/*.zip.example
+.mypy_cache/
+site/
+coverage/
+coverage.xml
+htmlcov/
+
+# Sistema
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.log
+
+# NOTA: frontend/data/demo_data.json SI se versiona a proposito.
+# Se genera con `python3 frontend/generar_demo_data.py` a partir del motor real,
+# y se committea para que el modo demo funcione con cero setup (requisito del
+# pitch: "un prototipo local que funciona" gana a uno que no arranca).
