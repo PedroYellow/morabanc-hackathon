@@ -53,21 +53,42 @@ echo "    proyecto: $(grep -oE 'project_name.*default.*=.*"[^"]*"' variables.tf 
 # --- 0. Credenciales -----------------------------------------------------
 echo ""
 echo "==> Comprobando credenciales"
-if command -v aws >/dev/null 2>&1; then
-  if ! aws sts get-caller-identity >/dev/null 2>&1; then
-    echo "ERROR: las credenciales no son validas o no hay." >&2
-    echo "" >&2
-    echo "Las da MoraBanc (+376 884 884). Exporta:" >&2
-    echo "  export AWS_ACCESS_KEY_ID=..." >&2
-    echo "  export AWS_SECRET_ACCESS_KEY=..." >&2
-    echo "  export AWS_SESSION_TOKEN=...   # si es sesion temporal" >&2
-    echo "  export AWS_DEFAULT_REGION=$REGION" >&2
-    exit 2
+
+# El mensaje de error importa: el fallo mas probable del dia 7 son las
+# credenciales (expiradas, de la region equivocada, o sin sesion).
+credenciales_validas() {
+  if command -v aws >/dev/null 2>&1; then
+    aws sts get-caller-identity >/dev/null 2>&1 && return 0
+    return 1
   fi
+  # Sin aws cli no se puede comprobar: se deja pasar y lo decide terraform.
+  return 0
+}
+
+if ! credenciales_validas; then
+  echo "ERROR: las credenciales de AWS no son validas." >&2
+  echo "" >&2
+  echo "Causas habituales:" >&2
+  echo "  - La sesion expiro (las claves ASIA* del workshop duran minutos/horas)" >&2
+  echo "  - Falta AWS_SESSION_TOKEN en una credencial temporal" >&2
+  echo "  - La region no es la de la cuenta" >&2
+  echo "" >&2
+  echo "Las da MoraBanc (+376 884 884). Exporta:" >&2
+  echo "  export AWS_ACCESS_KEY_ID=..." >&2
+  echo "  export AWS_SECRET_ACCESS_KEY=..." >&2
+  echo "  export AWS_SESSION_TOKEN=...   # si es sesion temporal" >&2
+  echo "  export AWS_DEFAULT_REGION=$REGION" >&2
+  echo "  unset AWS_REGION   # si esta a otra region, pisa el valor" >&2
+  echo "" >&2
+  echo "Diagnostico del fallo real:" >&2
+  aws sts get-caller-identity 2>&1 | head -4 | sed 's/^/  /' >&2
+  exit 2
+fi
+
+if command -v aws >/dev/null 2>&1; then
   ACCT=$(aws sts get-caller-identity --query Account --output text 2>/dev/null)
-  echo "    cuenta: $ACCT"
-else
-  echo "    (aws cli no disponible: el apply lo hara terraform)"
+  ROLE=$(aws sts get-caller-identity --query Arn --output text 2>/dev/null | sed 's|.*/||')
+  echo "    cuenta: $ACCT  ($ROLE)"
 fi
 
 # --- 1. Init -------------------------------------------------------------

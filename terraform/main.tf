@@ -117,6 +117,21 @@ locals {
   # cuenta para evitar colisiones cuando hay varios equipos en la misma cuenta.
   bucket_suffix = "${data.aws_caller_identity.current.account_id}-${substr(data.aws_caller_identity.current.account_id, 0, 4)}"
 
+  # Prefijo del dominio de Cognito.
+  #
+  # LIMITE DE AWS: el dominio COMPLETO no puede pasar de 63 caracteres
+  # (AWS valida "expected length of domain to be in the range (1 - 63)").
+  # El sufijo que AWS anade es ".auth.<region>.amazoncognito.com" (34 chars
+  # en eu-west-1), asi que al prefijo le quedan 29.
+  #
+  # Con el nombre del proyecto entero mas el id de cuenta se llegaba a 78 y
+  # el apply fallaba. Aqui se recorta a 20 + 8 de hash del id de cuenta = 28,
+  # y con el sufijo hacen 62: 1 char de margen. El hash garantiza que dos
+  # equipos con el mismo nombre de proyecto no choquen.
+  #
+  # El test test_terraform.py comprueba que el dominio sigue cabiendo.
+  cognito_prefix = "${substr(local.name, 0, 20)}-${substr(sha256(data.aws_caller_identity.current.account_id), 0, 8)}"
+
   # Runtime de Lambda. python3.13 es el mas reciente disponible en el
   # provider aws 5.x (python3.14 todavia no lo soporta).
   python_runtime = "python3.13"
@@ -590,9 +605,15 @@ resource "aws_cognito_user_pool_client" "web" {
 resource "aws_cognito_user_pool_domain" "dominio" {
   # El prefijo de un dominio Cognito es GLOBAL: si otro equipo del hackathon
   # usa el mismo nombre de proyecto en esta region, el apply falla con
-  # "Domain already exists" y no es recuperable sin destroy. Anadimos el id
-  # de cuenta (igual que el bucket de S3) para que cada equipo tenga el suyo.
-  domain       = "${local.name}-${local.bucket_suffix}.auth.${var.aws_region}.amazoncognito.com"
+  # "Domain already exists" y no es recuperable sin destroy. Anadimos un
+  # sufijo derivado del id de cuenta para que cada equipo tenga el suyo.
+  #
+  # LIMITE DE AWS: el prefijo completo (sin el ".auth.<region>...") no puede
+  # pasar de 63 caracteres, y el dominio completo de 102. Con el nombre del
+  # proyecto entero + el id de cuenta se llegaba a 76 y el apply fallaba con
+  # "expected length of domain to be in the range (1 - 63)". Por eso se
+  # recorta el nombre y se usa un hash corto del id de cuenta.
+  domain       = "${local.cognito_prefix}.auth.${var.aws_region}.amazoncognito.com"
   user_pool_id = aws_cognito_user_pool.usuarios.id
 }
 
@@ -1032,9 +1053,9 @@ resource "aws_s3_object" "front" {
 
 locals {
   content_types = {
-    "index.html"                         = "text/html; charset=utf-8"
-    "assets/styles.css"                  = "text/css; charset=utf-8"
-    "assets/app.js"                      = "application/javascript; charset=utf-8"
+    "index.html"        = "text/html; charset=utf-8"
+    "assets/styles.css" = "text/css; charset=utf-8"
+    "assets/app.js"     = "application/javascript; charset=utf-8"
     # El logo real de MoraBanc. Sin esto se publicaria como
     # application/octet-stream y el navegador NO lo renderiza como imagen:
     # el logo aparece roto en el movil.

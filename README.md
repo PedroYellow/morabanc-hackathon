@@ -34,13 +34,13 @@ Eso es a la vez la garantía de correctitud y la respuesta al jurado a
 | `engine/cierre.py` | Bucle de cierre: el motor sobre su propio consejo | **46 tests verdes** |
 | `agent/bedrock_agent.py` | Bedrock Converse + tool-use (11 tools) | **83 tests verdes** |
 | `lambda/handler.py` | Handler API (empaquetado y ejecutado de verdad) | **12 checks verdes** |
-| `terraform/main.tf` | Infra AWS 100% IaC + publicacion del front | **78 asserts + `terraform validate` → Success** |
+| `terraform/main.tf` | Infra AWS 100% IaC + publicacion del front | **80 asserts + `terraform validate` → Success** |
 | `frontend/` | App estatica mobile-first (HTML/CSS/JS puro) | **61 asserts en Chromium real** |
 | `frontend/generar_demo_data.py` | Datos demo generados por el motor real | — |
 | `data/generar_demo.py` | 4 perfiles de extracto sintéticos | — |
 | `normativa/generar_corpus.py` | Corpus para el RAG (5 documentos) | verificado |
 
-**458 asserts en verde + Lambda validada + Terraform validado + front tested en navegador real.**
+**460 asserts en verde + Lambda validada + Terraform validado + front tested en navegador real.**
 
 ```
 $ bash scripts/verificar.sh
@@ -55,7 +55,7 @@ $ bash scripts/verificar.sh
   ✔ Terraform — configuracion valida
   ✔ Sintaxis JS valida
   ✔ 5 documentos normativos
-  Asserts correctos: 458
+  Asserts correctos: 460
   Fallos:            0
 ```
 
@@ -430,6 +430,17 @@ verifica que responde.
 | Raíz web | `/var/www/welcomeandorra` |
 | **A record** | `welcomeandorra.com` → **`179.197.243.234`** |
 | Nameservers | `ns1/ns2.dns-parking.com` (panel de Hostinger) |
+
+El certificado HTTPS **no se puede emitir hasta que el DNS apunte al
+servidor**: Let's Encrypt resuelve el dominio desde internet y, con el A
+record antiguo (`148.251.93.9`), no puede descargar el challenge. Hay un
+script que se queda esperando y emite el certificado solo en cuanto el DNS
+propaga:
+
+```bash
+bash scripts/wait_dns_and_https.sh            # espera 60 min
+bash scripts/wait_dns_and_https.sh --check    # solo comprueba el estado
+```
 
 > El DNS del dominio **lo cambia Pedro** en el panel de Hostinger: el A record
 > de `welcomeandorra.com` (y `www`) a `179.197.243.234`. Hasta que lo haga, el

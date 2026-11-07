@@ -112,11 +112,27 @@ check("existe el dominio de Cognito", cognito is not None)
 if cognito:
     dom = cognito.group(1)
     check("el dominio de Cognito lleva sufijo de cuenta",
-          "local.bucket_suffix" in dom,
+          "local.cognito_prefix" in dom,
           "los prefijos de dominio Cognito son GLOBALES: sin sufijo, "
           "colisiona con otro equipo del hackathon")
     check("el dominio usa var.aws_region (no eu-west-1 hardcodeado)",
           "var.aws_region" in dom)
+
+    # AWS valida que el dominio COMPLETO no pase de 63 caracteres. Con el
+    # nombre del proyecto entero + el id de cuenta se llegaba a 78 y el
+    # apply fallaba con "expected length of domain to be in the range
+    # (1 - 63)". Este test lo comprueba antes de que llegue a AWS.
+    prefijo_m = re.search(r'cognito_prefix\s*=\s*"\$\{substr\(local\.name,\s*0,\s*(\d+)\)\}', SRC)
+    check("el prefijo de Cognito esta recortado", prefijo_m is not None)
+    if prefijo_m:
+        largo_nombre = int(prefijo_m.group(1))
+        # El nombre del proyecto por defecto son 24 caracteres.
+        nombre_real = "morabanc-hackathon-dev"
+        prefijo = f"{nombre_real[:largo_nombre]}-fc90d7df"
+        sufijo = ".auth.eu-west-1.amazoncognito.com"
+        total = len(prefijo + sufijo)
+        check("el dominio de Cognito cabe en el limite de AWS (63)",
+              total <= 63, f"{total} caracteres: {prefijo}{sufijo}")
 
 s3 = re.search(r'resource\s+"aws_s3_bucket"\s+"datos"\s*\{(.*?)\n\}', SRC, re.S)
 check("existe el bucket de S3", s3 is not None)
