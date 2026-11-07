@@ -56,7 +56,7 @@ documento (§8) que te da una demo funcional sin AWS.
 | Corpus normativo para el RAG (5 docs) | **Listo** | Cifras clave verificadas |
 | Front servido desde CloudFront con API real | **Pendiente** | Requiere `terraform apply` |
 
-**446 asserts en verde.** Verificación completa en un comando:
+**458 asserts en verde.** Verificación completa en un comando:
 
 ```bash
 bash scripts/verificar.sh
@@ -122,7 +122,7 @@ cd morabanc_hackathon
 bash scripts/verificar.sh        # que todo sigue verde
 ```
 
-Si algo falla, **para todo el equipo y arregladlo**. Con 446 asserts en verde,
+Si algo falla, **para todo el equipo y arregladlo**. Con 458 asserts en verde,
 un fallo significa que alguien cambió algo.
 
 ### 09:00 — Credenciales
@@ -546,4 +546,4 @@ prototipo en AWS que no llega a tiempo.** No sacrifiques el motor por el cloud.
 ---
 
 **Documento preparado el 24 de octubre de 2026.** Estado verificado:
-446 asserts en verde, Terraform validado, front probado en Chromium real.
+458 asserts en verde, Terraform validado, front probado en Chromium real.

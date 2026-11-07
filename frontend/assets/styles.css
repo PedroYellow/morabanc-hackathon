@@ -588,6 +588,131 @@ input::placeholder { color: #b0b0b0; }
 .toast.ok { background: var(--ok); }
 
 /* ============================================================
+   MODO PRESENTACION — vista para el proyector
+   ============================================================
+   Una sola pantalla con lo que se ve desde el fondo de la sala:
+   veredicto grande, 4 metricas enormes y el grafico a pantalla
+   completa. Sin chat, sin formularios, sin traza: aqui se/demo, no
+   se usa. El boton esta en la pantalla de resultado.
+   ============================================================ */
+.btn-presentacion {
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  width: 100%; margin-top: 12px; padding: 13px 20px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--azul-hondo);
+  font-family: var(--font-heading); font-size: 14.5px; font-weight: 600;
+  transition: border-color .18s, background .18s, color .18s;
+}
+.btn-presentacion:hover {
+  border-color: var(--azul); background: var(--surface-azul); color: var(--azul-fuerte);
+}
+
+.presentacion {
+  position: fixed; inset: 0; z-index: 90;
+  height: 100dvh;
+  background: var(--bg);
+  background-image:
+    linear-gradient(180deg, rgba(10, 53, 80, 0.06) 0%, rgba(10, 53, 80, 0) 420px);
+  display: flex; flex-direction: column;
+  padding: 3vh 3.5vw 2.4vh;
+  overflow: hidden;
+  animation: fadeIn .28s ease both;
+}
+/* La cabecera del navegador tapa la parte superior: en modo presentacion
+   tenemos que empezar por debajo de ella. */
+body.presentacion-activa .topbar { display: none; }
+.presentacion-top {
+  display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 3vw; align-items: start;
+  margin-bottom: 2.2vh; flex-shrink: 0;
+}
+.presentacion-head { min-width: 0; }
+.presentacion-label {
+  display: inline-block; font-size: 13px; font-weight: 700;
+  letter-spacing: .16em; text-transform: uppercase;
+  color: var(--gold-ink); background: var(--gold-dim);
+  border: 1px solid var(--gold);
+  padding: 5px 12px; border-radius: 99px; margin-bottom: 14px;
+}
+.presentacion-title {
+  font-family: var(--font-heading); font-size: clamp(30px, 4.4vw, 58px);
+  font-weight: 600; color: var(--txt-navy); line-height: 1.1;
+  margin-bottom: 12px; letter-spacing: -0.02em;
+}
+.presentacion-sub {
+  font-size: clamp(15px, 1.5vw, 20px); color: var(--muted);
+  margin: 0; max-width: 46ch; line-height: 1.5;
+}
+.presentacion-metrics {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.presentacion-metric {
+  background: var(--surface); border: 1px solid var(--line-soft);
+  border-radius: var(--radius); padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+}
+.presentacion-metric-label {
+  font-size: 12px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--dim); margin-bottom: 7px;
+}
+.presentacion-metric-value {
+  font-family: var(--font-heading);
+  font-size: clamp(24px, 2.9vw, 40px); font-weight: 600;
+  color: var(--txt-navy); line-height: 1.05;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+}
+.presentacion-metric.pos .presentacion-metric-value { color: var(--ok); }
+.presentacion-metric.neg .presentacion-metric-value { color: var(--danger); }
+.presentacion-metric.alert .presentacion-metric-value { color: var(--warn); }
+.presentacion-metric-sub { font-size: 13px; color: var(--dim); margin-top: 4px; }
+
+.presentacion-chart {
+  flex: 0 1 auto;
+  min-height: 0;
+  background: var(--surface); border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg); padding: 18px 24px 14px;
+  box-shadow: var(--shadow); display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.presentacion-chart-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 16px; margin-bottom: 14px; flex-wrap: wrap;
+}
+.presentacion-chart-title {
+  font-family: var(--font-heading); font-size: clamp(16px, 1.5vw, 21px);
+  font-weight: 600; color: var(--txt-navy);
+}
+/* El SVG NO puede usar height:100% dentro de un flex: se expande hasta
+   llenar al padre, el padre crece y la vista se sale de la pantalla (el
+   grafico llegaba a medir 1250 px de alto en una ventana de 800).
+   Se le da una altura maxima al contenedor y el SVG se ajusta con
+   preserveAspectRatio (el atributo ya esta en el HTML). */
+.presentacion-chart .chart {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 46vh;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 640 / 240;
+}
+
+.presentacion-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; margin-top: 1.6vh; padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 13px; color: var(--dim); flex-shrink: 0;
+}
+.presentacion-brand { font-weight: 600; color: var(--azul-hondo); }
+
+@media (max-width: 900px) {
+  .presentacion { padding: 20px 16px; overflow-y: auto; }
+  .presentacion-top { grid-template-columns: 1fr; gap: 18px; }
+  .presentacion-metrics { grid-template-columns: repeat(2, 1fr); }
+  .presentacion-chart .chart { min-height: 220px; }
+}
+
+/* ============================================================
    ACCESIBILIDAD
    ============================================================ */
 @media (prefers-reduced-motion: reduce) {

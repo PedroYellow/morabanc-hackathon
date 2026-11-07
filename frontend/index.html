@@ -198,6 +198,15 @@
     </details>
 
     <button class="btn-ghost" id="btnReiniciar">← Empezar de nuevo</button>
+
+    <!-- Boton de presentacion: una sola vista grande para el proyector -->
+    <button class="btn-presentacion" id="btnPresentacion">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21 L16 21"/><path d="M12 17 L12 21"/>
+      </svg>
+      <span>Modo presentación</span>
+    </button>
+
   </section>
 
 </main>
@@ -209,6 +218,32 @@
     <div class="modal-body" id="modalBody"></div>
   </div>
 </div>
+
+    <!-- ============ MODO PRESENTACION (para el proyector) ============ -->
+    <!-- Vista grande del veredicto + las dos curvas de caja. Se activa con
+         el boton "Modo presentacion" y es lo que se ve desde el fondo de la
+         sala: tipografia grande, poco texto, los numeros manda. -->
+    <div class="presentacion" id="presentacion" hidden aria-hidden="true">
+      <div class="presentacion-top">
+        <div class="presentacion-head">
+          <span class="presentacion-label" id="presLabel">Diagnóstico</span>
+          <h2 class="presentacion-title" id="presTitle">—</h2>
+          <p class="presentacion-sub" id="presSub"></p>
+        </div>
+        <div class="presentacion-metrics" id="presMetrics"></div>
+      </div>
+      <div class="presentacion-chart">
+        <div class="presentacion-chart-head">
+          <span class="presentacion-chart-title">Tu caja mes a mes</span>
+          <div class="legend" id="presLeyenda"></div>
+        </div>
+        <svg id="presGrafico" class="chart" viewBox="0 0 640 240" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="presentacion-foot">
+        <span class="presentacion-brand">MoraBanc · Asesor Financiero IA</span>
+        <span class="presentacion-hint">Pulsa Esc para volver</span>
+      </div>
+    </div>
 
 <!-- ============ TOAST ============ -->
 <div class="toast" id="toast" hidden></div>

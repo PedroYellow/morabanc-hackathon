@@ -146,6 +146,8 @@
     contexto: null,      // { saldo, renta, margen, actividad, movimientos }
     ultimoAnalisis: null,
     chatAbierto: false,
+    // Datos ya calculados para la vista de presentacion (null = no hay).
+    pres: null,
   };
 
   const $ = (s) => document.querySelector(s);
@@ -691,6 +693,101 @@
 
     // --- Traza ----------------------------------------------------
     pintarTraza(resultados);
+
+    // --- Guardar para el modo presentacion -------------------------
+    // La vista de presentacion reusa estos mismos datos: no recalcula
+    // nada, solo los pinta en grande.
+    state.pres = { titulo, texto, clase, metricas: [], meses: null, caja: null };
+
+    const cassM = porTool["tramo_cass"];
+    const flujoM = porTool["analizar_tesoreria"];
+    if (cassM && cassM.resultado && cassM.resultado.cuota_mensual) {
+      state.pres.metricas.push({
+        label: "CASS", valor: eur(cassM.resultado.cuota_mensual, 2) + "/mes",
+        sub: "tramo " + cassM.resultado.tramo, clase: "",
+      });
+    }
+    if (flujoM && flujoM.resultado && flujoM.resultado.flujo_neto !== undefined) {
+      const f = flujoM.resultado.flujo_neto;
+      state.pres.metricas.push({
+        label: "Flujo mensual", valor: eur(f, 2),
+        sub: f >= 0 ? "ahorras" : "gastas", clase: f >= 0 ? "pos" : "neg",
+      });
+    }
+    if (caja && caja.resultado && caja.resultado.mes_quiebre) {
+      state.pres.metricas.push({
+        label: "Quiebre de caja", valor: "Mes " + caja.resultado.mes_quiebre,
+        sub: "se queda sin saldo", clase: "neg",
+      });
+    }
+    if (cross && cross.resultado && cross.resultado.existe) {
+      state.pres.metricas.push({
+        label: "Próximo umbral", valor: eur(cross.resultado.renta_punto, 0),
+        sub: "de renta neta · salta tu tramo", clase: "",
+      });
+    }
+    if (caja && caja.resultado && caja.resultado.meses) {
+      state.pres.meses = caja.resultado.meses;
+      state.pres.caja = caja.resultado;
+    }
+    // Ya hay algo que presentar.
+    $("#btnPresentacion").hidden = false;
+  }
+
+  /* ============================================================
+     MODO PRESENTACION
+     Vista grande para el proyector: se ve desde el fondo de la sala.
+     Reutiliza los datos ya calculados (state.pres) — no recalcula.
+     ============================================================ */
+  function abrirPresentacion() {
+    const p = state.pres;
+    if (!p) return;
+
+    // Al abrir la presentacion se vuelve arriba. Con position:fixed, el
+    // elemento se posiciona respecto al viewport, pero si la pagina estaba
+    // scrolleada (el resultado es largo) la vista sale desplazada y se ve
+    // solo el grafico.
+    window.scrollTo(0, 0);
+
+    $("#presentacion").hidden = false;
+    $("#presentacion").setAttribute("aria-hidden", "false");
+    document.body.style.overflow = "hidden";
+    // La cabecera de la app (logo + idioma) no aporta en el proyector y
+    // roba altura: se oculta mientras dura la presentacion.
+    document.body.classList.add("presentacion-activa");
+
+    $("#presLabel").textContent = t("diagnostico");
+    $("#presTitle").textContent = p.titulo;
+    $("#presSub").textContent = p.texto;
+
+    const cont = $("#presMetrics");
+    cont.innerHTML = "";
+    p.metricas.forEach((m) => {
+      const d = document.createElement("div");
+      d.className = "presentacion-metric" + (m.clase ? " " + m.clase : "");
+      d.innerHTML =
+        '<div class="presentacion-metric-label">' + m.label + "</div>" +
+        '<div class="presentacion-metric-value">' + m.valor + "</div>" +
+        (m.sub ? '<div class="presentacion-metric-sub">' + m.sub + "</div>" : "");
+      cont.appendChild(d);
+    });
+
+    // El grafico se dibuja en el SVG de presentacion con los mismos datos.
+    if (p.meses) {
+      dibujarGraficoEn($("#presGrafico"), p.meses, p.caja, $("#presLeyenda"));
+    }
+  }
+
+  function cerrarPresentacion() {
+    $("#presentacion").hidden = true;
+    $("#presentacion").setAttribute("aria-hidden", "true");
+    document.body.style.overflow = "";
+    document.body.classList.remove("presentacion-activa");
+    // Volver al resultado, no al principio de la pagina.
+    const btn = $("#btnPresentacion");
+    if (btn && btn.offsetParent !== null) {
+      btn.scrollIntoView({ block: "center", behavior: "instant" });
+    }
   }
 
   function metrica(label, valor, sub, clase) {
@@ -788,7 +885,17 @@
   });
 
   function dibujarGrafico(meses, resultado) {
-    const svg = $("#graficoCaja");
+    dibujarGraficoEn($("#graficoCaja"), meses, resultado, $("#leyendaProyeccion"));
+  }
+
+  /**
+   * Dibuja la curva de caja en un SVG concreto.
+   *
+   * Se parametriza el destino porque la misma curva se pinta en dos sitios:
+   * la pantalla de resultado (movil) y la vista de presentacion (proyector).
+   * Los datos son los mismos: el JS no calcula nada, solo dibuja.
+   */
+  function dibujarGraficoEn(svg, meses, resultado, leyenda) {
     const W = 640, H = 240;
 
     // El viewBox se escala al ancho real del contenedor. Compensamos la fuente
@@ -843,7 +950,11 @@
     const areaD = d + " L" + x(vals.length - 1) + " " + y(min) + " L" + x(0) + " " + y(min) + " Z";
 
     const grad = document.createElementNS(ns, "linearGradient");
-    grad.setAttribute("id", "gCaja");
+    // El id tiene que ser unico por documento: si los dos SVG (resultado y
+    // presentacion) usan "gCaja", el segundo pinta con el gradiente del
+    // primero y el area sale del color equivocado.
+    const gradId = "gCaja-" + (svg.id || "x") + "-" + Math.floor(Math.random() * 1e6);
+    grad.setAttribute("id", gradId);
     grad.setAttribute("x1", "0"); grad.setAttribute("y1", "0");
     grad.setAttribute("x2", "0"); grad.setAttribute("y2", "1");
     const s1 = document.createElementNS(ns, "stop");
@@ -857,7 +968,7 @@
 
     const area = document.createElementNS(ns, "path");
     area.setAttribute("d", areaD);
-    area.setAttribute("fill", "url(#gCaja)");
+    area.setAttribute("fill", "url(#" + gradId + ")");
     svg.appendChild(area);
 
     // linea: verde hasta el quiebre, rojo despues
@@ -894,7 +1005,7 @@
     }
 
     // leyenda
-    const lg = $("#leyendaProyeccion");
+    const lg = leyenda || $("#leyendaProyeccion");
     lg.innerHTML = "";
     if (quieb < vals.length - 1) {
       lg.innerHTML =
@@ -904,9 +1015,9 @@
       lg.innerHTML = '<span class="legend-item"><span class="legend-swatch" style="background:#04aa6d"></span>Saldo de caja</span>';
     }
 
-    // nota
+    // nota (solo en la vista de resultado; en presentacion no hay nota)
     const nota = $("#notaProyeccion");
-    if (resultado && resultado.resumen) {
+    if (nota && resultado && resultado.resumen) {
       nota.innerHTML = "<strong>Resumen:</strong> " + escapar(resultado.resumen);
     }
   }
@@ -1076,11 +1187,18 @@
     inicializarOpciones();
     aplicarIdioma();
 
+    // El boton de presentacion solo tiene sentido con resultados: al inicio
+    // no hay nada que presentar.
+    $("#btnPresentacion").hidden = true;
+
     $("#btnAnalizar").addEventListener("click", analizar);
     $("#btnReiniciar").addEventListener("click", () => {
       state.perfil = null;
       state.contexto = null;
       state.ultimoAnalisis = null;
+      state.pres = null;
+      cerrarPresentacion();
+      $("#btnPresentacion").hidden = true;
       $("#chatMessages").innerHTML = "";
       $("#hallazgos").innerHTML = "";
       $$("#opcionesInicio .opcion").forEach((b) => b.classList.remove("selected"));
@@ -1104,8 +1222,16 @@
     $("#modalBackdrop").addEventListener("click", (e) => {
       if (e.target === $("#modalBackdrop")) cerrarModal();
     });
+
+    // Modo presentacion: boton + tecla Escape para salir.
+    $("#btnPresentacion").addEventListener("click", abrirPresentacion);
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && !$("#modalBackdrop").hidden) cerrarModal();
+      if (e.key === "Escape") {
+        // Escape cierra lo que este abierto: primero la presentacion,
+        // despues el modal.
+        if (!$("#presentacion").hidden) { cerrarPresentacion(); return; }
+        if (!$("#modalBackdrop").hidden) cerrarModal();
+      }
     });
 
     if (CFG.modoDemo) {

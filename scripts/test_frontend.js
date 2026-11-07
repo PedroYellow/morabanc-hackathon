@@ -49,6 +49,9 @@ function check(nombre, ok, extra) {
   check("5 opciones de inicio", (await page.locator("#opcionesInicio .opcion").count()) === 5);
   check("existe el perfil de cierre del bucle",
     (await page.locator('.opcion[data-perfil="cierre"]').count()) === 1);
+  // Sin resultados no hay nada que presentar: el boton no debe verse.
+  check("el boton de presentacion esta oculto al inicio",
+    !(await page.locator("#btnPresentacion").isVisible()));
   check("sin scroll horizontal",
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
 
@@ -114,6 +117,53 @@ function check(nombre, ok, extra) {
   await page.locator("#sugerencias .sugerencia").first().click();
   await page.waitForTimeout(1400);
   check("nueva respuesta anadida", (await page.locator(".msg.bot").count()) > antes);
+
+  console.log("\n=== MODO PRESENTACION (proyector) ===");
+  // Vista grande para el proyector. Si se rompe, en el dia del hackathon se
+  // queda sin pantalla grande en mitad del pitch.
+  check("el boton de presentacion aparece con resultados",
+    await page.locator("#btnPresentacion").isVisible());
+
+  await page.click("#btnPresentacion");
+  await page.waitForTimeout(600);
+  check("la vista de presentacion se abre",
+    await page.locator("#presentacion").isVisible());
+  check("la cabecera de la app se oculta en presentacion",
+    await page.evaluate(() => getComputedStyle(document.querySelector(".topbar")).display === "none"));
+
+  const pres = await page.evaluate(() => {
+    const el = document.querySelector("#presentacion");
+    const r = el.getBoundingClientRect();
+    const svg = document.querySelector("#presGrafico");
+    const sr = svg.getBoundingClientRect();
+    return {
+      top: r.top, left: r.left, w: r.width, h: r.height,
+      scrollH: el.scrollHeight,
+      innerH: window.innerHeight,
+      metrics: document.querySelectorAll("#presMetrics .presentacion-metric").length,
+      paths: svg.querySelectorAll("path").length,
+      title: document.querySelector("#presTitle").textContent.trim(),
+      svgH: sr.height,
+    };
+  });
+  // La vista tiene que ocupar el viewport EXACTO: si el contenedor esta
+  // dentro de un <section> con animacion, position:fixed se referencia a ese
+  // contexto y la vista aparece desplazada (solo se ve el grafico).
+  check("la presentacion ocupa el viewport", pres.top === 0 && pres.left === 0,
+    `top=${pres.top} left=${pres.left}`);
+  check("la presentacion no hace scroll", pres.scrollH <= pres.innerH + 2,
+    `${pres.scrollH} vs ${pres.innerH}`);
+  check("el veredicto aparece en grande", pres.title.length > 5, pres.title);
+  check("se muestran las 4 metricas", pres.metrics === 4, pres.metrics);
+  check("el grafico se dibuja", pres.paths >= 2, pres.paths);
+  check("el grafico tiene altura razonable", pres.svgH > 100 && pres.svgH < 600, pres.svgH);
+
+  // Escape vuelve al resultado
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(400);
+  check("Escape cierra la presentacion", !(await page.locator("#presentacion").isVisible()));
+  check("la cabecera de la app vuelve", await page.evaluate(() =>
+    getComputedStyle(document.querySelector(".topbar")).display !== "none"));
 
   console.log("\n=== IDENTIDAD DE MARCA MORABANC ===");
   // El front tiene que parecerse al banco: navy #0a3550, gold #f1c657 y el
