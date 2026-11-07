@@ -23,7 +23,6 @@ Formato de entrada de /preguntar:
 import hmac
 import json
 import os
-import os
 import sys
 import traceback
 from datetime import date
