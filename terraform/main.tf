@@ -386,16 +386,26 @@ data "archive_file" "motor" {
   type        = "zip"
   source_dir  = "${path.module}/.."
   output_path = "${path.module}/.build/motor.zip"
+  # El zip lleva SOLO lo que la Lambda necesita en runtime: engine/, agent/,
+  # lambda/ y el paquete normativo. Fuera todo lo demas (front, scripts,
+  # demos, terraform, tests) — no solo engorda el paquete: reduces el
+  # cold start y evita subir ficheros que no son codigo.
   excludes = [
     "__pycache__",
     "*.pyc",
     ".pytest_cache",
     ".build",
+    ".github",
     "terraform",
     "data",
     "tests",
+    "scripts",
+    "frontend",
+    "demo.py",
+    "demo_integrada.py",
     "*.md",
     "*.html",
+    "*.json",
     ".git",
   ]
 }
@@ -403,7 +413,11 @@ data "archive_file" "motor" {
 resource "aws_lambda_function" "motor" {
   function_name = "${local.name}-motor"
   role          = aws_iam_role.lambda.arn
-  handler       = "handler.lambda_handler"
+  # El zip tiene engine/, agent/ y lambda/ en la raiz, y lambda/ tiene un
+  # __init__.py: el modulo es "lambda.handler" y la funcion "lambda_handler".
+  # Con "handler.lambda_handler" la Lambda no encuentra el modulo y falla
+  # con ModuleNotFoundError en la primera invocacion.
+  handler       = "lambda.handler.lambda_handler"
   runtime       = local.python_runtime
   timeout       = 60
   memory_size   = 1024
@@ -439,7 +453,8 @@ resource "aws_lambda_function" "motor" {
 resource "aws_lambda_function" "api" {
   function_name = "${local.name}-api"
   role          = aws_iam_role.api.arn
-  handler       = "handler.lambda_handler"
+  # Mismo criterio que la Lambda "motor": el modulo es "lambda.handler".
+  handler       = "lambda.handler.lambda_handler"
   runtime       = local.python_runtime
   timeout       = 30
   memory_size   = 512

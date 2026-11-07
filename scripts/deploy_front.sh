@@ -23,11 +23,25 @@ echo "==> Inyectando la configuracion de la API en el front"
 # precalculados), que es lo que se usa en el pitch sin credenciales.
 if command -v terraform >/dev/null 2>&1; then
   if CFG_JSON=$(terraform -chdir=terraform output -json frontend_url_config 2>/dev/null); then
-    API_URL=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['api_url'])" "$CFG_JSON")
-    echo "    API: $API_URL"
-    python3 - "$API_URL" <<'PY'
+    # Leemos TODOS los valores del output de una vez. Ojo: las claves son
+    # api_url / cognito_client / cognito_domain / region (las define
+    # terraform/main.tf en el output "frontend_url_config").
+    read -r API_URL COGNITO_DOMAIN COGNITO_CLIENT_ID AWS_REGION <<EOF
+$(python3 -c "
+import json, sys
+cfg = json.loads(sys.argv[1])
+print(cfg.get('api_url', ''),
+      cfg.get('cognito_domain', ''),
+      cfg.get('cognito_client', ''),
+      cfg.get('region', 'eu-west-1'))
+" "$CFG_JSON")
+EOF
+    echo "    API:      $API_URL"
+    echo "    Cognito:  ${COGNITO_DOMAIN:-<sin dominio>} / ${COGNITO_CLIENT_ID:-<sin client id>}"
+    echo "    Region:   $AWS_REGION"
+    python3 - "$API_URL" "$COGNITO_DOMAIN" "$COGNITO_CLIENT_ID" "$AWS_REGION" <<'PY'
 import json, re, sys
-api_url = sys.argv[1]
+api_url, cognito_domain, cognito_client_id, region = sys.argv[1:5]
 path = "frontend/index.html"
 s = open(path, encoding="utf-8").read()
 
@@ -37,7 +51,8 @@ s = re.sub(r"\n?<script>window\.__API_URL__=.*?</script>", "", s, flags=re.S)
 
 cfg = ('<script>window.__API_URL__=%s;window.__COGNITO_DOMAIN__=%s;'
        'window.__COGNITO_CLIENT_ID__=%s;window.__AWS_REGION__=%s;</script>'
-       % (json.dumps(api_url), json.dumps(""), json.dumps(""), json.dumps("eu-west-1")))
+       % (json.dumps(api_url), json.dumps(cognito_domain),
+          json.dumps(cognito_client_id), json.dumps(region)))
 
 marker = '<script src="assets/app.js"></script>'
 if marker not in s:

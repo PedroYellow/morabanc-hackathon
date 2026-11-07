@@ -33,14 +33,14 @@ Eso es a la vez la garantía de correctitud y la respuesta al jurado a
 | `engine/tesoreria.py` | Extracto, clasificación, proyección, fugas | **57 tests verdes** |
 | `engine/cierre.py` | Bucle de cierre: el motor sobre su propio consejo | **46 tests verdes** |
 | `agent/bedrock_agent.py` | Bedrock Converse + tool-use (11 tools) | **69 tests verdes** |
-| `lambda/handler.py` | Handler API (empaquetado y ejecutado de verdad) | **8 checks verdes** |
+| `lambda/handler.py` | Handler API (empaquetado y ejecutado de verdad) | **12 checks verdes** |
 | `terraform/main.tf` | Infra AWS 100% IaC + publicacion del front | **`terraform validate` → Success** |
 | `frontend/` | App estatica mobile-first (HTML/CSS/JS puro) | **39 asserts en Chromium real** |
 | `frontend/generar_demo_data.py` | Datos demo generados por el motor real | — |
 | `data/generar_demo.py` | 4 perfiles de extracto sintéticos | — |
 | `normativa/generar_corpus.py` | Corpus para el RAG (5 documentos) | verificado |
 
-**311 asserts en verde + Lambda validada + Terraform validado + front tested en navegador real.**
+**316 asserts en verde + Lambda validada + Terraform validado + front tested en navegador real.**
 
 ```
 $ bash scripts/verificar.sh
@@ -48,12 +48,12 @@ $ bash scripts/verificar.sh
   ✔ Motor de tesoreria — 57 asserts
   ✔ Bucle de cierre — 46 asserts
   ✔ Agente de Bedrock — 69 asserts
-  ✔ Lambda empaquetada — 8 asserts
+  ✔ Lambda empaquetada — 12 asserts
   ✔ Frontend — 39 asserts
   ✔ Terraform — configuracion valida
   ✔ Sintaxis JS valida
   ✔ 5 documentos normativos
-  Asserts correctos: 311
+  Asserts correctos: 316
   Fallos:            0
 ```
 
@@ -326,6 +326,15 @@ terraform init
 terraform validate   # → Success! The configuration is valid.
 terraform plan
 ```
+
+El paquete de la Lambda (`archive_file "motor"`) lleva solo lo que hace falta
+en runtime — `engine/`, `agent/`, `lambda/` — y excluye front, scripts, tests
+y demos. Son 40 KB en vez de 76 KB, y el cold start mejora.
+
+El `handler` de las dos Lambdas es **`lambda.handler.lambda_handler`**, que
+coincide con la estructura del zip. `scripts/test_lambda.sh` importa el módulo
+**exactamente como lo hace AWS** y comprueba que el path de Terraform coincide,
+así que un desajuste se detecta en local y no en la primera invocación del día 7.
 
 ---
 

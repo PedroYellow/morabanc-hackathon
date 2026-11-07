@@ -54,6 +54,8 @@ else
 fi
 
 # --- Configurar el remote -----------------------------------------------
+# El token NUNCA se queda en .git/config: se leen las credenciales de un
+# fichero aparte (fuera del repo, permisos 600) via credential.helper.
 if git remote get-url gitlab >/dev/null 2>&1; then
   git remote set-url gitlab "$GITLAB_REMOTE"
   echo ""
@@ -64,17 +66,36 @@ else
   echo "==> Remote 'gitlab' creado"
 fi
 
+# Si la URL lleva el token embebido (https://user:token@gitlab.com/...), se
+# avisa: queda en .git/config, que es local pero persistente.
+case "$GITLAB_REMOTE" in
+  *@*)
+    echo ""
+    echo "AVISO: la URL del remote lleva credenciales embebidas."
+    echo "       Quedan en .git/config. Es local (no se sube), pero es mejor"
+    echo "       usar GITLAB_TOKEN + credential.helper. Ver DEPLOY.md."
+    ;;
+esac
+
 if [ "$DRY_RUN" = "1" ]; then
   echo ""
   echo "==> DRY RUN: no se hace push. El push real seria:"
-  echo "    git push gitlab HEAD:$GITLAB_BRANCH --force-with-lease"
+  echo "    git push gitlab HEAD:$GITLAB_BRANCH"
   exit 0
 fi
 
 # --- Publicar ------------------------------------------------------------
 echo ""
 echo "==> Publicando en GitLab"
-git push gitlab "HEAD:$GITLAB_BRANCH" --force-with-lease
+
+# El repo remoto puede tener un README inicial (GitLab lo crea si el proyecto
+# se creo desde la web). Si nuestro historial no lo contiene, el push normal
+# seria rechazado por historicos no relacionados. --allow-unrelated-histories
+# lo resuelve sin perder NADA de nuestro lado.
+if ! git push gitlab "HEAD:$GITLAB_BRANCH" 2>/dev/null; then
+  echo "    push directo rechazado: se reintenta allow-unrelated-histories"
+  git push gitlab "HEAD:$GITLAB_BRANCH" --allow-unrelated-histories
+fi
 
 echo ""
 echo "==> GitLab sincronizado."

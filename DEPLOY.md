@@ -51,7 +51,7 @@ documento (§8) que te da una demo funcional sin AWS.
 | Corpus normativo para el RAG (5 docs) | **Listo** | Cifras clave verificadas |
 | Front servido desde CloudFront con API real | **Pendiente** | Requiere `terraform apply` |
 
-**311 asserts en verde.** Verificación completa en un comando:
+**316 asserts en verde.** Verificación completa en un comando:
 
 ```bash
 bash scripts/verificar.sh
@@ -117,7 +117,7 @@ cd morabanc_hackathon
 bash scripts/verificar.sh        # que todo sigue verde
 ```
 
-Si algo falla, **para todo el equipo y arregladlo**. Con 311 asserts en verde,
+Si algo falla, **para todo el equipo y arregladlo**. Con 316 asserts en verde,
 un fallo significa que alguien cambió algo.
 
 ### 09:00 — Credenciales
@@ -266,11 +266,57 @@ Deberías tener:
 
 - Subir todo al GitLab de MoraBanc. **Es un requisito de las bases.**
   ```bash
-  GITLAB_REMOTE=git@gitlab.com:<grupo>/<proyecto>.git bash scripts/sync_gitlab.sh
+  GITLAB_REMOTE=https://gitlab.com/pedro322/morabanc-hackathon.git \
+    bash scripts/sync_gitlab.sh
   ```
   El script verifica la suite antes de publicar: si algo está roto, no publica.
 - Dejar el repo en un estado que alguien pueda retomar en 5 minutos.
 - No tocar el motor después de las 18:00 salvo que algo esté roto.
+
+#### Si el push a GitLab falla con 403
+
+Es el fallo mas probable del día, y no es del código: es **un token de GitLab
+sin permiso de escritura**.
+
+GitLab distingue dos tipos de token:
+
+| Tipo | Permiso | Nota |
+|---|---|---|
+| **Classic** (`glpat-...`) | `write_repository` | Funciona tal cual para push. |
+| **Fine-grained** | Hay que elegir el rol por proyecto | Sin el rol adecuado, da 403 aunque tu usuario sea Owner del proyecto. |
+
+El error lo dice exactamente:
+
+```
+remote: Access denied: This operation requires a fine-grained personal
+access token with the following project permissions: [Code: Push].
+```
+
+**La solucion (30 segundos, en el navegador):**
+
+1. GitLab → **Edit profile** → **Access Tokens** → **Add new token**
+2. Scope: `write_repository` (classic) — o, si es fine-grained, elige el
+   proyecto `morabanc-hackathon` con rol **Maintainer** y marca **Code: Push**
+3. Copia el token y exportalo:
+
+```bash
+export GITLAB_TOKEN="glpat-..."
+printf 'https://pedro322:%s@gitlab.com\n' "$GITLAB_TOKEN" \
+  > ~/.git-credentials-gitlab
+chmod 600 ~/.git-credentials-gitlab
+git config credential.helper "store --file=$HOME/.git-credentials-gitlab"
+git remote set-url gitlab https://gitlab.com/pedro322/morabanc-hackathon.git
+git push gitlab main
+```
+
+**No pongas el token en la URL del remote ni en ningun fichero del repo.**
+El fichero de credenciales va en tu home, con permisos 600, y esta fuera del
+repo. Comprobado: `git grep glpat-` no encuentra nada ni en el codigo ni en
+el historial.
+
+> **El token expira.** Revocalo en cuanto entregues (GitLab → Access Tokens →
+> Revoke). Si expira durante el pitch, el repo de GitHub sigue siendo el
+> maestro y `bash scripts/sync_gitlab.sh` vuelve a publicar en un minuto.
 
 ---
 
@@ -378,8 +424,18 @@ inline**, no emojis. Si ves cuadros, es que alguien ha metido un emoji.
 
 ### "La Lambda no encuentra los módulos"
 
-Faltan los `__init__.py` en `engine/` y `agent/`. Python los necesita para que
-funcionen como paquetes dentro del zip. Están, pero no los borres.
+Faltan los `__init__.py` en `engine/`, `agent/` y `lambda/`. Python los
+necesita para que funcionen como paquetes dentro del zip. Están, pero no los
+borres.
+
+Y el `handler` de Terraform tiene que ser **`lambda.handler.lambda_handler`**,
+no `handler.lambda_handler`: el zip tiene `lambda/handler.py`, así que el
+módulo es `lambda.handler`. Con el path equivocado la Lambda se despliega
+perfectamente y falla en la **primera invocación** con `ModuleNotFoundError`.
+
+`scripts/test_lambda.sh` comprueba las dos cosas (import real + path de
+Terraform), así que no debería llegar a este punto. Si llega: mira el primer
+assert de la suite de la Lambda.
 
 ### "`terraform validate` falla con `headers`"
 
@@ -468,4 +524,4 @@ prototipo en AWS que no llega a tiempo.** No sacrifiques el motor por el cloud.
 ---
 
 **Documento preparado el 24 de octubre de 2026.** Estado verificado:
-311 asserts en verde, Terraform validado, front probado en Chromium real.
+316 asserts en verde, Terraform validado, front probado en Chromium real.
