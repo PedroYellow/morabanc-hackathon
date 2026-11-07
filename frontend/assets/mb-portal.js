@@ -32,12 +32,41 @@
     } catch (e) { return null; }
   }
 
+  // --- Control de sesion -------------------------------------------
+  //
+  // Antes el portal se abria sin sesion: si no habia token, caia al
+  // codigo "12TJ28" hardcodeado y la URL "?user=..." tambien podia
+  // sustituir al usuario. Es decir: la pagina (y los datos del
+  // escenario de esa empresa) eran accesibles sin autenticarse.
+  //
+  // Ahora, si hay un token, se USA y es el que manda (la URL no puede
+  // suplantar a otro usuario). Si NO hay token, se comprueba si la
+  // pagina esta en modo demo explicito (el front local / maqueta) y, si
+  // no, se vuelve al login.
+  var tokenSesion = null;
+  try { tokenSesion = localStorage.getItem("mb-token"); } catch (e) {}
+
+  var modoDemoExplicito = (
+    params.get("demo") === "1" ||
+    (typeof window.__MODO_DEMO__ !== "undefined" && window.__MODO_DEMO__ === true)
+  );
+
+  if (!tokenSesion && !modoDemoExplicito) {
+    // Sin sesion no se entra al portal. Se vuelve al login conservando
+    // la pagina a la que se queria ir.
+    var destino = encodeURIComponent(window.location.pathname + window.location.search);
+    window.location.replace("mb-login.html?next=" + destino);
+    // Se detiene la ejecucion de este script: lo que viene a
+    // continuacion necesita un usuario, y todavia no lo hay.
+    return;
+  }
+
   var usuario = (codigoDeLaSesion() ||
-                 params.get("user") ||
+                 (modoDemoExplicito ? params.get("user") : "") ||
                  (function () {
                    try { return localStorage.getItem("mb-codigo") || ""; } catch (e) { return ""; }
                  })() ||
-                 "12TJ28").toUpperCase();
+                 (modoDemoExplicito ? "12TJ28" : "")).toUpperCase();
 
   // ---------------------------------------------------------------
   // Escenarios

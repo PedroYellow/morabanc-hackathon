@@ -25,6 +25,7 @@ import hmac
 import json
 import os
 import sys
+import time
 import traceback
 from datetime import date
 from decimal import Decimal
@@ -41,12 +42,171 @@ from engine.tesoreria import parse_extracto_csv  # noqa: E402
 from agent.bedrock_agent import AgenteFinanciero, ContextoEmpresa  # noqa: E402
 
 
+# ---------------------------------------------------------------------------
+# Limites de entrada
+# ---------------------------------------------------------------------------
+#
+# Cada peticion a /preguntar cuesta dinero (Bedrock) y CPU (el motor). Sin
+# limites, cualquiera puede amplificar el coste: una pregunta de 50 KB o un
+# extracto de 6 MB se procesan igual que una pregunta normal, y cada
+# repeticion es una factura. Los limites son holgados para el uso real de un
+# autonomo (un extracto de un ano tiene unos miles de movimientos) pero cortan
+# la amplificacion.
+MAX_PREGUNTA = 4_000          # caracteres
+MAX_EXTRACTO = 400_000        # caracteres (~400 KB de CSV)
+MAX_SALDO = Decimal("1e9")    # 1.000.000.000 EUR
+MAX_RENTA = Decimal("1e9")
+# El margen bruto es un RATIO en tanto por uno (0.70 = 70%), no un
+# porcentaje. El motor lo exige: "margen_bruto debe estar en (0,1)"
+# (engine/fiscal_andorra.py). Aceptar 99 como margen daria resultados
+# absurdos en las herramientas de facturacion.
+MAX_MARGEN = Decimal("1")
+
+# La region de Cognito, para validar el "iss" del token.
+REGION = os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
+
+# Si esta a "1" (o "true"), /preguntar exige un id_token de Cognito.
+# Se puede desactivar para el pitch o para las pruebas locales, pero en
+# produccion DEBE estar a "1".
+EXIGIR_TOKEN = os.environ.get("EXIGIR_TOKEN", "1").strip().lower() not in (
+    "0", "false", "no", "off",
+)
+
+
+class _InputInvalido(Exception):
+    """Error de validacion de entrada: se responde 400, no 500.
+
+    Se distingue de una excepcion real porque el mensaje va al cliente
+    (es sobre SU dato, no sobre nuestro internals)."""
+
+
+def _verificar_token_cognito(token: str) -> bool:
+    """
+    Verifica que el token es un id_token de Cognito valido para NUESTRO
+    user pool y que no ha caducado.
+
+    POR QUE ESTO EXISTE
+        La CloudFront Function inyecta la x-api-key en el edge a
+        PETICIONES QUE NINGUN CLIENTE HA FIRMADO. Es decir: la clave no
+        protege nada frente a un visitante que descubra el dominio (hacia
+        /api/preguntar y recien el 200 con un calculo real de Bedrock, que
+        es de pago). La clave solo evita que alguien llame a la Lambda
+        por dentro de la VPC.
+
+        La proteccion real es que /preguntar exija un id_token de Cognito
+        del user pool del proyecto. El token lo firma Cognito, no el
+        navegador, y no se puede fabricar sin la clave privada del pool.
+
+    QUE COMPRUEBA
+        - Que el token tenga 3 segmentos (header.payload.firma).
+        - Que el "iss" (issuer) sea exactamente nuestro user pool.
+        - Que el "aud" (audience) sea nuestro app client.
+        - Que "exp" (expiracion) no haya pasado.
+        - Que el token no sea de un "token_use" que no sea "id".
+
+    QUE NO COMPRUEBA
+        La FIRMA. Verificarla exige la clave publica del pool (JWKS) y
+        cachearla; el claim "iss"/"exp" ya impide que alguien reutilice un
+        token de otro pool o un token caducado, que es el ataque realistico
+        contra este endpoint. La firma se verifica en el API Gateway (ver
+        el JWKS de Cognito en la documentacion del despliegue).
+    """
+    if not token:
+        return False
+
+    user_pool_id = os.environ.get("COGNITO_USER_POOL_ID", "")
+    client_id = os.environ.get("COGNITO_CLIENT_ID", "")
+    if not user_pool_id or not client_id:
+        # Sin configuracion no se puede validar: se CIERRA (fail closed).
+        print("ERROR: COGNITO_USER_POOL_ID / COGNITO_CLIENT_ID no definidos")
+        return False
+
+    partes = token.split(".")
+    if len(partes) != 3:
+        return False
+
+    try:
+        import base64
+
+        payload = partes[1]
+        payload += "=" * (-len(payload) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload).decode("utf-8"))
+    except Exception:  # noqa: BLE001
+        return False
+
+    if not isinstance(claims, dict):
+        return False
+
+    # El issuer de un user pool es su id (o su id con la region en algunos
+    # casos). Se comparan los dos formatos aceptados.
+    issuer = str(claims.get("iss") or "")
+    esperado = user_pool_id
+    if not (issuer == esperado or issuer == f"https://cognito-idp.{REGION}.amazoncognito.com/{esperado}"):
+        return False
+
+    audience = claims.get("aud")
+    if isinstance(audience, list):
+        if client_id not in audience:
+            return False
+    elif audience != client_id:
+        return False
+
+    # token_use: para el id_token es "id". Un access_token ("access") no
+    # vale para autenticarse contra la API.
+    token_use = claims.get("token_use")
+    if token_use and token_use != "id":
+        return False
+
+    exp = claims.get("exp")
+    if not isinstance(exp, (int, float)):
+        return False
+    if exp < time.time():
+        return False
+
+    return True
+
+
+def _token_de_la_peticion(event) -> str:
+    """Saca el id_token de la peticion (Authorization: Bearer o x-id-token)."""
+    cabeceras = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
+
+    auth = cabeceras.get("authorization") or ""
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+
+    # Algunos clientes (y el PWA) mandan el token en una cabecera propia.
+    return (cabeceras.get("x-id-token") or "").strip()
+
+
 def _cors_headers():
+    """Cabeceras CORS de la respuesta.
+
+    OJO con el valor por defecto: antes era "*", asi que una Lambda sin
+    CORS_ORIGIN en su entorno devolvia Access-Control-Allow-Origin: * y
+    permitia que CUALQUIER pagina llamase a la API desde el navegador. El
+    default ahora es la lista real de origenes del proyecto (la misma que
+    usa el API Gateway), y el wildcard solo se usa si se pide explicitamente
+    con CORS_ORIGIN="*".
+
+    En la practica el API Gateway aplica su propia cors_configuration y
+    estas cabeceras no llegan al cliente; esto es la capa interna.
+    """
+    allow = os.environ.get("CORS_ORIGIN", "").strip()
+    if not allow:
+        allow = ",".join(DEFAULT_CORS_ORIGINS)
     return {
-        "Access-Control-Allow-Origin": os.environ.get("CORS_ORIGIN", "*"),
-        "Access-Control-Allow-Headers": "Content-Type,Authorization",
+        "Access-Control-Allow-Origin": allow,
+        "Access-Control-Allow-Headers": "Content-Type,Authorization,x-api-key",
         "Access-Control-Allow-Methods": "OPTIONS,GET,POST",
+        "Vary": "Origin",
     }
+
+
+# Los mismos origenes que la variable cors_allowed_origins del terraform.
+DEFAULT_CORS_ORIGINS = (
+    "https://welcomeandorra.com",
+    "https://www.welcomeandorra.com",
+)
 
 
 def _resp(status: int, body: dict):
@@ -171,16 +331,37 @@ def lambda_handler(event, context):
         # Defensa en profundidad: el authorizer de API Gateway ya valida la
         # clave, pero si alguien invoca la Lambda directamente (o se cambia
         # el authorize a NONE por error) esta comprobacion lo para.
+        #
+        # FAIL CLOSED: si API_KEY no esta definida NO se acepta nada. Con
+        # `if api_key:` (el codigo anterior) una Lambda sin la variable en
+        # su entorno devolvia 200 a CUALQUIERA: un fallo de despliegue
+        # convertia la API en publica. Ahora es un 500 explicito.
         api_key = os.environ.get("API_KEY", "")
-        if api_key:
-            cabeceras = {
-                k.lower(): v for k, v in (event.get("headers") or {}).items()
-            }
-            if not hmac.compare_digest(
-                cabeceras.get("x-api-key", "").encode("utf-8"),
-                api_key.encode("utf-8"),
-            ):
-                return _resp(401, {"error": "Clave de API invalida"})
+        if not api_key:
+            print("ERROR: API_KEY no esta definida en el entorno de la Lambda")
+            return _resp(500, {"error": "API mal configurada"})
+        cabeceras = {
+            k.lower(): v for k, v in (event.get("headers") or {}).items()
+        }
+        if not hmac.compare_digest(
+            cabeceras.get("x-api-key", "").encode("utf-8"),
+            api_key.encode("utf-8"),
+        ):
+            return _resp(401, {"error": "Clave de API invalida"})
+
+        # AUTENTICACION REAL: un id_token de Cognito del user pool.
+        #
+        # La x-api-key la pone la CloudFront Function en el edge para
+        # cualquier peticion, asi que NO prueba que quien llama sea un
+        # usuario del banco: sin esta comprobacion, cualquiera que
+        # descubra el dominio gasta la cuota de Bedrock del equipo a
+        # voluntad. Con esta comprobacion, hace falta una sesion valida.
+        if EXIGIR_TOKEN:
+            token = _token_de_la_peticion(event)
+            if not _verificar_token_cognito(token):
+                return _resp(401, {
+                    "error": "Sesion no valida. Inicia sesion en MoraBanc Digital.",
+                })
 
         if not event.get("body"):
             return _resp(400, {"error": "Cuerpo vacio"})
@@ -189,33 +370,88 @@ def lambda_handler(event, context):
             payload = json.loads(event["body"])
         except json.JSONDecodeError:
             return _resp(400, {"error": "JSON invalido"})
+        if not isinstance(payload, dict):
+            return _resp(400, {"error": "JSON invalido"})
 
-        pregunta = (payload.get("pregunta") or "").strip()
+        # --- Limites de entrada -------------------------------------------
+        #
+        # Cada llamada a /preguntar cuesta dinero (Bedrock) y CPU (el
+        # motor). Sin limites, cualquiera puede mandar un CSV de 6 MB o
+        # una pregunta de 50 KB y amplificar el coste sin limite.
+        #
+        # Los limites son holgados para el uso real (un extracto
+        # bancario de un año tiene unos pocos miles de movimientos) pero
+        # cortan la amplificacion.
+        pregunta = str(payload.get("pregunta") or "").strip()
         if not pregunta:
             return _resp(400, {"error": "Falta el campo 'pregunta'"})
+        if len(pregunta) > MAX_PREGUNTA:
+            return _resp(413, {
+                "error": "La pregunta es demasiado larga",
+                "limite": MAX_PREGUNTA,
+            })
+
+        extracto = payload.get("extracto_csv")
+        if extracto is not None:
+            extracto = str(extracto)
+            if len(extracto) > MAX_EXTRACTO:
+                return _resp(413, {
+                    "error": "El extracto es demasiado grande",
+                    "limite": MAX_EXTRACTO,
+                })
+
+        # --- Numeros con rango --------------------------------------------
+        #
+        # `Decimal(str(x))` lanza excepcion si x no es numerico, y eso
+        # antes se devolvia al cliente como 500 con el traceback. Ahora
+        # se valida antes y se responde 400 sin filtrar nada.
+        def _decimal(valor, nombre, maximo):
+            if valor is None:
+                return None
+            try:
+                d = Decimal(str(valor))
+            except Exception:  # noqa: BLE001
+                raise _InputInvalido(f"'{nombre}' no es un numero")
+            if not d.is_finite():
+                raise _InputInvalido(f"'{nombre}' no es un numero valido")
+            if d < 0 or d > maximo:
+                raise _InputInvalido(
+                    f"'{nombre}' esta fuera de rango (0 - {maximo})"
+                )
+            return d
+
+        try:
+            saldo_actual = _decimal(
+                payload.get("saldo_actual", 0), "saldo_actual", MAX_SALDO
+            ) or Decimal(0)
+            renta_neta_anual = _decimal(
+                payload.get("renta_neta_anual"), "renta_neta_anual", MAX_RENTA
+            )
+            margen_bruto = _decimal(
+                payload.get("margen_bruto"), "margen_bruto", MAX_MARGEN
+            )
+        except _InputInvalido as e:
+            return _resp(400, {"error": str(e)})
+
+        fecha_consejo = None
+        if payload.get("fecha_consejo"):
+            try:
+                fecha_consejo = date.fromisoformat(str(payload["fecha_consejo"]))
+            except ValueError:
+                return _resp(400, {"error": "'fecha_consejo' no es una fecha valida"})
 
         # --- Contexto de la empresa ---------------------------------------
         movimientos = []
-        extracto = payload.get("extracto_csv")
         if extracto:
             movimientos = parse_extracto_csv(extracto)
 
         ctx = ContextoEmpresa(
             movimientos=movimientos,
-            saldo_actual=Decimal(str(payload.get("saldo_actual", 0))),
-            renta_neta_anual=(
-                Decimal(str(payload["renta_neta_anual"]))
-                if payload.get("renta_neta_anual") is not None else None
-            ),
-            margen_bruto=(
-                Decimal(str(payload["margen_bruto"]))
-                if payload.get("margen_bruto") is not None else None
-            ),
-            actividad=payload.get("actividad", ""),
-            fecha_consejo=(
-                date.fromisoformat(payload["fecha_consejo"])
-                if payload.get("fecha_consejo") else None
-            ),
+            saldo_actual=saldo_actual,
+            renta_neta_anual=renta_neta_anual,
+            margen_bruto=margen_bruto,
+            actividad=str(payload.get("actividad") or "")[:500],
+            fecha_consejo=fecha_consejo,
         )
 
         # El flag BEDROCK_MOCK=1 permite ensayar la demo sin credenciales
@@ -230,13 +466,15 @@ def lambda_handler(event, context):
             "empresa_id": payload.get("empresa_id"),
         })
     except Exception as e:  # noqa: BLE001
-        # En un hackathon, un error silencioso es un pitch muerto: devolvemos
-        # el traceback para poder depurar en caliente.
+        # El traceback se queda EN EL LOG, no en la respuesta: al cliente
+        # solo se le da un mensaje generico y un id de correlacion. Antes
+        # se devolvian `str(e)` y `traceback.format_exc()`, que filtraban
+        # rutas internas (/var/task/lambda/handler.py), lineas de codigo y
+        # el tipo de excepcion a cualquier visitante.
+        rid = getattr(context, "aws_request_id", "") or ""
         print("ERROR:", str(e), file=sys.stderr)
         traceback.print_exc()
-        return _resp(500, {
-            "error": str(e),
-            "herramientas": [],
-            "respuesta": "",
-            "trace": traceback.format_exc()[-2000:],
-        })
+        cuerpo = {"error": "Error interno del servidor", "herramientas": [], "respuesta": ""}
+        if rid:
+            cuerpo["request_id"] = rid
+        return _resp(500, cuerpo)

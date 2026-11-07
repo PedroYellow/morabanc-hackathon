@@ -19,9 +19,10 @@
      - Si la sesion es valida, se guarda el token y se entra al portal
        de empresas o de particulares segun el perfil del usuario.
 
-   Si Cognito no esta disponible (sin red, o el pool no configurado),
-   se cae al modo DEMO: se comprueba la contrasena de prueba y se entra
-   igualmente. Es lo que permite que el pitch no se caiga nunca.
+   La validacion la hace la Lambda (/api/login), que llama a Cognito con
+   ADMIN_USER_PASSWORD_AUTH y devuelve el id_token ya firmado. El
+   navegador NO decide si la contrasena es buena: eso es lo que hacia el
+   modo demo, y por ahi se colaba cualquiera.
 
    Los 4 usuarios de prueba (creados en Cognito con
    admin-create-user) son:
@@ -31,7 +32,10 @@
      12TJ30  admin.barnesifils@morabanc-demo.ad         Comercio
      12TJ31  finanzas.ceramicacanillo@morabanc-demo.ad  Cierre
 
-   Contrasena de todos: MoraBanc2026!
+   La contrasena de estos usuarios es la que se muestra en la propia
+   pagina de acceso (son credenciales de DEMO, de una demo). Lo que ya NO
+   existe es el atajo: sin Cognito configurado, la contrasena NO esta en
+   el bundle y el modo demo no acepta a nadie.
    ============================================================ */
 (function () {
   "use strict";
@@ -41,7 +45,18 @@
   // El codigo de empresa que abre el PORTAL DE EMPRESAS (donde vive el
   // asesor). Los demas usuarios de prueba van al portal de particulares.
   var USUARIO_EMPRESA = "12TJ28";
-  var PASSWORD_VALIDA = "MoraBanc2026!";  // la de los usuarios de demo
+
+  // La contrasena de los usuarios de prueba NO esta en el front.
+  //
+  // Antes si: "MoraBanc2026!" estaba escrito en este bundle (que es
+  // publico: cualquiera puede leer el JS servido). Cualquiera podia
+  // entrar al portal con ella y, por el fallo de red de /api/login,
+  // acababa en el modo DEMO con la contrasena hardcodeada.
+  //
+  // Ahora la validacion la hace SIEMPRE la Lambda contra Cognito. Este
+  // modo demo solo se usa si NO hay Cognito configurado (front local sin
+  // backend), que se comprueba con COGNITO_DOMAIN antes.
+  var PASSWORD_VALIDA = "";
 
   // Cognito (inyectado por el deploy; el front lo lee de window)
   var COGNITO_DOMAIN = (window.__COGNITO_DOMAIN__ || "").trim();
@@ -187,11 +202,14 @@
       return Promise.resolve({ ok: false, mensaje: "Usuari desconegut" });
     }
     if (!COGNITO_DOMAIN || !COGNITO_CLIENT) {
-      // Sin configuracion de Cognito: modo demo.
+      // Sin Cognito configurado: front local sin backend. Sin la
+      // contrasena de demo en el bundle (PASSWORD_VALIDA esta vacio),
+      // este camino solo sirve si alguien la define por consola. En el
+      // front publicado nunca se cumple.
       return Promise.resolve(
-        contrasena === PASSWORD_VALIDA
+        (PASSWORD_VALIDA && contrasena === PASSWORD_VALIDA)
           ? { ok: true, demo: true, empresa: String(usuario).toUpperCase() === USUARIO_EMPRESA }
-          : { ok: false, mensaje: "Contrasenya incorrecta" }
+          : { ok: false, mensaje: "Autenticacion no configurada" }
       );
     }
 
@@ -288,8 +306,15 @@
         btnAcceder.textContent = "Accedint…";
       }
 
-      // Autentica contra Cognito. Si no se puede (sin red, pool no
-      // configurado), cae al modo demo.
+      // Autentica contra Cognito (a traves de la Lambda /api/login).
+      //
+      // NO hay modo demo por fallo de red: si la API no responde, el
+      // login falla. Antes, un error de red (o un 404 de la ruta, que
+      // era lo que pasaba: /api/login no existia) caia en el modo demo
+      // y entraba CUALQUIERA con la contrasena "MoraBanc2026!", que
+      // estaba escrita en el propio bundle. La unica excepcion es que
+      // Cognito no este configurado (front local sin backend), que se
+      // comprueba ANTES de llamar a la API.
       autenticar(u, pass ? pass.value : "")
         .then(function (r) {
           if (!r.ok) {
@@ -306,18 +331,13 @@
           entrar(r);
         })
         .catch(function () {
-          // Fallo de red: modo demo, para que el pitch no se caiga.
-          if (pass && pass.value === PASSWORD_VALIDA) {
-            entrar({ demo: true, empresa: u === USUARIO_EMPRESA });
-          } else {
-            if (btnAcceder) {
-              btnAcceder.classList.add("error");
-              btnAcceder.textContent = "No s'ha pogut connectar";
-              setTimeout(function () {
-                btnAcceder.classList.remove("error");
-                btnAcceder.textContent = "Accedir";
-              }, 2200);
-            }
+          if (btnAcceder) {
+            btnAcceder.classList.add("error");
+            btnAcceder.textContent = "No s'ha pogut connectar";
+            setTimeout(function () {
+              btnAcceder.classList.remove("error");
+              btnAcceder.textContent = "Accedir";
+            }, 2200);
           }
         });
     });

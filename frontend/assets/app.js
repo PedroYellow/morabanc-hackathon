@@ -24,6 +24,19 @@
     modoDemo: !window.__API_URL__,
   };
 
+  // El id_token de Cognito de la sesion iniciada en el login.
+  //
+  // La API lo exige en /preguntar: la x-api-key la inyecta el edge de
+  // CloudFront a cualquier peticion, asi que no prueba nada sobre quien
+  // pregunta. Este token si: lo firma Cognito.
+  function tokenDeSesion() {
+    try {
+      return localStorage.getItem("mb-token") || "";
+    } catch (e) {
+      return "";
+    }
+  }
+
   const PERFILES_DEMO = {
     freelance: {
       etiqueta: "Freelance de servicios",
@@ -285,6 +298,13 @@
     // pueda gastarnos la cuota de Bedrock del equipo.
     if (CFG.apiKey) cabeceras["x-api-key"] = CFG.apiKey;
 
+    // Y ADEMAS con el id_token de Cognito: la x-api-key la pone el edge
+    // de CloudFront a cualquier peticion, asi que sola no prueba que
+    // quien pregunta sea un cliente del banco. Sin sesion, la API
+    // responde 401 y no se gasta nada.
+    const token = tokenDeSesion();
+    if (token) cabeceras["Authorization"] = "Bearer " + token;
+
     const resp = await fetch(CFG.apiUrl + "/preguntar", {
       method: "POST",
       headers: cabeceras,
@@ -293,6 +313,11 @@
 
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
+      if (resp.status === 401) {
+        // La sesion caduco o no hay sesion: hay que volver a entrar.
+        try { localStorage.removeItem("mb-token"); } catch (e) {}
+        throw new Error(err.error || "Sesion no valida. Vuelve a iniciar sesion.");
+      }
       throw new Error(err.error || ("HTTP " + resp.status));
     }
     return resp.json();

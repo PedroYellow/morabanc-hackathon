@@ -677,6 +677,15 @@ resource "aws_lambda_function" "api" {
       ENVIRONMENT     = var.environment
       # La misma clave que valida el authorizer: defensa en profundidad.
       API_KEY = random_password.api_key.result
+      # Para validar el id_token de Cognito en /preguntar y /login.
+      COGNITO_USER_POOL_ID = aws_cognito_user_pool.usuarios.id
+      COGNITO_CLIENT_ID    = aws_cognito_user_pool_client.web.id
+      # /preguntar exige sesion valida. La x-api-key la inyecta la
+      # CloudFront Function en el edge para cualquier peticion, asi que
+      # sola no prueba que quien llama sea un cliente del banco.
+      EXIGIR_TOKEN = "1"
+      # CORS: la lista real de origenes, nunca "*".
+      CORS_ORIGIN = join(",", var.cors_allowed_origins)
     }
   }
 
@@ -928,6 +937,26 @@ resource "aws_apigatewayv2_route" "salud" {
   # para comprobar que la API esta viva sin depender de la key.
 }
 
+# El login del portal de empresas.
+#
+# Va SIN authorizer: es la puerta de entrada, no se puede exigir una
+# sesion para pedirla. La Lambda valida usuario y contrasena contra
+# Cognito (ADMIN_USER_PASSWORD_AUTH) y devuelve el id_token.
+#
+# La ruta con prefijo "/api" es la que usa el front publicado en
+# CloudFront (que llama a "/api/login"), igual que con /preguntar.
+resource "aws_apigatewayv2_route" "login" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "POST /login"
+  target    = "integrations/${aws_apigatewayv2_integration.api.id}"
+}
+
+resource "aws_apigatewayv2_route" "api_login" {
+  api_id    = aws_apigatewayv2_api.api.id
+  route_key = "POST /api/login"
+  target    = "integrations/${aws_apigatewayv2_integration.api.id}"
+}
+
 # OJO: auto_deploy = false a proposito.
 #
 # Con auto_deploy = true, API Gateway sigue sirviendo un deployment
@@ -956,6 +985,8 @@ resource "aws_apigatewayv2_deployment" "api" {
   depends_on = [
     aws_apigatewayv2_route.preguntar,
     aws_apigatewayv2_route.api_preguntar,
+    aws_apigatewayv2_route.login,
+    aws_apigatewayv2_route.api_login,
     aws_apigatewayv2_route.salud,
     aws_apigatewayv2_integration.api,
   ]
@@ -1053,17 +1084,38 @@ resource "aws_cognito_user_pool_client" "web" {
   name                                 = "${local.name}-web"
   user_pool_id                         = aws_cognito_user_pool.usuarios.id
   generate_secret                      = false
-  explicit_auth_flows                  = ["ALLOW_USER_PASSWORD_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
+  # ALLOW_ADMIN_USER_PASSWORD_AUTH es lo que usa la Lambda en la ruta
+  # /login: admin-initiate-auth es el unico flujo que funciona con un
+  # app client publico (sin client secret). El token endpoint rechaza
+  # el grant "password" en clientes publicos.
+  explicit_auth_flows = [
+    "ALLOW_ADMIN_USER_PASSWORD_AUTH",
+    "ALLOW_USER_PASSWORD_AUTH",
+    "ALLOW_USER_SRP_AUTH",
+    "ALLOW_REFRESH_TOKEN_AUTH",
+  ]
   supported_identity_providers         = ["COGNITO"]
   allowed_oauth_flows_user_pool_client = true
   callback_urls                        = var.cors_allowed_origins
-  allowed_oauth_flows                  = ["code"]
+  allowed_oauth_flows                  = ["code", "implicit"]
   allowed_oauth_scopes                 = ["email", "openid", "profile"]
   # Validez de los tokens en HORAS (el provider las interpreta como horas).
+  #
+  # OJO: no se puede declarar "token_validity_units" aqui. El provider
+  # de Cognito lo devuelve como bloque y produce "Provider produced
+  # inconsistent result after apply" (.token_validity_units: block count
+  # changed from 0 to 1), que aborta el apply entero. Los valores de
+  # arriba ya son los que se necesitan.
   access_token_validity   = 1
   id_token_validity       = 1
   refresh_token_validity  = 720
   enable_token_revocation = true
+
+  lifecycle {
+    # El apply debe tolerar el bloque extra que el provider devuelve
+    # (token_validity_units), sin abortar el despliegue entero.
+    ignore_changes = [explicit_auth_flows]
+  }
 }
 
 resource "aws_cognito_user_pool_domain" "dominio" {
@@ -1157,12 +1209,23 @@ function handler(event) {
 # authorizer responde 401.
 resource "aws_cloudfront_origin_request_policy" "api_headers" {
   name    = "mora-forward-api-key"
-  comment = "Reenvia la x-api-key al origen para que el authorizer la valide"
+  comment = "Reenvia la x-api-key y el Authorization al origen para que el authorizer y la Lambda los validen"
 
   headers_config {
     header_behavior = "whitelist"
     headers {
-      items = ["x-api-key", "content-type", "accept", "origin", "referer", "user-agent"]
+      # "authorization" es OBLIGATORIO: sin esta cabecera, CloudFront
+      # quita el Authorization antes de llegar a la Lambda y /preguntar
+      # responde 401 siempre (el id_token de Cognito nunca llega).
+      items = [
+        "x-api-key",
+        "authorization",
+        "content-type",
+        "accept",
+        "origin",
+        "referer",
+        "user-agent",
+      ]
     }
   }
 
@@ -1229,6 +1292,22 @@ resource "aws_acm_certificate" "dominio" {
   }
 }
 
+# La coleccion de OpenSearch Serverless la crea el bootstrap del
+# hackathon, no Terraform (el provider no admite importar un nombre con
+# guiones). Se guardan aqui su ARN y su endpoint para que el KB los
+# use. Si se cambia la coleccion, se actualizan estos dos valores.
+variable "opensearch_collection_arn" {
+  description = "ARN de la coleccion de OpenSearch Serverless (la crea el bootstrap)"
+  type        = string
+  default     = "arn:aws:aoss:us-east-1:539756034803:collection/t724pe7tsxp31kxuzxvi"
+}
+
+variable "opensearch_collection_endpoint" {
+  description = "Endpoint de la coleccion de OpenSearch Serverless"
+  type        = string
+  default     = "https://t724pe7tsxp31kxuzxvi.us-east-1.aoss.amazonaws.com"
+}
+
 variable "dominio_cloudfront" {
   description = <<-EOT
     Dominio que sirve CloudFront.
@@ -1241,6 +1320,67 @@ variable "dominio_cloudfront" {
   EOT
   type        = string
   default     = "welcomeandorra.com"
+}
+
+# ---------------------------------------------------------------------------
+# Cabeceras de seguridad
+# ---------------------------------------------------------------------------
+#
+# Sin esta policy, el sitio se sirve SIN CSP, SIN HSTS, SIN
+# X-Frame-Options, SIN X-Content-Type-Options y SIN Permissions-Policy.
+# Verificado en produccion: las cabeceras de respuesta no incluian ninguna
+# de ellas.
+#
+# - CSP: el front es estatico y no hace fetch a dominios externos. Solo
+#   se permite lo que el propio sitio necesita. 'unsafe-inline' para los
+#   estilos y scripts porque el front define estilos en linea y el
+#   script de configuracion va en linea (inyectado por el deploy).
+# - HSTS: 2 anos con subdominios, para que un atacante no pueda
+#  _ATTENUAR_ la proteccion con un SSL stripping.
+# - frame-ancestors 'none': el portal no se puede embeber en un iframe
+#   de otro sitio (clickjacking sobre el login).
+resource "aws_cloudfront_response_headers_policy" "seguridad" {
+  name    = "mora-headers-seguridad"
+  comment = "CSP, HSTS y proteccion contra clickjacking para el front de MoraBanc"
+
+  security_headers_config {
+    content_type_options {
+      override = true
+    }
+
+    frame_options {
+      frame_option = "DENY"
+      override     = true
+    }
+
+    referrer_policy {
+      referrer_policy = "strict-origin-when-cross-origin"
+      override        = true
+    }
+
+    strict_transport_security {
+      access_control_max_age_sec = 63072000
+      include_subdomains         = true
+      preload                    = true
+      override                   = true
+    }
+
+    content_security_policy {
+      content_security_policy = join("", [
+        "default-src 'self'; ",
+        "script-src 'self' 'unsafe-inline' https://cognito-idp.us-east-1.amazonaws.com; ",
+        "style-src 'self' 'unsafe-inline'; ",
+        "img-src 'self' data: blob:; ",
+        "font-src 'self' data:; ",
+        "connect-src 'self' https://cognito-idp.${var.aws_region}.amazonaws.com https://${var.dominio_principal != "" ? var.dominio_principal : var.dominio_cloudfront}; ",
+        "frame-ancestors 'none'; ",
+        "base-uri 'self'; ",
+        "form-action 'self'; ",
+        "object-src 'none'"
+      ])
+      override = true
+    }
+  }
 }
 
 resource "aws_cloudfront_distribution" "web" {
@@ -1288,6 +1428,9 @@ resource "aws_cloudfront_distribution" "web" {
     cached_methods  = ["GET", "HEAD"]
     compress        = true
 
+    # CSP, HSTS, X-Frame-Options, etc.
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.seguridad.id
+
     forwarded_values {
       query_string = false
       cookies {
@@ -1316,6 +1459,31 @@ resource "aws_cloudfront_distribution" "web" {
     # cabecera se pierde antes de llegar al authorizer y responde 401.
     cache_policy_id            = aws_cloudfront_cache_policy.api_no_cache.id
     origin_request_policy_id   = aws_cloudfront_origin_request_policy.api_headers.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.seguridad.id
+
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.inject_api_key.arn
+    }
+  }
+
+  # El login del portal de empresas.
+  #
+  # Va al mismo origen que la API. La CloudFront Function le anade la
+  # x-api-key, pero esa ruta NO tiene authorizer en el API Gateway: el
+  # login es la puerta de entrada y no puede exigir una sesion previa.
+  # La Lambda valida usuario y contrasena contra Cognito.
+  ordered_cache_behavior {
+    path_pattern           = "/api/login"
+    target_origin_id       = "api-${aws_apigatewayv2_api.api.id}"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = true
+
+    cache_policy_id            = aws_cloudfront_cache_policy.api_no_cache.id
+    origin_request_policy_id   = aws_cloudfront_origin_request_policy.api_headers.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.seguridad.id
 
     function_association {
       event_type   = "viewer-request"
@@ -1334,6 +1502,7 @@ resource "aws_cloudfront_distribution" "web" {
 
     cache_policy_id          = aws_cloudfront_cache_policy.api_no_cache.id
     origin_request_policy_id = aws_cloudfront_origin_request_policy.api_headers.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.seguridad.id
 
     function_association {
       event_type   = "viewer-request"
@@ -1358,6 +1527,7 @@ resource "aws_cloudfront_distribution" "web" {
 
     cache_policy_id          = aws_cloudfront_cache_policy.api_no_cache.id
     origin_request_policy_id = aws_cloudfront_origin_request_policy.api_headers.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.seguridad.id
 
     function_association {
       event_type   = "viewer-request"
@@ -1375,6 +1545,7 @@ resource "aws_cloudfront_distribution" "web" {
 
     cache_policy_id          = aws_cloudfront_cache_policy.api_no_cache.id
     origin_request_policy_id = aws_cloudfront_origin_request_policy.api_headers.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.seguridad.id
 
     function_association {
       event_type   = "viewer-request"
@@ -1537,7 +1708,7 @@ resource "null_resource" "indice_default" {
   ]
 
   triggers = {
-    coleccion = one(aws_opensearchserverless_collection.vector[*].collection_endpoint)
+    coleccion = var.opensearch_collection_endpoint
     # Si la collection_endpoint cambia, hay que rehacerlo.
   }
 
@@ -1547,7 +1718,7 @@ resource "null_resource" "indice_default" {
     # firma con botocore, que ya esta instalado.
     command = <<-EOT
       set -e
-      ENDPOINT="${one(aws_opensearchserverless_collection.vector[*].collection_endpoint)}"
+      ENDPOINT="${var.opensearch_collection_endpoint}"
       if [ -z "$ENDPOINT" ]; then
         echo "sin endpoint de la coleccion: se salta"
         exit 0
@@ -1555,7 +1726,13 @@ resource "null_resource" "indice_default" {
       # OJO: $RAIZ no existe dentro del provisioner (es una variable del
       # script de shell, no de terraform). La ruta se saca de path.module,
       # que es el directorio del modulo de terraform.
-      python3 "${path.module}/../scripts/crear_indice_opensearch.py" "$ENDPOINT" default
+      #
+      # El python es el del venv (/opt/venv/bin/python3): el python3 del
+      # PATH no tiene boto3 y el script revienta con "No module named
+      # 'boto3'", tumbando el apply.
+      PY="/opt/venv/bin/python3"
+      [ -x "$PY" ] || PY=$(command -v python3)
+      "$PY" "${path.module}/../scripts/crear_indice_opensearch.py" "$ENDPOINT" default
     EOT
   }
 }
@@ -1587,7 +1764,7 @@ resource "aws_bedrockagent_knowledge_base" "normativa" {
     type = "OPENSEARCH_SERVERLESS"
 
     opensearch_serverless_configuration {
-      collection_arn    = one(aws_opensearchserverless_collection.vector[*].arn)
+      collection_arn    = var.opensearch_collection_arn
       vector_index_name = "default"
 
       field_mapping {
@@ -1833,7 +2010,18 @@ resource "aws_opensearchserverless_access_policy" "datos" {
 }
 
 resource "aws_opensearchserverless_collection" "vector" {
-  count = (var.bedrock_kb_id != "" || !var.enable_kb) ? 0 : 1
+  # La coleccion la crea el script de bootstrap del hackathon, no
+  # Terraform. Motivo: el nombre lleva guiones ("morabanc-...-vector")
+  # y el provider NO admite importarlo ("must satisfy regular
+  # expression pattern: [a-z0-9]{3,40}"), asi que cualquier apply
+  # intentaria recrearla y fallaria con ConflictException, tumbando
+  # el despliegue entero.
+  #
+  # Se importa a mano con:
+  #   terraform import 'aws_opensearchserverless_collection.vector[0]'   #     <nombre-sin-guiones>
+  # (el provider no lo acepta, por eso count = 0 y la gestion es
+  # manual, pero el recurso sigue existiendo en AWS.)
+  count = 0
 
   depends_on = [
     time_sleep.aoss_policy,
@@ -1878,7 +2066,7 @@ resource "aws_iam_role_policy" "bedrock_kb" {
       {
         Effect   = "Allow"
         Action   = ["aoss:APIAccessAll"]
-        Resource = aws_opensearchserverless_collection.vector[*].arn
+        Resource = var.opensearch_collection_arn
       },
       {
         Effect   = "Allow"
