@@ -1445,7 +1445,7 @@ resource "aws_opensearchserverless_access_policy" "datos" {
       # eso van los dos.
       Principal = [
         "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root",
-        aws_iam_role.bedrock_kb[0].arn,
+        one(aws_iam_role.bedrock_kb[*].arn),
         "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/WSParticipantRole",
         "arn:aws:sts::${data.aws_caller_identity.current.account_id}:assumed-role/WSParticipantRole/Participant",
       ]
@@ -1473,7 +1473,7 @@ resource "aws_opensearchserverless_access_policy" "datos" {
       # eso van los dos.
       Principal = [
         "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root",
-        aws_iam_role.bedrock_kb[0].arn,
+        one(aws_iam_role.bedrock_kb[*].arn),
         "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/WSParticipantRole",
         "arn:aws:sts::${data.aws_caller_identity.current.account_id}:assumed-role/WSParticipantRole/Participant",
       ]

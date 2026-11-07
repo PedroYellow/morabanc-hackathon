@@ -555,6 +555,66 @@ else:
           False, "no se encontro el recurso")
 
 
+
+# ==========================================================================
+# Regresiones del despliegue completo (con credenciales nuevas)
+# ==========================================================================
+
+# BUG 14: el vhost de nginx no tenia bloque /api: el POST devolvia 404 y
+# la web se quedaba en modo demo sin que se notase.
+# OJO: el vhost lo genera scripts/deploy_welcome.sh, no el .tf.
+try:
+    _raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _deploy_welcome = open(os.path.join(_raiz, "scripts", "deploy_welcome.sh"),
+                           encoding="utf-8").read()
+except OSError:
+    _deploy_welcome = ""
+check("el vhost de nginx tiene el bloque /api",
+      "location /api/" in _deploy_welcome)
+check("el proxy apunta a la API de AWS", "proxy_pass" in _deploy_welcome)
+check("la API key la pone nginx, no el navegador",
+      "proxy_set_header x-api-key" in _deploy_welcome,
+      "si la clave viaja en el HTML, se lee en el codigo fuente de la web")
+
+# BUG 15: la KMS no delegaba en cloudfront.amazonaws.com: con el bucket
+# cifrado con KMS gestionada, CloudFront servia un 403 Access Denied.
+check("la key policy delega en cloudfront.amazonaws.com",
+      "cloudfront.amazonaws.com" in SRC,
+      "sin esto, CloudFront no puede descifrar los objetos del bucket")
+check("la delegacion a CloudFront es una statement propia",
+      re.search(r'Sid\s*=\s*"AllowCloudFrontToDecrypt"', SRC) is not None)
+
+# BUG 16: el sync de S3 con --delete borraba el corpus normativo, que
+# publica terraform y necesita la KB. El sync esta en deploy_front.sh.
+try:
+    _deploy_front = open(os.path.join(_raiz, "scripts", "deploy_front.sh"),
+                          encoding="utf-8").read()
+except OSError:
+    _deploy_front = ""
+check("el sync de S3 excluye el corpus normativo",
+      '--exclude "normativa/*"' in _deploy_front
+      or "--exclude 'normativa/*'" in _deploy_front,
+      "con --delete, el RAG se queda sin normativa")
+
+# BUG 17: el output sensitive es un STRING JSON dentro del JSON. Sin
+# desempaquetarlo dos veces, el front se queda en modo demo.
+deploy_front = ""
+try:
+    deploy_front = open(os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "scripts", "deploy_front.sh"), encoding="utf-8").read()
+except OSError:
+    pass
+if deploy_front:
+    check("deploy_front desempaqueta el output sensitive",
+          "isinstance(cfg, str)" in deploy_front,
+          "el output frontend_url_config es sensitive: viene como string JSON")
+
+# El limite de la cuenta del workshop con aoss esta documentado.
+check("el limite de aoss en la cuenta del workshop esta documentado",
+      "DenyAllOutsideAllowedRegions" in SRC and "aoss" in SRC,
+      "es lo que impide crear la KB de Bedrock en esa cuenta")
+
+
 # ==========================================================================
 
 for o in ["api_url", "front_url", "bucket_datos", "guardrail_id",
