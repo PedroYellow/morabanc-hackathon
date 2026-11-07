@@ -54,16 +54,27 @@ print("\n=== 1. HANDLER DE LAS LAMBDA ===")
 # ==========================================================================
 
 handlers = re.findall(r'handler\s*=\s*"([^"]+)"', SRC)
-check("hay 2 handlers definidos", len(handlers) == 2, handlers)
-check("ambos son 'lambda.handler.lambda_handler'",
-      all(h == "lambda.handler.lambda_handler" for h in handlers),
-      set(handlers))
+check("hay 3 handlers definidos (motor, api y authorizer)", len(handlers) == 3, handlers)
+
+# El motor y la api comparten el mismo modulo empaquetado.
+handlers_motor_api = [h for h in handlers if h != "lambda.authorizer.handler"]
+check("el motor y la api usan 'lambda.handler.lambda_handler'",
+      len(handlers_motor_api) == 2
+      and all(h == "lambda.handler.lambda_handler" for h in handlers_motor_api),
+      set(handlers_motor_api))
+
+# El authorizer es su propia Lambda: valida la clave de la API.
+check("el authorizer usa 'lambda.authorizer.handler'",
+      "lambda.authorizer.handler" in handlers, set(handlers))
+
 check("lambda/__init__.py existe en el repo",
       os.path.isfile(os.path.join(RAIZ, "lambda", "__init__.py")))
 
 # El zip tiene lambda/handler.py -> el modulo es "lambda.handler"
 check("lambda/handler.py existe en el repo",
       os.path.isfile(os.path.join(RAIZ, "lambda", "handler.py")))
+check("lambda/authorizer.py existe en el repo",
+      os.path.isfile(os.path.join(RAIZ, "lambda", "authorizer.py")))
 
 
 # ==========================================================================

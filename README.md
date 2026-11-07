@@ -34,13 +34,13 @@ Eso es a la vez la garantía de correctitud y la respuesta al jurado a
 | `engine/cierre.py` | Bucle de cierre: el motor sobre su propio consejo | **46 tests verdes** |
 | `agent/bedrock_agent.py` | Bedrock Converse + tool-use (11 tools) | **83 tests verdes** |
 | `lambda/handler.py` | Handler API (empaquetado y ejecutado de verdad) | **12 checks verdes** |
-| `terraform/main.tf` | Infra AWS 100% IaC + publicacion del front | **80 asserts + `terraform validate` → Success** |
+| `terraform/main.tf` | Infra AWS 100% IaC + publicacion del front | **82 asserts + `terraform validate` → Success** |
 | `frontend/` | App estatica mobile-first (HTML/CSS/JS puro) | **61 asserts en Chromium real** |
 | `frontend/generar_demo_data.py` | Datos demo generados por el motor real | — |
 | `data/generar_demo.py` | 4 perfiles de extracto sintéticos | — |
 | `normativa/generar_corpus.py` | Corpus para el RAG (5 documentos) | verificado |
 
-**460 asserts en verde + Lambda validada + Terraform validado + front tested en navegador real.**
+**489 asserts en verde + Lambda validada + Terraform validado + front tested en navegador real.**
 
 ```
 $ bash scripts/verificar.sh
@@ -55,7 +55,7 @@ $ bash scripts/verificar.sh
   ✔ Terraform — configuracion valida
   ✔ Sintaxis JS valida
   ✔ 5 documentos normativos
-  Asserts correctos: 460
+  Asserts correctos: 489
   Fallos:            0
 ```
 
@@ -393,6 +393,33 @@ así que un desajuste se detecta en local y no en la primera invocación del dí
 - [ ] Knowledge Base real (la infra y el corpus estan; falta el apply con credenciales)
 - [ ] Probar con credenciales AWS reales (session Bedrock + KB)
 - [ ] GitLab de MoraBanc + cuenta AWS del equipo
+
+### Protección de la API
+
+`/preguntar` llama a Bedrock, que tiene coste y cuota. Sin protección,
+cualquiera que descubra la URL podría gastarnos la cuota del equipo.
+
+La protección es una **API key** en la cabecera `x-api-key`:
+
+- La clave se genera con `random_password` de Terraform (40 chars alfanumérica).
+- Un **Lambda authorizer** la valida y devuelve la policy de IAM de API Gateway.
+- La Lambda de la API **también** la comprueba (defensa en profundidad): si
+  alguien la invoca directamente, no pasa.
+- `/salud` se deja abierto a propósito: lo usa el script de despliegue para
+  comprobar que la API está viva.
+
+```bash
+# El despliegue verifica los dos lados:
+#   sin clave -> 401 (rechazado)
+#   con clave -> llega a la Lambda
+bash scripts/deploy_infra.sh
+```
+
+La clave viaja en el front publicado (es un front público del hackathon, no
+una app con datos de clientes). Para una app con datos de clientes habría que
+montar Cognito con JWT en lugar de una key plana.
+
+---
 
 ## Modo presentación (para el proyector)
 

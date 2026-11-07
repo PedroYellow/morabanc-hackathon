@@ -183,6 +183,11 @@ cd "$RAIZ"
 bash scripts/deploy_front.sh
 
 echo ""
+if [ "${FALLO:-0}" = "1" ]; then
+  echo "==> Despliegue con INCIDENCIAS: revisa lo de arriba." >&2
+  echo "    Front:  $("$TF" -chdir=terraform output -raw front_url 2>/dev/null || echo 'ver terraform output')"
+  exit 1
+fi
 echo "==> LISTO"
 echo "    Front:  $("$TF" -chdir=terraform output -raw front_url 2>/dev/null || echo 'ver terraform output')"
 echo "    API:    $API_URL"

@@ -16,6 +16,7 @@
   const CFG = {
     // Se inyecta al desplegar (ver terraform output frontend_url_config).
     apiUrl: window.__API_URL__ || "",
+    apiKey: window.__API_KEY__ || "",
     cognitoDomain: window.__COGNITO_DOMAIN__ || "",
     cognitoClientId: window.__COGNITO_CLIENT_ID__ || "",
     region: window.__AWS_REGION__ || "eu-west-1",
@@ -234,9 +235,14 @@
       fecha_consejo: contexto.fechaConsejo || undefined,
     };
 
+    const cabeceras = { "Content-Type": "application/json" };
+    // La API esta protegida con una clave (x-api-key) para que nadie mas
+    // pueda gastarnos la cuota de Bedrock del equipo.
+    if (CFG.apiKey) cabeceras["x-api-key"] = CFG.apiKey;
+
     const resp = await fetch(CFG.apiUrl + "/preguntar", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: cabeceras,
       body: JSON.stringify(cuerpo),
     });
 

@@ -484,6 +484,8 @@ resource "aws_lambda_function" "api" {
       BUCKET_DATOS    = aws_s3_bucket.datos.id
       TABLE_PRINCIPAL = aws_dynamodb_table.principal.name
       ENVIRONMENT     = var.environment
+      # La misma clave que valida el authorizer: defensa en profundidad.
+      API_KEY         = random_password.api_key.result
     }
   }
 
@@ -494,6 +496,7 @@ resource "aws_lambda_function" "api" {
   depends_on = [
     aws_cloudwatch_log_group.api,
     aws_iam_role_policy.api,
+    random_password.api_key,
   ]
 
   tags = local.tags
@@ -518,6 +521,62 @@ resource "aws_apigatewayv2_api" "api" {
   tags = local.tags
 }
 
+# --- Proteccion de /preguntar con API key ---------------------------------
+#
+# /preguntar llama a Bedrock: tiene coste y quota. Sin proteccion, cualquiera
+# que conozca la URL puede gastarnos la cuota del equipo y ensuciar las
+# metricas que vera el jurado. La clave se genera con random_password y
+# solo vive en la variable de entorno del authorizer y en el front publicado.
+
+resource "random_password" "api_key" {
+  length  = 40
+  special = false # solo [A-Za-z0-9]: se mete en el front sin codificar
+}
+
+resource "aws_lambda_function" "authorizer" {
+  function_name = "${local.name}-authorizer"
+  role          = aws_iam_role.lambda.arn
+  handler       = "lambda.authorizer.handler"
+  runtime       = "python3.12"
+  architectures = ["arm64"]
+  filename      = data.archive_file.authorizer.output_path
+  timeout       = 10
+  memory_size   = 256
+
+  environment {
+    variables = {
+      # SOLO la clave. El ARN de la ruta NO va aqui: si el authorizer lo
+      # leyera de su entorno, Terraform crearia un ciclo (la ruta depende
+      # del authorizer y el authorizer de la ruta). API Gateway manda el
+      # ARN de la ruta en el evento del request.
+      API_KEY = random_password.api_key.result
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.lambda,
+    aws_iam_role_policy.lambda,
+  ]
+  tags = local.tags
+}
+
+resource "aws_apigatewayv2_authorizer" "key" {
+  api_id           = aws_apigatewayv2_api.api.id
+  authorizer_type  = "REQUEST"
+  name             = "clave-morabanc"
+  identity_sources = ["$request.header.x-api-key"]
+
+  authorizer_uri = aws_lambda_function.authorizer.invoke_arn
+}
+
+resource "aws_lambda_permission" "authorizer_api_gateway" {
+  statement_id  = "AllowAPIGatewayInvokeAuthorizer"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.authorizer.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+}
+
 resource "aws_apigatewayv2_integration" "api" {
   api_id                 = aws_apigatewayv2_api.api.id
   integration_type       = "AWS_PROXY"
@@ -528,15 +587,19 @@ resource "aws_apigatewayv2_integration" "api" {
 }
 
 resource "aws_apigatewayv2_route" "preguntar" {
-  api_id    = aws_apigatewayv2_api.api.id
-  route_key = "POST /preguntar"
-  target    = "integrations/${aws_apigatewayv2_integration.api.id}"
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "POST /preguntar"
+  target             = "integrations/${aws_apigatewayv2_integration.api.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.key.id
 }
 
 resource "aws_apigatewayv2_route" "salud" {
   api_id    = aws_apigatewayv2_api.api.id
   route_key = "GET /salud"
   target    = "integrations/${aws_apigatewayv2_integration.api.id}"
+  # /salud se deja abierto: lo usa el script de verificacion del despliegue
+  # para comprobar que la API esta viva sin depender de la key.
 }
 
 resource "aws_apigatewayv2_stage" "api" {
@@ -1031,6 +1094,18 @@ resource "aws_s3_object" "normativa" {
 # ---------------------------------------------------------------------------
 # El front se sirve desde S3 via CloudFront. Cada fichero lleva su hash en el
 # nombre para que el cache del navegador lo invalide al desplegar.
+# El zip del authorizer: solo el paquete lambda, nada mas.
+data "archive_file" "authorizer" {
+  type        = "zip"
+  source_dir  = "${path.module}/../lambda"
+  output_path = "${path.module}/.terraform/authorizer.zip"
+  excludes = [
+    "__pycache__",
+    "*.pyc",
+    "handler.py",
+  ]
+}
+
 data "archive_file" "front" {
   type        = "zip"
   source_dir  = "${path.module}/../frontend"
@@ -1094,6 +1169,12 @@ output "cognito_user_pool_id" {
   value       = aws_cognito_user_pool.usuarios.id
 }
 
+output "api_key" {
+  description = "Clave que el front envia en la cabecera x-api-key"
+  value       = random_password.api_key.result
+  sensitive   = true
+}
+
 output "cognito_client_id" {
   description = "ID del client de Cognito para el front."
   value       = aws_cognito_user_pool_client.web.id
@@ -1127,5 +1208,9 @@ output "frontend_url_config" {
     cognito_domain   = aws_cognito_user_pool_domain.dominio.domain
     region           = var.aws_region
     bucket_extractos = aws_s3_bucket.datos.id
+    # La clave de la API. El front la envia en la cabecera x-api-key.
+    # El output "api_key" de este mismo modulo es sensitive; aqui va dentro
+    # de un jsonencode para que deploy_front.sh lo lea de una vez.
+    api_key = random_password.api_key.result
   })
 }

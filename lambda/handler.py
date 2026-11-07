@@ -20,7 +20,9 @@ Formato de entrada de /preguntar:
   }
 """
 
+import hmac
 import json
+import os
 import os
 import sys
 import traceback
@@ -75,6 +77,20 @@ def lambda_handler(event, context):
 
         if "salud" in ruta or "health" in ruta:
             return _salud(event, context)
+
+        # Defensa en profundidad: el authorizer de API Gateway ya valida la
+        # clave, pero si alguien invoca la Lambda directamente (o se cambia
+        # el authorize a NONE por error) esta comprobacion lo para.
+        api_key = os.environ.get("API_KEY", "")
+        if api_key:
+            cabeceras = {
+                k.lower(): v for k, v in (event.get("headers") or {}).items()
+            }
+            if not hmac.compare_digest(
+                cabeceras.get("x-api-key", "").encode("utf-8"),
+                api_key.encode("utf-8"),
+            ):
+                return _resp(401, {"error": "Clave de API invalida"})
 
         if not event.get("body"):
             return _resp(400, {"error": "Cuerpo vacio"})

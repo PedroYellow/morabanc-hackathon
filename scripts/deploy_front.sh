@@ -26,22 +26,24 @@ if command -v terraform >/dev/null 2>&1; then
     # Leemos TODOS los valores del output de una vez. Ojo: las claves son
     # api_url / cognito_client / cognito_domain / region (las define
     # terraform/main.tf en el output "frontend_url_config").
-    read -r API_URL COGNITO_DOMAIN COGNITO_CLIENT_ID AWS_REGION <<EOF
+    read -r API_URL COGNITO_DOMAIN COGNITO_CLIENT_ID AWS_REGION API_KEY <<EOF
 $(python3 -c "
 import json, sys
 cfg = json.loads(sys.argv[1])
 print(cfg.get('api_url', ''),
       cfg.get('cognito_domain', ''),
       cfg.get('cognito_client', ''),
-      cfg.get('region', 'eu-west-1'))
+      cfg.get('region', 'eu-west-1'),
+      cfg.get('api_key', ''))
 " "$CFG_JSON")
 EOF
     echo "    API:      $API_URL"
     echo "    Cognito:  ${COGNITO_DOMAIN:-<sin dominio>} / ${COGNITO_CLIENT_ID:-<sin client id>}"
     echo "    Region:   $AWS_REGION"
-    python3 - "$API_URL" "$COGNITO_DOMAIN" "$COGNITO_CLIENT_ID" "$AWS_REGION" <<'PY'
+    [ -n "$API_KEY" ] && echo "    API key:  ${API_KEY:0:4}... (inyectada en el front)"
+    python3 - "$API_URL" "$COGNITO_DOMAIN" "$COGNITO_CLIENT_ID" "$AWS_REGION" "$API_KEY" <<'PY'
 import json, re, sys
-api_url, cognito_domain, cognito_client_id, region = sys.argv[1:5]
+api_url, cognito_domain, cognito_client_id, region, api_key = sys.argv[1:6]
 path = "frontend/index.html"
 s = open(path, encoding="utf-8").read()
 
@@ -49,9 +51,10 @@ s = open(path, encoding="utf-8").read()
 # para que ejecutar el script dos veces no duplique la linea.
 s = re.sub(r"\n?<script>window\.__API_URL__=.*?</script>", "", s, flags=re.S)
 
-cfg = ('<script>window.__API_URL__=%s;window.__COGNITO_DOMAIN__=%s;'
+cfg = ('<script>window.__API_URL__=%s;window.__API_KEY__=%s;'
+       'window.__COGNITO_DOMAIN__=%s;'
        'window.__COGNITO_CLIENT_ID__=%s;window.__AWS_REGION__=%s;</script>'
-       % (json.dumps(api_url), json.dumps(cognito_domain),
+       % (json.dumps(api_url), json.dumps(api_key), json.dumps(cognito_domain),
           json.dumps(cognito_client_id), json.dumps(region)))
 
 marker = '<script src="assets/app.js"></script>'

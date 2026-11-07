@@ -1,0 +1,78 @@
+"""Authorizer de API Gateway: valida la clave del front.
+
+POR QUE EXISTE
+    /preguntar llama a Bedrock, que cuesta dinero y tiene quota. Si la API
+    queda abierta, cualquiera que descubra la URL puede gastarnos la
+    cuota del equipo (y ensuciar las metricas que vera el jurado).
+
+QUE HACE
+    Es un authorizer de tipo REQUEST. Compara la cabecera "x-api-key" con la
+    clave guardada en la variable de entorno API_KEY. Si coincide, devuelve
+    una policy de IAM que permite invocar la ruta; si no, devuelve un 401.
+
+    La clave se compara en tiempo constante para no filtrar informacion por
+    analisis temporal, aunque para un hackathon es mas IMPORTANT que un
+    atacanteDeduzca la clave probando: la clave se genera con
+    terraform "random_password" (alfanumerica, 32 caracteres) y solo vive en
+    la variable de entorno de esta Lambda y en el front publicado.
+
+    La clave NUNCA se escribe en el codigo ni se imprime en los logs.
+"""
+
+import hashlib
+import hmac
+import json
+import os
+
+API_KEY = os.environ.get("API_KEY", "")
+
+# El ARN de la ruta NO se guarda aqui a proposito: si el authorizer lo
+# leyera de su entorno, Terraform crearia un ciclo (la ruta depende del
+# authorizer y el authorizer de la ruta). API Gateway envia el ARN de la ruta
+# en el evento, asi que se usa ese.
+
+
+def _policy(principal_id, effect, reason, route_arn):
+    """Construye la policy de IAM que espera API Gateway."""
+    return {
+        "principalId": principal_id,
+        "policyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Action": "execute-api:Invoke",
+                    "Effect": effect,
+                    "Resource": route_arn,
+                }
+            ],
+        },
+        "context": {"razon": reason},
+    }
+
+
+def _error(code, msg):
+    return {
+        "statusCode": code,
+        "type": "UNAUTHORIZED" if code == 401 else "SERVER_ERROR",
+        "message": msg,
+    }
+
+
+def handler(event, context):
+    headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
+    recibida = headers.get("x-api-key", "")
+
+    # Sin clave configurada no se acepta nada: es un fallo de despliegue, no
+    # una invitation a dejar la API abierta.
+    if not API_KEY:
+        print("ERROR: API_KEY no esta definida en el entorno de la Lambda")
+        return _error(500, "authorizer mal configurado")
+
+    if not hmac.compare_digest(recibida.encode("utf-8"), API_KEY.encode("utf-8")):
+        print("AUTH: clave incorrecta")
+        return _error(401, "clave invalida")
+
+    route_arn = event.get("routeArn") or event.get("requestContext", {}).get(
+        "routeArn", ""
+    )
+    return _policy("front-morabanc", "Allow", "clave correcta", route_arn)
