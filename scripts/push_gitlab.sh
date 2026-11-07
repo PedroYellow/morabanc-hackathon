@@ -85,6 +85,36 @@ if git push gitlab "HEAD:$BRANCH" 2>/tmp/push_gitlab.err; then
   exit 0
 fi
 
+# Si el remoto tiene un commit inicial (GitLab lo crea si el proyecto se creo
+# desde la web), es un historial NO RELACIONADO y el push se rechaza con
+# "non-fast-forward". --allow-unrelated-histories NO es un flag de push (es
+# de merge), asi que la unica forma es fusionar el remoto antes de publicar.
+if grep -qi "non-fast-forward\|fetch first\|rejected" /tmp/push_gitlab.err; then
+  echo "    el remoto tiene un commit inicial de GitLab: se fusiona"
+  git fetch gitlab 2>/dev/null
+  if ! git merge "gitlab/$BRANCH" --allow-unrelated-histories --no-edit >/tmp/merge_gitlab.err 2>&1; then
+    if git diff --name-only --diff-filter=U | grep -q "README.md"; then
+      # El README generico de GitLab no aporta nada: en el add/add gana el
+      # nuestro.
+      git checkout --ours README.md && git add README.md
+      GIT_EDITOR=true git commit --no-edit >/dev/null 2>&1
+      echo "    conflicto de README resuelto con el nuestro"
+    else
+      echo "    ERROR: conflicto sin resolver:" >&2
+      cat /tmp/merge_gitlab.err >&2
+      exit 1
+    fi
+  fi
+  if git push gitlab "HEAD:$BRANCH" 2>/tmp/push_gitlab.err; then
+    echo ""
+    echo "==> PUBLICADO. Verificacion:"
+    git ls-remote gitlab "refs/heads/$BRANCH" | sed 's/^/    /'
+    echo ""
+    echo "    https://gitlab.com/pedro322/morabanc-hackathon/-/tree/$BRANCH"
+    exit 0
+  fi
+fi
+
 # --- Diagnostico ---------------------------------------------------------
 echo ""
 echo "==> El push fallo:" >&2
