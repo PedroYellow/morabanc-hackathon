@@ -10,6 +10,26 @@ verificada y responde a la pregunta que nadie contesta:
 > **«¿Puedo permitírmelo?»**
 
 
+
+---
+
+## Sistema de diseño
+
+**Liferay Lexicon** (adaptado a la identidad de MoraBanc).
+
+Lexicon aporta la **estructura**: retícula de espaciado sobre una base de
+8px, escala tipográfica de 14 a 36 px con interlineados 1.25/1.5, radio de
+8px por defecto y 16px en tarjetas, pila nativa del sistema (sin
+webfonts) y sin sombras en reposo.
+
+MoraBanc aporta la **identidad**: navy `#0a3550`, gold `#f1c657` y el logo
+oficial. Un portal de Liferay tiene su propio azul y su propia marca; esto
+es un banco.
+
+Referencia: <https://design.liferay.com/lexicon>
+
+Tokens en `frontend/assets/styles.css` (bloque `:root`).
+
 ---
 
 ## Equipo y accesos
