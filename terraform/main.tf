@@ -646,6 +646,10 @@ resource "aws_lambda_function" "motor" {
       BEDROCK_GUARDRAIL_ID = (
         var.enable_guardrails ? aws_bedrock_guardrail.principal[0].guardrail_id : ""
       )
+      # Bedrock exige identifier y version JUNTOS ("guardrailIdentifier and
+      # guardrailVersion must be provided together"). El guardrail se crea
+      # en version DRAFT: no hay ninguna version desplegada.
+      BEDROCK_GUARDRAIL_VERSION = "DRAFT"
     }
   }
 
@@ -684,6 +688,10 @@ resource "aws_lambda_function" "api" {
       BEDROCK_GUARDRAIL_ID = (
         var.enable_guardrails ? aws_bedrock_guardrail.principal[0].guardrail_id : ""
       )
+      # Bedrock exige identifier y version JUNTOS ("guardrailIdentifier and
+      # guardrailVersion must be provided together"). El guardrail se crea
+      # en version DRAFT: no hay ninguna version desplegada.
+      BEDROCK_GUARDRAIL_VERSION = "DRAFT"
       BUCKET_DATOS    = aws_s3_bucket.datos.id
       TABLE_PRINCIPAL = aws_dynamodb_table.principal.name
       ENVIRONMENT     = var.environment

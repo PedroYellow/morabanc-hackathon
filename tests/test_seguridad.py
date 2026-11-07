@@ -344,6 +344,14 @@ check("el agente pasa el guardrail en la llamada a converse",
 check("el terraform pasa el id del guardrail a la Lambda", "BEDROCK_GUARDRAIL_ID" in tf)
 check("el guardrail bloqueado no es un 500",
       "GuardrailIntervened" in agente)
+# Bedrock exige identifier y version JUNTOS: sin la version, la llamada
+# falla con ValidationException y todo el chat se cae.
+check("el agente manda siempre la version del guardrail",
+      'os.environ.get("BEDROCK_GUARDRAIL_VERSION", "").strip() or "DRAFT"' in agente)
+check("la version del guardrail no es opcional en la peticion",
+      '"guardrailVersion": self.guardrail_version' in agente)
+check("el terraform pasa la version del guardrail",
+      'BEDROCK_GUARDRAIL_VERSION = "DRAFT"' in tf)
 
 # ---------------------------------------------------------------------------
 print("")

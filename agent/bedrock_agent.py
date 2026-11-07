@@ -738,7 +738,16 @@ class AgenteFinanciero:
         # PII se queda sin conectar. Por eso se lee del entorno y se
         # anade a la peticion.
         self.guardrail_id = os.environ.get("BEDROCK_GUARDRAIL_ID", "").strip()
-        self.guardrail_version = os.environ.get("BEDROCK_GUARDRAIL_VERSION", "").strip()
+        # OJO: Bedrock EXIGE que el identifier y la version vayan JUNTOS
+        # ("guardrailIdentifier and guardrailVersion must be provided
+        # together"). Si se manda solo el identifier, la llamada falla con
+        # ValidationException y el chat entero se cae. Por eso la version
+        # tiene un valor por defecto: "DRAFT" es la version que crea el
+        # terraform (el guardrail se crea y se usa en DRAFT; las
+        # desplegadas son para produccion estricta).
+        self.guardrail_version = (
+            os.environ.get("BEDROCK_GUARDRAIL_VERSION", "").strip() or "DRAFT"
+        )
 
         if mock is None:
             # Modo mock si:
@@ -1085,13 +1094,14 @@ class AgenteFinanciero:
             }
             # El guardrail filtra la inyeccion de prompts y la PII. Sin
             # esto, el guardrail del terraform existe pero no hace nada.
+            # OJO: identifier y version tienen que ir juntos (Bedrock
+            # exige los dos), por eso la version siempre se manda.
             if self.guardrail_id:
                 request["guardrailConfig"] = {
                     "guardrailIdentifier": self.guardrail_id,
+                    "guardrailVersion": self.guardrail_version,
                     "trace": "enabled",
                 }
-                if self.guardrail_version:
-                    request["guardrailConfig"]["guardrailVersion"] = self.guardrail_version
             # El toolConfig solo va si el LLM puede (debe) usar
             # herramientas. Si el motor ya ha calculado, se omite: asi el
             # modelo redacta y no puede inventarse otra llamada con
@@ -1110,7 +1120,7 @@ class AgenteFinanciero:
                 # servicio: es el filtro haciendo su trabajo. Se devuelve
                 # un mensaje util en vez de un 500 con el traceback.
                 texto_error = str(e)
-                if "GuardrailIntervened" in texto_error or "guardrail" in texto_error.lower():
+                if "GuardrailIntervened" in texto_error:
                     print("GUARDRAIL: peticion bloqueada ->", texto_error[:200], file=sys.stderr)
                     return {
                         "respuesta": (
@@ -1121,6 +1131,12 @@ class AgenteFinanciero:
                         "herramientas": [],
                         "mock": self.mock,
                     }
+                # OJO: una excepcion de CONFIGURACION (por ejemplo
+                # "guardrailIdentifier and guardrailVersion must be
+                # provided together") NO es un bloqueo del filtro: es un
+                # despliegue roto. Se relanza para que se vea en el log
+                # como error de verdad y no se disfraca de "contenido
+                # bloqueado", que dejaria al usuario sin explicacion.
                 raise
             stop = resp["stopReason"]
 

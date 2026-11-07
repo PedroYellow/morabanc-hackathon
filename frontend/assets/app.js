@@ -2117,18 +2117,47 @@
   // Ruta 1: ElevenLabs Conversations (misma integracion que Ubot)
   // ---------------------------------------------------------------
   async function iniciarElevenLabs() {
-    const { Conversation } = await import(
-      "https://cdn.jsdelivr.net/npm/@elevenlabs/client@latest/+esm"
-    );
+    // El SDK se sirve desde NUESTRO dominio, no desde un CDN externo.
+    //
+    // Motivo: si el CDN falla (bloqueo de red, CSP, wifi del sitio sin
+    // acceso), la importacion falla y la voz cae al reconocimiento
+    // nativo, que es mucho peor: el agente no habla, no puede
+    // "esperar y volver a preguntar", y el usuario solo ve un error.
+    // Con el SDK local, la conversacion con el agente depende solo de
+    // nuestro sitio.
+    //
+    // Se intenta primero el local y, si no esta, el CDN (por si el
+    // despliegue no lo incluye todavia).
+    var Conversation = null;
+    try {
+      var mod = await import("./elevenlabs-client.js");
+      Conversation = mod.Conversation;
+    } catch (e1) {
+      console.warn("[MoraBanc] SDK local no disponible, se usa el CDN:", e1 && e1.message);
+      var mod2 = await import("https://cdn.jsdelivr.net/npm/@elevenlabs/client@latest/+esm");
+      Conversation = mod2.Conversation;
+    }
+    if (!Conversation) throw new Error("SDK de ElevenLabs no disponible");
     const sel = $("#voiceDevice");
     const pref = sel && !sel.hidden ? sel.value : undefined;
 
-    state.stream = await navigator.mediaDevices.getUserMedia({
-      audio: pref ? { deviceId: { exact: pref } } : true,
-    });
-
-    await listarMicros(pref);
-    arrancarMedidor();
+    // El stream es SOLO para el medidor de nivel (decorativo). El SDK
+    // de ElevenLabs pide el suyo por su cuenta: si tambien se lo
+    // pasamos, se piden dos capturas del mismo microfono a la vez y
+    // Chrome falla con "audio-capture", que es exactamente lo que
+    // pasaba.
+    //
+    // Si el medidor falla, la voz sigue: es decorativo.
+    try {
+      state.stream = await navigator.mediaDevices.getUserMedia({
+        audio: pref ? { deviceId: { exact: pref } } : true,
+      });
+      await listarMicros(pref);
+      arrancarMedidor();
+    } catch (e) {
+      console.warn("[MoraBanc] medidor no disponible:", e && e.message);
+      state.stream = null;
+    }
 
     state.conv = await Conversation.startSession({
       agentId: ELEVENLABS_AGENT_ID,
@@ -2184,15 +2213,40 @@
           }
         }
       },
-      onError: (e) => {
+      onError: async (e) => {
         const msg = (e && e.message) || e || "";
         // "audio-capture" lo emite el reconocimiento NATIVO cuando el
         // navegador no le deja capturar el microfono a la vez que
         // WebRTC. No es un fallo de esta sesion: si estamos
         // conectados, el aviso molesta y confunde.
-        if (/audio-capture/i.test(msg) && state.conv) {
-          console.warn("[MoraBanc] aviso de captura del fallback (sesion WebRTC viva)");
-          return;
+        if (/audio-capture/i.test(msg)) {
+          // "audio-capture" es un fallo de captura del navegador, no
+          // del agente. Si la sesion WebRTC ya esta viva, el aviso
+          // solo confunde (lo emite el reconocimiento nativo).
+          if (state.conv) {
+            console.warn("[MoraBanc] captura en conflicto (sesion WebRTC viva)");
+            return;
+          }
+          // Si la sesion no ha llegado a establecer, se reintenta
+          // liberando el stream del medidor: es el conflicto tipico
+          // de dos capturas del mismo microfono.
+          console.warn("[MoraBanc] reintento de voz sin stream propio:", msg);
+          try {
+            if (state.stream) {
+              state.stream.getTracks().forEach((t) => t.stop());
+              state.stream = null;
+            }
+          } catch (e) {}
+          if (!state.reintentoVoz) {
+            state.reintentoVoz = true;
+            try {
+              await iniciarElevenLabs();
+            } catch (e2) {
+              setStatus("error", "Error de voz");
+              aviso("No se pudo conectar la voz: " + escapar(msg));
+            }
+            return;
+          }
         }
         setStatus("error", "Error de voz");
         aviso("No se pudo conectar la voz: " + escapar(msg));
