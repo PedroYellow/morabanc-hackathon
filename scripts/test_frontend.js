@@ -362,6 +362,43 @@ function check(nombre, ok, extra) {
     await page.evaluate(() => !document.body.classList.contains("presentacion-activa")));
 
 
+  // ---------------------------------------------------------------------
+  // El texto de los hallazgos NO se puede truncar
+  // ---------------------------------------------------------------------
+  // Un parrafo de una regla legal cortado a media frase ("...y la
+  // bonificacio de") parece un bug en pantalla y en una sala. El motor
+  // redacta el texto completo y el front lo muestra entero.
+  // El test anterior dejo la pagina en la vista de resultado (o en modo
+  // presentacion). Los botones de perfil viven en la vista inicial, asi
+  // que hay que volver a cargar la pagina.
+  await page.goto(URL, { waitUntil: "networkidle" });
+  await page.waitForTimeout(1200);
+
+  await page.click('button[data-perfil="contratar"]');
+  await page.waitForTimeout(700);
+  await page.click("#btnAnalizar");
+  await page.waitForTimeout(4000);
+
+  const descs = await page.evaluate(() =>
+    Array.from(document.querySelectorAll(".hallazgo-desc")).map(
+      (e) => e.innerText.trim()
+    )
+  );
+  check("hay descripciones de hallazgos", descs.length > 0, `${descs.length} descripciones`);
+  check(
+    "ninguna descripcion esta truncada (no acaba a media frase)",
+    descs.every((t) => t.length > 0 && /[.€!?)]\s*$/.test(t)),
+    descs
+      .filter((t) => t.length > 0 && !/[.€!?)]\s*$/.test(t))
+      .map((t) => t.slice(-40))
+      .join(" | ")
+  );
+  check(
+    "la bonificacion se muestra completa",
+    descs.some((t) => /bonificaci/.test(t) && t.length > 200),
+    descs.filter((t) => /bonificaci/.test(t)).map((t) => t.length).join(",")
+  );
+
   await browser.close();
 
   console.log("\n" + "=".repeat(62));

@@ -843,11 +843,14 @@
       detalle = detalle.slice(titulo.length).replace(/^[\s.·-]+/, "");
     }
 
+    // OJO: el texto NO se trunca. Un parrafo de una regla legal cortado a
+    // media frase ("...y la bonificacio de") parece un bug en pantalla y
+    // en una sala. El texto integro cabe: el CSS lo ajusta.
     b.innerHTML =
       '<span class="hallazgo-icon">' + icon + "</span>" +
       '<span class="hallazgo-body">' +
         '<span class="hallazgo-titulo">' + escapar(titulo) + "</span>" +
-        '<span class="hallazgo-desc">' + escapar(detalle.slice(0, 260)) + "</span>" +
+        '<span class="hallazgo-desc">' + escapar(detalle) + "</span>" +
       "</span>" +
       (f.importe_anual
         ? '<span class="hallazgo-amount">' + eur(f.importe_anual, 0) + "<small>/año</small></span>"
