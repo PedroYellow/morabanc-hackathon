@@ -465,6 +465,19 @@ data "aws_iam_policy_document" "lambda_exec" {
     }
   }
 
+  # Aplicar el guardrail. Sin este permiso, la llamada a converse con
+  # guardrailConfig falla con AccessDeniedException ("not authorized to
+  # perform: bedrock:ApplyGuardrail").
+  dynamic "statement" {
+    for_each = var.enable_guardrails ? [1] : []
+    content {
+      sid       = "BedrockApplyGuardrail"
+      effect    = "Allow"
+      actions   = ["bedrock:ApplyGuardrail"]
+      resources = [aws_bedrock_guardrail.principal[0].guardrail_arn]
+    }
+  }
+
   statement {
     sid    = "Logs"
     effect = "Allow"
@@ -525,6 +538,29 @@ resource "aws_iam_role" "api" {
   tags               = local.tags
 }
 
+# ---------------------------------------------------------------------------
+# Permiso de escritura en CloudWatch Logs
+# ---------------------------------------------------------------------------
+#
+# OJO: local.lambda_log_policy estaba DEFINIDA pero NO se usaba en ningun
+# sitio. Sin este permiso, ninguna Lambda puede escribir en su log group:
+# el grupo existe (lo crea la plataforma) pero se queda VACIO.
+#
+# Consecuencia real, no teorica: cuando /preguntar fallaba con un 500,
+# no habia NINGUN registro del error. Todo diagnostico se quedaba a
+# ciegas y no se podia saber si era el guardrail, el token o el motor.
+# En produccion, un error sin log es un error que no se puede depurar.
+resource "aws_iam_role_policy" "lambda_logs" {
+  for_each = toset([
+    aws_iam_role.lambda.id,
+    aws_iam_role.api.id,
+  ])
+
+  name   = "${local.name}-lambda-logs"
+  role   = each.value
+  policy = local.lambda_log_policy
+}
+
 resource "aws_iam_role_policy" "api" {
   name = "${local.name}-api-policy"
   role = aws_iam_role.api.id
@@ -554,6 +590,19 @@ resource "aws_iam_role_policy" "api" {
           "arn:aws:bedrock:${var.aws_region}::foundation-model/${var.bedrock_model_id}",
           "arn:aws:bedrock:${var.aws_region}::foundation-model/*",
         ]
+      },
+      {
+        # Aplicar el guardrail. Sin este permiso, la llamada a converse
+        # con guardrailConfig falla con AccessDeniedException:
+        # "not authorized to perform: bedrock:ApplyGuardrail on resource:
+        # arn:aws:bedrock:...:guardrail/vffk3js7dfsw".
+        #
+        # El permiso es POR GUARDRAIL (no "*"): el de este proyecto.
+        # OJO: solo se necesita si enable_guardrails esta a true; con
+        # count=0 no hay guardrail al que aplicar.
+        Effect   = "Allow"
+        Action   = ["bedrock:ApplyGuardrail"]
+        Resource = var.enable_guardrails ? [aws_bedrock_guardrail.principal[0].guardrail_arn] : ["*"]
       },
       {
         # Consultar la Knowledge Base (RAG). Opcional: si no hay KB, este

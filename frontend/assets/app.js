@@ -2130,7 +2130,7 @@
     // despliegue no lo incluye todavia).
     var Conversation = null;
     try {
-      var mod = await import("./elevenlabs-client.js");
+      var mod = await import("./elevenlabs-client.js?v=20261107b");
       Conversation = mod.Conversation;
     } catch (e1) {
       console.warn("[MoraBanc] SDK local no disponible, se usa el CDN:", e1 && e1.message);
