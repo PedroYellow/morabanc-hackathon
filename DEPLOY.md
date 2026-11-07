@@ -265,6 +265,10 @@ Deberías tener:
 ### 18:00 — Cierre del día 1
 
 - Subir todo al GitLab de MoraBanc. **Es un requisito de las bases.**
+  ```bash
+  GITLAB_REMOTE=git@gitlab.com:<grupo>/<proyecto>.git bash scripts/sync_gitlab.sh
+  ```
+  El script verifica la suite antes de publicar: si algo está roto, no publica.
 - Dejar el repo en un estado que alguien pueda retomar en 5 minutos.
 - No tocar el motor después de las 18:00 salvo que algo esté roto.
 

@@ -2,6 +2,8 @@
 
 **IA + Finanzas · 7-8 noviembre 2026 · Hive Five TechLab, Andorra la Vella**
 
+[![Verificar](https://github.com/PedroYellow/morabanc-hackathon/actions/workflows/verificar.yml/badge.svg)](https://github.com/PedroYellow/morabanc-hackathon/actions/workflows/verificar.yml)
+
 Un motor que cruza la tesorería real de una empresa con la fiscalidad andorrana
 verificada y responde a la pregunta que nadie contesta:
 
@@ -86,6 +88,7 @@ node scripts/test_frontend.js http://localhost:8899/
 # Demos
 python3 demo.py                    # los 5 casos del pitch (motor fiscal)
 python3 demo_integrada.py         # guion completo con el agente
+python3 demo_integrada.py --perfil=cierre   # el cierre del bucle de vuelta
 python3 demo_integrada.py --preguntas   # modo conversacion
 ```
 
