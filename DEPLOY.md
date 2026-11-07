@@ -561,14 +561,18 @@ bloquea por IP de origen).
 
 | Tipo | Nombre | Valor | Accion |
 |------|--------|-------|--------|
-| A | `@` | `148.251.93.9` | **CAMBIAR a `179.197.243.234`** |
+| A | `@` | `148.251.93.9` | **CAMBIADO a `179.197.243.234`** |
 | AAAA | `@` | (no existe) | dejar |
 | MX | `@` | `5 mail.welcomeandorra.com.` | dejar |
 | TXT | `@` | `v=spf1 +a +mx +ip4:148.251.93.9 ~all` | cambiar `148.251.93.9` por `179.197.243.234` |
 | CNAME | `www` | `welcomeandorra.com` | dejar (ya va bien) |
 
-El A record es lo unico **imprescindible**: sin el, el navegador da
-`ERR_CONNECTION_REFUSED` porque la IP antigua ya no tiene nada.
+El A record era lo unico **imprescindible**: sin el, el navegador daba
+`ERR_CONNECTION_REFUSED` porque la IP antigua ya no tenia nada.
+
+Lo que hizo el script `esperar_dns.sh`: se quedo esperando, vio el cambio,
+subio el front, valido nginx y emitio el certificado. El unico manual fue
+el cambio del registro en el panel de Hostinger.
 
 ### La IP del VPS
 
