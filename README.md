@@ -9,6 +9,37 @@ verificada y responde a la pregunta que nadie contesta:
 
 > **«¿Puedo permitírmelo?»**
 
+
+---
+
+## Equipo y accesos
+
+| Persona | Rol | GitHub | GitLab |
+|---------|-----|--------|--------|
+| Pedro Miranda | Head of Strategic Relations · Yellow Capital | Owner de `PedroYellow/morabanc-hackathon` | Owner de `pedro322/morabanc-hackathon` |
+| Yaros | Colaborador | `Yaros` — invitacion con permiso `push`, pendiente de aceptar | Invitacion por email (`irvin.jang@gmail.com`), nivel Developer |
+
+### Por que los permisos aparecen como `read`
+
+En GitHub, un collaborator que **no ha aceptado** la invitacion figura con
+`permission: read` hasta que la acepta. No hay forma de forzar la
+aceptacion desde la API: es GitHub quien decide.
+
+El mismo criterio aplica a GitLab: la invitacion por email queda en
+`invite_email` hasta que el invitado la acepta.
+
+Comprobar el estado:
+
+```bash
+# GitHub
+curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+  https://api.github.com/repos/PedroYellow/morabanc-hackathon/collaborators/Yaros/permission
+
+# GitLab
+curl -s -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+  https://gitlab.com/api/v4/projects/88629387/invitations
+```
+
 ---
 
 ## La tesis
