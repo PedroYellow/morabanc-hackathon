@@ -1465,7 +1465,7 @@ resource "aws_cloudfront_response_headers_policy" "seguridad" {
     content_security_policy {
       content_security_policy = join("", [
         "default-src 'self'; ",
-        "script-src 'self' 'unsafe-inline' https://cognito-idp.us-east-1.amazonaws.com; ",
+        "script-src 'self' 'unsafe-inline' blob: https://cognito-idp.us-east-1.amazonaws.com; ",
         "style-src 'self' 'unsafe-inline'; ",
         "img-src 'self' data: blob:; ",
         "font-src 'self' data:; ",
@@ -1475,6 +1475,11 @@ resource "aws_cloudfront_response_headers_policy" "seguridad" {
         # asesor no habla ("Failed to fetch conversation token").
         "connect-src 'self' https://cognito-idp.${var.aws_region}.amazonaws.com https://${var.dominio_principal != "" ? var.dominio_principal : var.dominio_cloudfront} https://api.elevenlabs.io wss://api.elevenlabs.io https://*.elevenlabs.io wss://*.elevenlabs.io https://*.livekit.cloud wss://*.livekit.cloud; ",
         # El audio del WebRTC y el worker de libsamplerate.
+        #
+        # blob: es imprescindible en script-src: los AudioWorklets se
+        # cargan como modulos desde un blob y, sin esta entrada, el
+        # navegador los bloquea ("Failed to load the rawAudioProcessor
+        # worklet module") y el agente no oye al usuario.
         "media-src 'self' blob: mediastream:; ",
         "worker-src 'self' blob:; ",
         # El agente puede pedir abrir una URL interna (lo limita el

@@ -20,7 +20,14 @@
     cognitoDomain: window.__COGNITO_DOMAIN__ || "",
     cognitoClientId: window.__COGNITO_CLIENT_ID__ || "",
     region: window.__AWS_REGION__ || "eu-west-1",
-    // Modo demo: usa un motor local en un Web Worker (mismos numeros).
+    // Modo demo: los datos ya estan precalculados por el motor real
+    // (el mismo motor Python, ejecutado al generar el JSON).
+    //
+    // Se usa cuando NO hay sesion: la API exige el id_token de
+    // Cognito y, sin el, responderia 401. El front standalone
+    // (welcomeandorra.com/index.html) se puede abrir sin pasar por el
+    // login; el portal de empresas si lleva token y ahi va contra la
+    // API de verdad.
     modoDemo: !window.__API_URL__,
   };
 
@@ -701,7 +708,7 @@
 
       const resultados = [];
 
-      if (CFG.modoDemo) {
+      if (CFG.modoDemo || !tokenDeSesion()) {
         // En modo demo los datos ya estan precalculados por el motor:
         // una sola carga y las tres lecturas salen de ahi.
         const data = await cargarDemo();
@@ -1344,7 +1351,11 @@
 
     try {
       const ctx = state.contexto || {};
-      const r = CFG.modoDemo
+      // Sin sesion (id_token de Cognito) la API responde 401. En ese
+      // caso se usan los datos precalculados por el motor real, que
+      // son los mismos numeros: el asesor sigue funcionando.
+      const haySesion = !!tokenDeSesion();
+      const r = (CFG.modoDemo || !haySesion)
         ? await preguntarDemo(pregunta, ctx)
         : await preguntar(pregunta, ctx);
 
@@ -2159,9 +2170,23 @@
       state.stream = null;
     }
 
+    // Se marca antes de la sesion: el saludo se decide justo despues.
+    state.vozConAgente = true;
+
     state.conv = await Conversation.startSession({
       agentId: ELEVENLABS_AGENT_ID,
-      connectionType: "webrtc",
+      // "websocket" en vez de "webrtc".
+      //
+      // El modo webrtc usa LiveKit, que necesita AudioWorklets (el
+      // navegador los carga como modulos desde un blob: y con una CSP
+      // estricta fallan con "Failed to load the rawAudioProcessor
+      // worklet module"). El modo websocket transmite el audio por la
+      // conexion de la conversacion: sin LiveKit, sin AudioWorklets y
+      // sin depender del micro del navegador para la entrada.
+      //
+      // La voz del agente es la misma (TTS de ElevenLabs); solo cambia
+      // como viaja el audio.
+      connectionType: "websocket",
       clientTools: {
         // El agente puede pedir abrir una URL. Se limita a las internas
         // de la propia aplicacion: nada de abrir sitios arbitrarios.
@@ -2186,6 +2211,7 @@
       onDisconnect: () => {
         setStatus("idle", "Toca para hablar");
         state.conv = null;
+        state.vozConAgente = false;
       },
       onModeChange: (m) => {
         const modo = m && m.mode;
@@ -2196,9 +2222,19 @@
         const texto = (m && m.message) || "";
         if (!texto) return;
         if (m.source === "user") {
+          // El agente de ElevenLabs manda mensajes de control que NO
+          // son preguntas del usuario: "..." (transcripcion vacia),
+          // "audio-capture", "agent-response" de otro tipo. Si se pasan
+          // a la API, el motor responde 401 ("Sesion no valida") y el
+          // chat se llena de ruido.
+          //
+          // Solo se trasladan al motor las transcripciones con
+          // contenido real.
+          const limpio = texto.trim();
+          if (limpio.length < 2 || /^\.+\.?$/.test(limpio)) return;
           // El usuario ha hablado: entra por el mismo camino que si
           // lo hubiera escrito, para que la captura de slots sea igual.
-          enviar(texto, { voz: true });
+          enviar(limpio, { voz: true });
         } else if (m.source === "ai") {
           // La respuesta del agente ya suena por los altavoces, pero
           // TAMBIEN se escribe en el chat: si el micro esta apagado,
@@ -2290,6 +2326,11 @@
         if (state.recogiendo) {
           state.recogiendo = false;
           setStatus("listening", "Escuchando…");
+          // Si la voz con el agente esta viva, el reconocimiento
+          // nativo no debe mandar nada: se cuela con transcripciones
+          // vacias ("...") que llegan al motor como si fueran
+          // preguntas.
+          if (state.vozConAgente) return;
           enviar(final, { voz: true });
         }
       }
@@ -2301,7 +2342,12 @@
       // reconocimiento nativo no cuentan: se pisan entre si (el
       // navegador no deja dos capturas de audio a la vez) y el aviso
       // que se ve es del fallback, no del camino que esta funcionando.
-      if (state.conv) {
+      if (state.conv || state.vozConAgente) {
+        // La voz con el agente esta viva: los errores del
+        // reconocimiento nativo no cuentan. Se pisan entre si (el
+        // navegador no deja dos capturas de audio a la vez) y lo que
+        // se ve es un aviso del fallback cuando la ruta que funciona
+        // es la otra.
         state.recogiendo = false;
         return;
       }
@@ -2466,7 +2512,10 @@
     // pide por la API, el usuario oye el saludo dos veces y la API
     // responde "Sesion no valida" cuando el visitante no ha entrado
     // en el portal.
-    if (state.conv) {
+    // state.conv se asigna justo despues de iniciarElevenLabs(), asi
+    // que aqui se comprueba el estado del DOM: si el indicador de voz
+    // esta activo, la sesion de ElevenLabs esta en marcha.
+    if (state.conv || state.vozConAgente) {
       return;
     }
     // Sin voz, el saludo se pide al motor por texto.
@@ -2521,12 +2570,15 @@
         return;
       } catch (e) {
         console.warn("[MoraBanc] ElevenLabs no disponible:", e && e.message);
-        // Si la sesion ha quedado viva pese al error (el agente
-        // arranca y lo que falla es el audio), no se cae al modo
-        // texto: se sigue con la voz.
-        if (!state.conv) {
-          aviso("Voz en modo texto: la conexión con el agente de voz no está disponible en este entorno.");
+        // Si la sesion de ElevenLabs quedo viva pese al error (el
+        // agente arranca y lo que falla es el audio), NO se arranca el
+        // reconocimiento nativo: serian dos rutas de voz compitiendo
+        // por el microfono, y el nativo se cuela con transcripciones
+        // vacias ("...") que llegan al motor como preguntas.
+        if (state.conv || state.vozConAgente) {
+          return;
         }
+        aviso("Voz en modo texto: la conexión con el agente de voz no está disponible en este entorno.");
         // Se sigue con SpeechRecognition, que ya tiene el permiso.
       }
     }
@@ -2552,6 +2604,7 @@
   }
 
   async function pararVoz() {
+    state.vozConAgente = false;
     state.on = false;
     state.recogiendo = false;
     setStatus("idle", "Toca para hablar");
