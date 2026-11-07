@@ -202,6 +202,40 @@ for nombre, claims in casos:
     check(f"{nombre} se rechaza con 401", _status(resp) == 401, f"status={_status(resp)}")
 
 # ---------------------------------------------------------------------------
+print("\n=== 5b. LIMITE DE PETICIONES POR USUARIO ===")
+# ---------------------------------------------------------------------------
+# El limite es por usuario (la sesion), no por IP: es lo que protege la
+# cuota de Bedrock.
+H._registro.clear()
+H._registro_marks.clear()
+
+check("el limite por minuto esta definido", H.LIMITE_POR_MINUTO > 0)
+check("el limite por hora esta definido", H.LIMITE_POR_HORA > 0)
+
+permitido = True
+for _ in range(H.LIMITE_POR_MINUTO):
+    if not H._comprobar_ritmo("usuario-test"):
+        permitido = False
+        break
+check("se puede llegar al limite sin ser bloqueado", permitido)
+
+check("al superar el limite se bloquea", H._comprobar_ritmo("usuario-test") is False)
+check("otro usuario no se ve afectado", H._comprobar_ritmo("otro-usuario") is True)
+
+# Y de verdad, por HTTP.
+H._registro.clear()
+H._registro_marks.clear()
+for _ in range(H.LIMITE_POR_MINUTO):
+    _llamar({"pregunta": "hola"}, CON_SESION)
+resp = _llamar({"pregunta": "hola"}, CON_SESION)
+check("tras el limite la API responde 429", _status(resp) == 429, f"status={_status(resp)}")
+H._registro.clear()
+H._registro_marks.clear()
+
+# El usuario sale del token, no de la URL.
+check("el usuario se saca del token", H._usuario_del_token(_token()) == "12TJ28")
+
+# ---------------------------------------------------------------------------
 print("\n=== 7. EL CORS POR DEFECTO NO ES WILDCARD ===")
 # ---------------------------------------------------------------------------
 origen = H._cors_headers()["Access-Control-Allow-Origin"]
@@ -279,6 +313,22 @@ if origen_politica:
 check("existe la ruta /login en el API Gateway", 'route_key = "POST /login"' in tf)
 check("existe la ruta /api/login en el API Gateway", 'route_key = "POST /api/login"' in tf)
 check("CloudFront enruta /api/login a la API", 'path_pattern           = "/api/login"' in tf)
+
+# El throttling del API Gateway (por IP) y el limite por usuario (en la
+# Lambda) son las dos capas que protegen la cuota de Bedrock.
+check("el stage de la API tiene throttling", "default_route_settings" in tf)
+check("el throttling define un limite de peticiones", "throttling_rate_limit" in tf)
+check("el throttling define un burst", "throttling_burst_limit" in tf)
+
+# El guardrail se crea en el terraform, pero si no se pasa en la llamada
+# a converse NO hace nada: hay que conectarlo.
+agente = open(os.path.join(RAIZ, "agent", "bedrock_agent.py"), encoding="utf-8").read()
+check("el agente lee el id del guardrail", "BEDROCK_GUARDRAIL_ID" in agente)
+check("el agente pasa el guardrail en la llamada a converse",
+      "guardrailConfig" in agente and "guardrailIdentifier" in agente)
+check("el terraform pasa el id del guardrail a la Lambda", "BEDROCK_GUARDRAIL_ID" in tf)
+check("el guardrail bloqueado no es un 500",
+      "GuardrailIntervened" in agente)
 
 # ---------------------------------------------------------------------------
 print("")

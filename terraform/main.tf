@@ -640,6 +640,12 @@ resource "aws_lambda_function" "motor" {
       KMS_KEY_ID       = aws_kms_key.main.key_id
       ENVIRONMENT      = var.environment
       PYTHONPATH       = "/var/task"
+      # El guardrail filtra prompt injection y PII. Sin este id, el
+      # guardrail que crea el terraform NO se ejecuta: hay que pasar su
+      # id en la llamada a converse.
+      BEDROCK_GUARDRAIL_ID = (
+        var.enable_guardrails ? aws_bedrock_guardrail.principal[0].guardrail_id : ""
+      )
     }
   }
 
@@ -671,7 +677,13 @@ resource "aws_lambda_function" "api" {
     variables = {
       # (AWS_REGION es reservada en Lambda: ver la nota en la lambda del motor.)
       BEDROCK_REGION  = var.aws_region
+      BEDROCK_MODEL_ID = var.bedrock_model_id
       FUNC_MOTOR_NAME = aws_lambda_function.motor.function_name
+      # El guardrail tambien para la lambda de la API: el agente (y el
+      # guardrail) viven en el mismo zip.
+      BEDROCK_GUARDRAIL_ID = (
+        var.enable_guardrails ? aws_bedrock_guardrail.principal[0].guardrail_id : ""
+      )
       BUCKET_DATOS    = aws_s3_bucket.datos.id
       TABLE_PRINCIPAL = aws_dynamodb_table.principal.name
       ENVIRONMENT     = var.environment
@@ -974,6 +986,16 @@ resource "aws_apigatewayv2_stage" "api" {
   name        = "$default"
   auto_deploy = false
   tags        = local.tags
+
+  # Limite de peticiones. Cada llamada a /preguntar cuesta dinero (Bedrock
+  # Nova Pro) y la ruta solo tiene una sesion legitima detras (un
+  # id_token de Cognito), asi que un volumen alto es, por definicion, un
+  # abuso. Estos valores dejan pasar el uso real del pitch (unas decenas
+  # de preguntas por hora) y cortan la amplificacion.
+  default_route_settings {
+    throttling_rate_limit = 30
+    throttling_burst_limit = 60
+  }
 }
 
 # Deployment explicito: sin esto, el stage con auto_deploy = false se
@@ -1712,11 +1734,20 @@ resource "null_resource" "indice_default" {
     # Si la collection_endpoint cambia, hay que rehacerlo.
   }
 
+  # La peticion va FIRMADA (SigV4) al endpoint de OpenSearch Serverless.
+  #
+  # Se deja como no-op a proposito: la KB de Bedrock ya esta creada y
+  # el indice "default" ya existe. Reejecutar el provisioner en cada
+  # apply devolvia 403 (la sesion del hackathon no tiene aoss:APIAccessAll
+  # sobre esa coleccion) y tumbaba el despliegue entero.
+  #
+  # Para recrear el indice a mano:
+  #   /opt/venv/bin/python3 scripts/crear_indice_opensearch.py \
+  #     "https://<id>.us-east-1.aoss.amazonaws.com" default
   provisioner "local-exec" {
-    # La peticion va FIRMADA (SigV4) al endpoint de OpenSearch Serverless.
-    # "aws curl" no existe en el AWS CLI (es una CLI aparte), asi que se
-    # firma con botocore, que ya esta instalado.
     command = <<-EOT
+      echo "indice default ya creado; no-op"
+      exit 0
       set -e
       ENDPOINT="${var.opensearch_collection_endpoint}"
       if [ -z "$ENDPOINT" ]; then

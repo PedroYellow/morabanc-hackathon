@@ -21,6 +21,7 @@ Formato de entrada de /preguntar:
   }
 """
 
+import base64
 import hmac
 import json
 import os
@@ -80,6 +81,64 @@ class _InputInvalido(Exception):
     (es sobre SU dato, no sobre nuestro internals)."""
 
 
+# ---------------------------------------------------------------------------
+# Limite de peticiones por usuario
+# ---------------------------------------------------------------------------
+#
+# El throttling del API Gateway es por IP: un atacante con muchas IPs
+# (o un proxy) lo esquiva. Este limite es por USUARIO (la sesion de
+# Cognito), que es lo que de verdad cuesta dinero: cada llamada es una
+# invocacion de Bedrock Nova Pro.
+#
+# Es un cubo de tokens en memoria. La Lambda se reutiliza entre peticiones
+# (no es una instancia por peticion), asi que el estado sobrevive entre
+# llamadas de la misma sesion en caliente. Si la Lambda se recicla, el
+# contador se reinicia: eso NO es un fallo de seguridad grave, porque el
+# limite de verdad lo pone el throttling del API Gateway, que es
+# externo a la Lambda.
+#
+# Los valores son para el uso real del pitch: 30 preguntas por minuto y
+# 120 por hora por usuario.
+LIMITE_POR_MINUTO = 30
+LIMITE_POR_HORA = 120
+
+# {usuario: [(timestamp, tokens_consumidos), ...]}
+_registro: dict[str, list[float]] = {}
+_registro_marks: list[tuple[float, str]] = []
+
+
+def _comprobar_ritmo(usuario: str) -> bool:
+    """Comprueba (y consume) el ritmo del usuario. True = permitido.
+
+    False = el usuario ha superado el limite y hay que responder 429.
+    """
+    ahora = time.time()
+    ventana_min = ahora - 60
+    ventana_hora = ahora - 3600
+
+    # Limpieza: se quitan las marcas viejas para que el diccionario no
+    # crezca sin limite (un attacker podria mandar muchos tokens
+    # distintos y llenarlo).
+    while _registro_marks and _registro_marks[0][0] < ventana_hora:
+        _, u = _registro_marks.pop(0)
+        marcas_u = _registro.get(u)
+        if marcas_u:
+            marcas_u[:] = [m for m in marcas_u if m >= ventana_hora]
+            if not marcas_u:
+                _registro.pop(u, None)
+
+    marcas = _registro.setdefault(usuario, [])
+    en_minuto = sum(1 for m in marcas if m >= ventana_min)
+    en_hora = len(marcas)
+
+    if en_minuto >= LIMITE_POR_MINUTO or en_hora >= LIMITE_POR_HORA:
+        return False
+
+    marcas.append(ahora)
+    _registro_marks.append((ahora, usuario))
+    return True
+
+
 def _verificar_token_cognito(token: str) -> bool:
     """
     Verifica que el token es un id_token de Cognito valido para NUESTRO
@@ -126,8 +185,6 @@ def _verificar_token_cognito(token: str) -> bool:
         return False
 
     try:
-        import base64
-
         payload = partes[1]
         payload += "=" * (-len(payload) % 4)
         claims = json.loads(base64.urlsafe_b64decode(payload).decode("utf-8"))
@@ -164,6 +221,27 @@ def _verificar_token_cognito(token: str) -> bool:
         return False
 
     return True
+
+
+def _usuario_del_token(token: str) -> str:
+    """El identificador del usuario en el token (preferred_username o sub).
+
+    Se usa para el limite de peticiones por usuario. Si no se puede
+    sacar, se devuelve "" y el llamante usa "desconocido" (todos los
+    usuarios sin identificador comparten cubo: es un caso anomalo).
+    """
+    try:
+        partes = token.split(".")
+        if len(partes) != 3:
+            return ""
+        payload = partes[1]
+        payload += "=" * (-len(payload) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload).decode("utf-8"))
+        if not isinstance(claims, dict):
+            return ""
+        return str(claims.get("preferred_username") or claims.get("sub") or "")
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def _token_de_la_peticion(event) -> str:
@@ -294,8 +372,6 @@ def _login(event, context):
 
     claims = {}
     try:
-        import base64
-
         parte = id_token.split(".")[1]
         parte += "=" * (-len(parte) % 4)
         claims = json.loads(base64.urlsafe_b64decode(parte).decode("utf-8"))
@@ -356,11 +432,21 @@ def lambda_handler(event, context):
         # usuario del banco: sin esta comprobacion, cualquiera que
         # descubra el dominio gasta la cuota de Bedrock del equipo a
         # voluntad. Con esta comprobacion, hace falta una sesion valida.
+        usuario_sesion = ""
         if EXIGIR_TOKEN:
             token = _token_de_la_peticion(event)
             if not _verificar_token_cognito(token):
                 return _resp(401, {
                     "error": "Sesion no valida. Inicia sesion en MoraBanc Digital.",
+                })
+            usuario_sesion = _usuario_del_token(token)
+
+            # Limite por usuario: cada pregunta cuesta una invocacion de
+            # Bedrock. Se comprueba DESPUES de autenticar, para que el
+            # limite sea por usuario de verdad y no por IP.
+            if not _comprobar_ritmo(usuario_sesion or "desconocido"):
+                return _resp(429, {
+                    "error": "Demasiadas peticiones. Espera un momento e intentalo de nuevo.",
                 })
 
         if not event.get("body"):

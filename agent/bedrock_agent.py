@@ -732,6 +732,14 @@ class AgenteFinanciero:
         self._client = None
         self.trace: list[dict] = []      # registro de llamadas a herramientas
 
+        # El id del Bedrock Guardrail. El guardrail se crea en el
+        # terraform (enable_guardrails) pero, si no se pasa en la llamada
+        # a converse, NO hace NADA: el filtro de prompt injection y de
+        # PII se queda sin conectar. Por eso se lee del entorno y se
+        # anade a la peticion.
+        self.guardrail_id = os.environ.get("BEDROCK_GUARDRAIL_ID", "").strip()
+        self.guardrail_version = os.environ.get("BEDROCK_GUARDRAIL_VERSION", "").strip()
+
         if mock is None:
             # Modo mock si:
             #   - BEDROCK_MOCK esta a "1"/"true", o
@@ -1075,6 +1083,15 @@ class AgenteFinanciero:
                     "maxTokens": 1200,
                 },
             }
+            # El guardrail filtra la inyeccion de prompts y la PII. Sin
+            # esto, el guardrail del terraform existe pero no hace nada.
+            if self.guardrail_id:
+                request["guardrailConfig"] = {
+                    "guardrailIdentifier": self.guardrail_id,
+                    "trace": "enabled",
+                }
+                if self.guardrail_version:
+                    request["guardrailConfig"]["guardrailVersion"] = self.guardrail_version
             # El toolConfig solo va si el LLM puede (debe) usar
             # herramientas. Si el motor ya ha calculado, se omite: asi el
             # modelo redacta y no puede inventarse otra llamada con
@@ -1085,7 +1102,26 @@ class AgenteFinanciero:
                     "toolChoice": {"auto": {}},
                 }
 
-            resp = brt.converse(**request)
+            try:
+                resp = brt.converse(**request)
+            except Exception as e:  # noqa: BLE001
+                # El guardrail bloquea la peticion lanzando una excepcion
+                # (GuardrailIntervenedException). No es un fallo del
+                # servicio: es el filtro haciendo su trabajo. Se devuelve
+                # un mensaje util en vez de un 500 con el traceback.
+                texto_error = str(e)
+                if "GuardrailIntervened" in texto_error or "guardrail" in texto_error.lower():
+                    print("GUARDRAIL: peticion bloqueada ->", texto_error[:200], file=sys.stderr)
+                    return {
+                        "respuesta": (
+                            "No puedo procesar esa solicitud: el filtro de "
+                            "seguridad la ha bloqueado. Prueba a reformular la "
+                            "pregunta sin datos personales."
+                        ),
+                        "herramientas": [],
+                        "mock": self.mock,
+                    }
+                raise
             stop = resp["stopReason"]
 
             if stop == "tool_use" and usar_herramientas:
