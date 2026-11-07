@@ -23,6 +23,10 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.6"
     }
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.12"
+    }
   }
 }
 
@@ -223,10 +227,14 @@ resource "aws_kms_key" "main" {
         Sid    = "AllowBedrockAndServices"
         Effect = "Allow"
         Principal = {
+          # OJO: "aoss.amazonaws.com" NO es un service principal valido de
+          # KMS. KMS responde "Policy contains a statement with one or more
+          # invalid service principals". Para OpenSearch Serverless la usa
+          # la propia coleccion a traves de la security policy, asi que no
+          # hace falta delegar aqui.
           Service = [
             "bedrock.amazonaws.com",
             "bedrock-agent.amazonaws.com",
-            "aoss.amazonaws.com",
             "s3.amazonaws.com",
           ]
         }
@@ -860,8 +868,13 @@ resource "aws_cloudfront_distribution" "web" {
     # AWS exige una combinacion concreta: no vale ["POST", "OPTIONS"].
     # La lista completa es la unica que incluye POST con OPTIONS.
     allowed_methods = ["HEAD", "DELETE", "POST", "GET", "OPTIONS", "PUT", "PATCH"]
-    cached_methods  = []
-    compress        = true
+    # CloudFront exige que cached_methods no este vacio: es un subconjunto
+    # de allowed_methods. Con [] falla con "The parameter CachedMethods is
+    # required". La API no se cachea (es dinamica), pero GET y HEAD se
+    # declaran como cacheables y la cache se apaga con cache_policy_min_ttl
+    # = 0 y TTL 0.
+    cached_methods = ["GET", "HEAD"]
+    compress       = true
 
     forwarded_values {
       query_string = false
@@ -880,8 +893,8 @@ resource "aws_cloudfront_distribution" "web" {
     path_pattern           = "/salud"
     target_origin_id       = "api-${aws_apigatewayv2_api.api.id}"
     viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
-    cached_methods         = []
+    allowed_methods        = ["HEAD", "GET", "OPTIONS"]
+    cached_methods         = ["GET", "HEAD"]
     compress               = true
 
     forwarded_values {
@@ -1120,8 +1133,26 @@ resource "aws_opensearchserverless_security_policy" "cifrado" {
   })
 }
 
+# OpenSearch Serverless tarda unos segundos en indexar la security policy.
+# Sin esta espera, la Knowledge Base falla al crearse con
+# "[security_exception] 403 Forbidden" al validar el storage config.
+resource "time_sleep" "aoss_policy" {
+  count = (var.bedrock_kb_id != "" || !var.enable_kb) ? 0 : 1
+
+  depends_on = [aws_opensearchserverless_security_policy.cifrado]
+
+  triggers = {
+    policy = one(aws_opensearchserverless_security_policy.cifrado[*].id)
+  }
+
+  # 30 s: es lo que tarda OpenSearch en propagar la policy.
+  create_duration = "30s"
+}
+
 resource "aws_opensearchserverless_collection" "vector" {
   count = (var.bedrock_kb_id != "" || !var.enable_kb) ? 0 : 1
+
+  depends_on = [time_sleep.aoss_policy]
 
   name = "${local.name}-vector"
   type = "VECTORSEARCH"

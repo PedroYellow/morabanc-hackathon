@@ -378,6 +378,39 @@ else:
     check("la security policy de OpenSearch no usa 'dashboard'", False, "no se encontro la policy")
 
 
+
+# ==========================================================================
+# Regresiones del TERCER apply
+# ==========================================================================
+
+# BUG 10: la KMS con un service principal invalido.
+# "aoss.amazonaws.com" NO existe: KMS responde "Policy contains a statement
+# with one or more invalid service principals".
+# El service principal invalido solo cuenta si esta en CODIGO, no en un
+# comentario que lo explica: se ignoran las lineas de comentario.
+_codigo_kms = "\n".join(l for l in SRC.split("\n")
+                         if not l.strip().startswith("#"))
+check("la key policy no usa service principals invalidos",
+      '"aoss.amazonaws.com"' not in _codigo_kms,
+      "aoss.amazonaws.com no es un service principal valido de KMS")
+
+# BUG 11: CloudFront exige cached_methods no vacio.
+# Con [] falla con "The parameter CachedMethods is required".
+_cache = re.findall(r'cached_methods\s*=\s*(\[[^\]]*\])', SRC)
+check("todos los cached_methods de CloudFront son no vacios",
+      _cache and all(m.strip() not in ("[]", "[ ]") for m in _cache),
+      f"encontrados: {_cache}")
+
+# BUG 12: OpenSearch tarda en indexar la security policy.
+# Sin esperar, la KB falla con "[security_exception] 403 Forbidden".
+check("hay una espera entre la security policy y la coleccion",
+      'resource "time_sleep" "aoss_policy"' in SRC)
+check("la espera de OpenSearch dura lo suficiente",
+      re.search(r'resource "time_sleep" "aoss_policy" \{.*?create_duration\s*=\s*"(\d+)s"', SRC, re.S) is not None)
+check("el provider time esta declarado",
+      'source  = "hashicorp/time"' in SRC)
+
+
 # ==========================================================================
 
 for o in ["api_url", "front_url", "bucket_datos", "guardrail_id",
