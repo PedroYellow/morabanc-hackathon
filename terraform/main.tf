@@ -1469,7 +1469,17 @@ resource "aws_cloudfront_response_headers_policy" "seguridad" {
         "style-src 'self' 'unsafe-inline'; ",
         "img-src 'self' data: blob:; ",
         "font-src 'self' data:; ",
-        "connect-src 'self' https://cognito-idp.${var.aws_region}.amazonaws.com https://${var.dominio_principal != "" ? var.dominio_principal : var.dominio_cloudfront}; ",
+        # connect-src: la voz con ElevenLabs necesita poder pedir el
+        # conversation token a su API y mantener la conexion de audio.
+        # Sin estas entradas, el navegador bloquea la peticion y el
+        # asesor no habla ("Failed to fetch conversation token").
+        "connect-src 'self' https://cognito-idp.${var.aws_region}.amazonaws.com https://${var.dominio_principal != "" ? var.dominio_principal : var.dominio_cloudfront} https://api.elevenlabs.io wss://api.elevenlabs.io https://*.elevenlabs.io wss://*.elevenlabs.io https://*.livekit.cloud wss://*.livekit.cloud; ",
+        # El audio del WebRTC y el worker de libsamplerate.
+        "media-src 'self' blob: mediastream:; ",
+        "worker-src 'self' blob:; ",
+        # El agente puede pedir abrir una URL interna (lo limita el
+        # codigo), asi que se permite el frame propio.
+        "frame-src 'self'; ",
         "frame-ancestors 'none'; ",
         "base-uri 'self'; ",
         "form-action 'self'; ",
@@ -1794,54 +1804,6 @@ resource "aws_bedrock_guardrail" "principal" {
 # Se crea con la API de OpenSearch (PUT index) usando la IAM del rol de
 # la KB. Es idempotente: si ya existe, devuelve 400 "resource_already_exists"
 # y se considera un exito.
-resource "null_resource" "indice_default" {
-  count = (var.bedrock_kb_id != "" || !var.enable_kb) ? 0 : 1
-
-  # La coleccion tiene que existir y estar ACTIVE.
-  depends_on = [
-    aws_opensearchserverless_collection.vector,
-    time_sleep.aoss_policy,
-    aws_opensearchserverless_access_policy.datos,
-  ]
-
-  triggers = {
-    coleccion = var.opensearch_collection_endpoint
-    # Si la collection_endpoint cambia, hay que rehacerlo.
-  }
-
-  # La peticion va FIRMADA (SigV4) al endpoint de OpenSearch Serverless.
-  #
-  # Se deja como no-op a proposito: la KB de Bedrock ya esta creada y
-  # el indice "default" ya existe. Reejecutar el provisioner en cada
-  # apply devolvia 403 (la sesion del hackathon no tiene aoss:APIAccessAll
-  # sobre esa coleccion) y tumbaba el despliegue entero.
-  #
-  # Para recrear el indice a mano:
-  #   /opt/venv/bin/python3 scripts/crear_indice_opensearch.py \
-  #     "https://<id>.us-east-1.aoss.amazonaws.com" default
-  provisioner "local-exec" {
-    command = <<-EOT
-      echo "indice default ya creado; no-op"
-      exit 0
-      set -e
-      ENDPOINT="${var.opensearch_collection_endpoint}"
-      if [ -z "$ENDPOINT" ]; then
-        echo "sin endpoint de la coleccion: se salta"
-        exit 0
-      fi
-      # OJO: $RAIZ no existe dentro del provisioner (es una variable del
-      # script de shell, no de terraform). La ruta se saca de path.module,
-      # que es el directorio del modulo de terraform.
-      #
-      # El python es el del venv (/opt/venv/bin/python3): el python3 del
-      # PATH no tiene boto3 y el script revienta con "No module named
-      # 'boto3'", tumbando el apply.
-      PY="/opt/venv/bin/python3"
-      [ -x "$PY" ] || PY=$(command -v python3)
-      "$PY" "${path.module}/../scripts/crear_indice_opensearch.py" "$ENDPOINT" default
-    EOT
-  }
-}
 
 resource "aws_bedrockagent_knowledge_base" "normativa" {
   count = (var.bedrock_kb_id != "" || !var.enable_kb) ? 0 : 1
@@ -1855,7 +1817,6 @@ resource "aws_bedrockagent_knowledge_base" "normativa" {
   # error de coleccion no encontrada y hay que reintentar a mano.
   depends_on = [
     aws_opensearchserverless_collection.vector,
-    null_resource.indice_default,
   ]
 
   knowledge_base_configuration {

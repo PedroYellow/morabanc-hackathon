@@ -272,9 +272,31 @@
   }
 
   function entrar(r) {
-    var destino = (r.empresa || r.codigo === USUARIO_EMPRESA)
+    // A donde se va despues de entrar.
+    //
+    // Si el portal de empresas redirigio al login con "?next=...", se
+    // vuelve ahi. SIN esto, un usuario sin sesion que abria
+    // /mb-empresas.html acababa en la pantalla inicial en vez de en el
+    // portal que habia pedido.
+    //
+    // OJO: el valor de "next" viene de la URL, asi que hay que
+    // validarlo: solo se acepta una ruta RELATIVA del propio sitio.
+    // Si no, un atacante puede mandar "?next=https://sitio-falso.com"
+    // y convertir el login en un redireccionador abierto.
+    var siguiente = "";
+    try {
+      var cand = new URLSearchParams(window.location.search).get("next") || "";
+      // Solo rutas internas que empiezan por "/" y NO por "//"
+      // (que seria un protocolo-relativo, es decir, otro dominio).
+      if (cand.charAt(0) === "/" && cand.charAt(1) !== "/" &&
+          cand.indexOf("javascript:") === -1 && cand.indexOf("..") === -1) {
+        siguiente = cand;
+      }
+    } catch (e) {}
+
+    var destino = siguiente || ((r.empresa || r.codigo === USUARIO_EMPRESA)
       ? "mb-empresas.html"      // portal de empresas, con el asesor
-      : "mb-particulares.html"; // portal de particulares
+      : "mb-particulares.html"); // portal de particulares
 
     // "Recordar usuari" guarda el usuario en localStorage.
     try {
@@ -284,7 +306,8 @@
     } catch (err) {}
 
     window.location.href = destino +
-      (r.codigo ? "?user=" + encodeURIComponent(r.codigo) : "");
+      (r.codigo && siguiente.indexOf("?") === -1
+        ? "?user=" + encodeURIComponent(r.codigo) : "");
   }
 
   // Acceso

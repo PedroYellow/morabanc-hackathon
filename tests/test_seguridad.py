@@ -290,6 +290,15 @@ check("el portal exige sesion o modo demo explicito",
 check("el front manda el id_token a la API", "Authorization" in app_js and "tokenDeSesion" in app_js)
 check("el front tiene el helper tokenDeSesion", "function tokenDeSesion" in app_js)
 
+# El "?next=" del login no puede convertirse en un redireccionador
+# abierto: solo se aceptan rutas relativas del propio sitio.
+check("el login valida el destino de la redireccion",
+      'cand.charAt(0) === "/" && cand.charAt(1) !== "/"' in login_js)
+check("el login rechaza los destinos con ..",
+      'cand.indexOf("..") === -1' in login_js)
+check("el login rechaza javascript:",
+      'cand.indexOf("javascript:") === -1' in login_js)
+
 # ---------------------------------------------------------------------------
 print("\n=== 11-12. EL TERRAFORM DECLARA LAS CABECERAS Y EL PASO DEL TOKEN ===")
 # ---------------------------------------------------------------------------
