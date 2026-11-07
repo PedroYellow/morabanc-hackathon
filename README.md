@@ -34,13 +34,13 @@ Eso es a la vez la garantía de correctitud y la respuesta al jurado a
 | `engine/cierre.py` | Bucle de cierre: el motor sobre su propio consejo | **46 tests verdes** |
 | `agent/bedrock_agent.py` | Bedrock Converse + tool-use (11 tools) | **83 tests verdes** |
 | `lambda/handler.py` | Handler API (empaquetado y ejecutado de verdad) | **12 checks verdes** |
-| `terraform/main.tf` | Infra AWS 100% IaC + publicacion del front | **73 asserts + `terraform validate` → Success** |
-| `frontend/` | App estatica mobile-first (HTML/CSS/JS puro) | **42 asserts en Chromium real** |
+| `terraform/main.tf` | Infra AWS 100% IaC + publicacion del front | **78 asserts + `terraform validate` → Success** |
+| `frontend/` | App estatica mobile-first (HTML/CSS/JS puro) | **49 asserts en Chromium real** |
 | `frontend/generar_demo_data.py` | Datos demo generados por el motor real | — |
 | `data/generar_demo.py` | 4 perfiles de extracto sintéticos | — |
 | `normativa/generar_corpus.py` | Corpus para el RAG (5 documentos) | verificado |
 
-**434 asserts en verde + Lambda validada + Terraform validado + front tested en navegador real.**
+**446 asserts en verde + Lambda validada + Terraform validado + front tested en navegador real.**
 
 ```
 $ bash scripts/verificar.sh
@@ -51,11 +51,11 @@ $ bash scripts/verificar.sh
   ✔ Formato del pitch — 28 asserts
   ✔ Terraform (orden y IaC) — 73 asserts
   ✔ Lambda empaquetada — 12 asserts
-  ✔ Frontend — 42 asserts
+  ✔ Frontend — 49 asserts
   ✔ Terraform — configuracion valida
   ✔ Sintaxis JS valida
   ✔ 5 documentos normativos
-  Asserts correctos: 434
+  Asserts correctos: 446
   Fallos:            0
 ```
 
@@ -254,6 +254,37 @@ App **estática** (HTML + CSS + JS puro, sin build step, sin dependencias) que s
 publica en S3 y se sirve por CloudFront. Mobile-first, 3 idiomas (ES/CA/EN).
 
 **Regla del proyecto: el JavaScript no calcula nada.** Solo pide, muestra y dibuja.
+
+### Identidad de marca (MoraBanc)
+
+La paleta **no es inventada**: sale de las variables CSS reales del sitio
+corporativo de MoraBanc (`clientlib-base.css` / `clientlib-site.css`):
+
+| Token del sitio | Valor | Uso en el front |
+|---|---|---|
+| `--darkblue` | `#0a3550` | Cabecera, tarjeta de veredicto, botones |
+| `--banner` | `#114274` | Navy de banner |
+| `--accent` | `#f1c657` | CTA, acento de marca, hallazgo destacado |
+| `--accent-soft` | `#f7dd9a` | Hover del CTA |
+| `--lightblue` | `#e8f1f8` | Superficie suave (cards, gráfico, notas) |
+| `--brand-light` | `#82add8` | Azul de marca, iconos |
+| `--text-link` | `#64a0d0` | Enlaces |
+| `--gray-240` / `--gray-300` | `#e7e7e7` / `#d9d9d9` | Bordes |
+| `--gray-500` | `#898989` | Texto secundario |
+| `--positive` | `#04aa6d` | Ahorro, "cumplido" |
+| `--negative` | `#f0421c` | Quiebre, error |
+| `--alert` | `#e7891c` | Aviso |
+
+El **logo es el real** del sitio corporativo (`frontend/assets/logo-morabanc.svg`,
+versión clara para fondo navy).
+
+Tipografía: MoraBanc usa Oblik (titulares) + Source Sans Pro (texto). Aquí no
+hay build step ni fuentes externas, así que se declara la pila de sistema
+equivalente: se mantiene la jerarquía y el ritmo tipográfico sin 300 KB de
+webfonts en el móvil.
+
+`scripts/test_frontend.js` verifica la paleta y el logo (7 asserts): si alguien
+cambia los colores de marca, la suite falla.
 
 - **Modo real**: llama a la API en AWS (`/__API_URL__`), el agente de Bedrock elige
   las herramientas y el motor calcula.

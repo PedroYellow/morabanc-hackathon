@@ -1035,10 +1035,15 @@ locals {
     "index.html"                         = "text/html; charset=utf-8"
     "assets/styles.css"                  = "text/css; charset=utf-8"
     "assets/app.js"                      = "application/javascript; charset=utf-8"
+    # El logo real de MoraBanc. Sin esto se publicaria como
+    # application/octet-stream y el navegador NO lo renderiza como imagen:
+    # el logo aparece roto en el movil.
+    "assets/logo-morabanc.svg"           = "image/svg+xml"
     "data/demo_data.json"                = "application/json; charset=utf-8"
     "data/demo_freelance.csv"            = "text/csv; charset=utf-8"
     "data/demo_comercio.csv"             = "text/csv; charset=utf-8"
     "data/demo_freelancer_contratar.csv" = "text/csv; charset=utf-8"
+    "data/demo_freelancer_cierre.csv"    = "text/csv; charset=utf-8"
   }
 }
 

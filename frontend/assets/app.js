@@ -824,13 +824,13 @@
       const line = document.createElementNS(ns, "line");
       line.setAttribute("x1", padL); line.setAttribute("x2", W - padR);
       line.setAttribute("y1", yy); line.setAttribute("y2", yy);
-      line.setAttribute("stroke", f === 0 ? "#39435a" : "#1e2534");
+      line.setAttribute("stroke", f === 0 ? "#d9d9d9" : "#e7e7e7");
       line.setAttribute("stroke-width", (1 / escala).toFixed(2));
       svg.appendChild(line);
       const tx = document.createElementNS(ns, "text");
       tx.setAttribute("x", padL - 8); tx.setAttribute("y", yy + 3.5);
       tx.setAttribute("text-anchor", "end");
-      tx.setAttribute("fill", "#7c8699");
+      tx.setAttribute("fill", "#898989");
       tx.setAttribute("font-size", fs.toFixed(1));
       tx.setAttribute("font-weight", "500");
       tx.textContent = num(v, 0);
@@ -847,9 +847,9 @@
     grad.setAttribute("x1", "0"); grad.setAttribute("y1", "0");
     grad.setAttribute("x2", "0"); grad.setAttribute("y2", "1");
     const s1 = document.createElementNS(ns, "stop");
-    s1.setAttribute("offset", "0%"); s1.setAttribute("stop-color", "#14f195"); s1.setAttribute("stop-opacity", "0.28");
+    s1.setAttribute("offset", "0%"); s1.setAttribute("stop-color", "#04aa6d"); s1.setAttribute("stop-opacity", "0.28");
     const s2 = document.createElementNS(ns, "stop");
-    s2.setAttribute("offset", "100%"); s2.setAttribute("stop-color", "#14f195"); s2.setAttribute("stop-opacity", "0");
+    s2.setAttribute("offset", "100%"); s2.setAttribute("stop-color", "#04aa6d"); s2.setAttribute("stop-opacity", "0");
     grad.appendChild(s1); grad.appendChild(s2);
     const defs = document.createElementNS(ns, "defs");
     defs.appendChild(grad);
@@ -866,7 +866,7 @@
     for (let i = 1; i <= Math.min(quieb, vals.length - 1); i++) d1 += " L" + x(i) + " " + y(vals[i]);
     const l1 = document.createElementNS(ns, "path");
     l1.setAttribute("d", d1); l1.setAttribute("fill", "none");
-    l1.setAttribute("stroke", "#14f195"); l1.setAttribute("stroke-width", lw.toFixed(2));
+    l1.setAttribute("stroke", "#04aa6d"); l1.setAttribute("stroke-width", lw.toFixed(2));
     l1.setAttribute("stroke-linejoin", "round"); l1.setAttribute("stroke-linecap", "round");
     svg.appendChild(l1);
 
@@ -875,7 +875,7 @@
       for (let i = quieb + 1; i < vals.length; i++) d2 += " L" + x(i) + " " + y(vals[i]);
       const l2 = document.createElementNS(ns, "path");
       l2.setAttribute("d", d2); l2.setAttribute("fill", "none");
-      l2.setAttribute("stroke", "#ff6b6b"); l2.setAttribute("stroke-width", lw.toFixed(2));
+      l2.setAttribute("stroke", "#f0421c"); l2.setAttribute("stroke-width", lw.toFixed(2));
       l2.setAttribute("stroke-linejoin", "round"); l2.setAttribute("stroke-linecap", "round");
       svg.appendChild(l2);
     }
@@ -887,7 +887,7 @@
       const tx = document.createElementNS(ns, "text");
       tx.setAttribute("x", x(i)); tx.setAttribute("y", H - 8);
       tx.setAttribute("text-anchor", "middle");
-      tx.setAttribute("fill", "#6c7689");
+      tx.setAttribute("fill", "#898989");
       tx.setAttribute("font-size", fs.toFixed(1));
       tx.textContent = "M" + (i + 1);
       svg.appendChild(tx);
@@ -898,10 +898,10 @@
     lg.innerHTML = "";
     if (quieb < vals.length - 1) {
       lg.innerHTML =
-        '<span class="legend-item"><span class="legend-swatch" style="background:#14f195"></span>Con caja</span>' +
-        '<span class="legend-item"><span class="legend-swatch" style="background:#ff6b6b"></span>En números rojos</span>';
+        '<span class="legend-item"><span class="legend-swatch" style="background:#04aa6d"></span>Con caja</span>' +
+        '<span class="legend-item"><span class="legend-swatch" style="background:#f0421c"></span>En números rojos</span>';
     } else {
-      lg.innerHTML = '<span class="legend-item"><span class="legend-swatch" style="background:#14f195"></span>Saldo de caja</span>';
+      lg.innerHTML = '<span class="legend-item"><span class="legend-swatch" style="background:#04aa6d"></span>Saldo de caja</span>';
     }
 
     // nota

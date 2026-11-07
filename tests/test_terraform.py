@@ -180,6 +180,24 @@ check("el bucket tiene cifrado KMS",
       "aws_s3_bucket_server_side_encryption_configuration" in SRC)
 check("DynamoDB tiene TTL", "ttl" in SRC.lower())
 
+# El front se publica en S3 con el content-type de cada fichero. Si el SVG
+# del logo no esta en el mapa, se sirve como octet-stream y el navegador no
+# lo renderiza: el logo aparece roto en el movil.
+ct = re.search(r'content_types\s*=\s*\{(.*?)\n  \}', SRC, re.S)
+check("existe el mapa de content_types", ct is not None)
+if ct:
+    cuerpo = ct.group(1)
+    check("el SVG del logo tiene content-type image/svg+xml",
+          re.search(r'"assets/logo-morabanc\.svg"\s*=\s*"image/svg\+xml"', cuerpo)
+          is not None)
+    check("el CSS tiene su content-type",
+          re.search(r'"assets/styles\.css"\s*=\s*"text/css', cuerpo) is not None)
+    check("el JS tiene su content-type",
+          re.search(r'"assets/app\.js"\s*=\s*"application/javascript', cuerpo) is not None)
+    check("el CSV de cierre del bucle tiene content-type",
+          re.search(r'"data/demo_freelancer_cierre\.csv"\s*=\s*"text/csv', cuerpo)
+          is not None)
+
 
 # ==========================================================================
 print("\n=== 7. RECURSOS CLAVE ===")

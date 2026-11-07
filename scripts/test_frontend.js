@@ -115,6 +115,40 @@ function check(nombre, ok, extra) {
   await page.waitForTimeout(1400);
   check("nueva respuesta anadida", (await page.locator(".msg.bot").count()) > antes);
 
+  console.log("\n=== IDENTIDAD DE MARCA MORABANC ===");
+  // El front tiene que parecerse al banco: navy #0a3550, gold #f1c657 y el
+  // logo real. Si alguien cambia la paleta, esto lo detecta.
+  const marca = await page.evaluate(() => {
+    const cs = (sel, prop) => {
+      const el = document.querySelector(sel);
+      return el ? getComputedStyle(el).getPropertyValue(prop).trim() : null;
+    };
+    return {
+      navy: cs(".topbar", "background-color"),
+      gold: cs(".btn-primary", "background-color"),
+      bodyBg: cs("body", "background-color"),
+      txt: cs("body", "color"),
+      cardBg: cs(".card", "background-color"),
+      logoSrc: (document.querySelector(".brand-logo") || {}).src || "",
+      logoVisible: (() => {
+        const el = document.querySelector(".brand-logo");
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        return r.width > 40 && r.height > 8;
+      })(),
+    };
+  });
+  // El navy de MoraBanc es #0a3550 = rgb(10, 53, 80)
+  check("la cabecera usa el navy de marca", marca.navy === "rgb(10, 53, 80)", marca.navy);
+  // El gold de marca es #f1c657 = rgb(241, 198, 87)
+  check("el boton principal usa el gold de marca", marca.gold === "rgb(241, 198, 87)", marca.gold);
+  check("el fondo es claro (no dark)", marca.bodyBg === "rgb(244, 247, 250)", marca.bodyBg);
+  check("el texto es oscuro sobre fondo claro", marca.txt === "rgb(33, 37, 41)", marca.txt);
+  check("las cards son blancas", marca.cardBg === "rgb(255, 255, 255)", marca.cardBg);
+  check("el logo real de MoraBanc esta cargado",
+    marca.logoSrc.includes("logo-morabanc.svg"), marca.logoSrc);
+  check("el logo se ve (no collapsed)", marca.logoVisible === true);
+
   console.log("\n=== FORMATO DE LOS NUMEROS (europeo) ===");
   // El front se ve en la sala el dia del hackathon: "4.267,05 €" se lee como
   // una cuenta; "4267.05 €" se lee como un dato de maquina. El build de
