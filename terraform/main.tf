@@ -466,9 +466,13 @@ data "aws_iam_policy_document" "lambda_exec" {
   }
 
   statement {
-    sid     = "Logs"
-    effect  = "Allow"
-    actions = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    sid    = "Logs"
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+    ]
     # Los dos log groups: el del motor y el de la API. Con solo uno, la
     # otra Lambda falla con "not allowed to be used with Arn ...".
     resources = [
@@ -737,6 +741,17 @@ resource "aws_lambda_function" "authorizer" {
       # del authorizer y el authorizer de la ruta). API Gateway manda el
       # ARN de la ruta en el evento del request.
       API_KEY = random_password.api_key.result
+
+      # El authorizer construye el ARN de la ruta con estos datos, porque
+      # en HTTP API con payload format 2.0 el evento NO trae "routeArn".
+      # Sin ellos, la policy que devuelve no autoriza la invocacion y el
+      # gateway responde 403 Forbidden con la clave correcta.
+      # OJO: AWS_REGION y AWS_ACCOUNT_ID son claves RESERVADAS en Lambda
+      # ("Reserved keys used in this request: AWS_REGION"). La region la
+      # deduce la propia Lambda del runtime; la cuenta se pasa con otro
+      # nombre.
+      MB_ACCOUNT_ID       = data.aws_caller_identity.current.account_id
+      MB_API_ID           = aws_apigatewayv2_api.api.id
     }
   }
 
@@ -770,7 +785,94 @@ resource "aws_lambda_permission" "authorizer_api_gateway" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.authorizer.function_name
   principal     = "apigateway.amazonaws.com"
+  # OJO: API Gateway invoca al AUTHORIZER con el source arn:
+  #   <api-id>/<stage>/authorizers/<id>   (3 segmentos, con el stage)
+  #   <api-id>/authorizers/<id>           (2 segmentos, sin stage)
+  # hace falta un permiso para cada forma.
   source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "authorizer_api_gateway_stage" {
+  statement_id  = "AllowAPIGatewayInvokeAuthorizerStage"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.authorizer.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*/*"
+}
+
+# Permiso para las rutas CON prefijo ("/api/preguntar"): el source arn
+# tiene un segmento mas (api-id + metodo + api + preguntar).
+
+# API Gateway puede invocar la lambda con el source arn en varias formas
+# segun como se llame a la ruta (con o sin stage, con o sin prefijo):
+#
+#   <api-id>/POST/preguntar            (3 segmentos)
+#   <api-id>/$default/POST/preguntar   (4, con el stage)
+#   <api-id>/POST/api/preguntar        (4, con prefijo)
+#   <api-id>/$default/POST/api/preguntar (5, con stage y prefijo)
+#
+# AWS compara el patron contra el arn EXACTO, asi que hacen falta los
+# cuatro patrones. Con un unico, una de las formas responde 403.
+
+resource "aws_lambda_permission" "api_gateway_stage_prefijo" {
+  statement_id  = "AllowExecutionFromAPIGatewayStagePrefijo"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.api.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*/*/*/*"
+}
+
+# Rol del "front" para el authorizer de API Gateway.
+#
+# POR QUE HACE FALTA: en HTTP API, el "principalId" que devuelve un
+# authorizer REQUEST tiene que resolver a un ROL DE IAM que exista. Si no
+# existe, API Gateway no puede resolver la identity policy y responde
+# 403 Forbidden aunque la clave de la API sea correcta y el authorizer
+# haya devuelto "Allow".
+#
+# El principalId del authorizer es "front-morabanc", asi que el rol se
+# llama igual. Su unico permiso es invocar la API (la policy que genera
+# el authorizer acota el recurso a la ruta concreta).
+resource "aws_iam_role" "front" {
+  name = "front-morabanc"
+  # El rol no lo asume nadie: existe para que API Gateway resuelva el
+  # principalId del authorizer.
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "apigateway.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+  tags = local.tags
+}
+
+resource "aws_iam_role_policy" "front" {
+  name = "front-morabanc-policy"
+  role = aws_iam_role.front.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["execute-api:Invoke"]
+      # Todas las rutas de esta API, con y sin stage y con y sin prefijo:
+      #   <api-id>/POST/preguntar              (3 segmentos)
+      #   <api-id>/$default/POST/preguntar     (4)
+      #   <api-id>/POST/api/preguntar          (4)
+      #   <api-id>/$default/POST/api/preguntar (5)
+      #
+      # El arn que genera el authorizer es el de la ruta concreta, con
+      # sus segmentos. Con un patron mas corto no coincide y API Gateway
+      # responde 403 Forbidden aunque el authorizer haya devuelto
+      # "Allow" y la clave sea correcta.
+      Resource = [
+        "${aws_apigatewayv2_api.api.execution_arn}/*/*/*",
+        "${aws_apigatewayv2_api.api.execution_arn}/*/*/*/*",
+        "${aws_apigatewayv2_api.api.execution_arn}/*/*/*/*/*",
+      ]
+    }]
+  })
 }
 
 resource "aws_apigatewayv2_integration" "api" {
@@ -817,11 +919,41 @@ resource "aws_apigatewayv2_route" "salud" {
   # para comprobar que la API esta viva sin depender de la key.
 }
 
+# OJO: auto_deploy = false a proposito.
+#
+# Con auto_deploy = true, API Gateway sigue sirviendo un deployment
+# VIEJO: las rutas se quedan "intercambiadas" (una ruta que funciona
+# empieza a dar 403 y otra que no funcionaba pasa a funcionar) sin
+# que el apply indique ningun error. Es un bug de API Gateway con
+# HTTP API: el deployment automatico no siempre recoge los cambios de
+# las rutas.
+#
+# Con auto_deploy = false se despliega de forma EXPLICITA (ver el
+# recurso aws_apigatewayv2_deployment de mas abajo), que es la unica
+# forma fiable de que el deployment refleje las rutas actuales.
 resource "aws_apigatewayv2_stage" "api" {
   api_id      = aws_apigatewayv2_api.api.id
   name        = "$default"
-  auto_deploy = true
+  auto_deploy = false
   tags        = local.tags
+}
+
+# Deployment explicito: sin esto, el stage con auto_deploy = false se
+# queda sin desplegar y la API no responde.
+resource "aws_apigatewayv2_deployment" "api" {
+  api_id      = aws_apigatewayv2_api.api.id
+  description = "Deployment explicito de las rutas actuales"
+
+  depends_on = [
+    aws_apigatewayv2_route.preguntar,
+    aws_apigatewayv2_route.api_preguntar,
+    aws_apigatewayv2_route.salud,
+    aws_apigatewayv2_integration.api,
+  ]
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_lambda_permission" "api_gateway" {
@@ -829,8 +961,36 @@ resource "aws_lambda_permission" "api_gateway" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.api.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
+  # El source arn con el que el gateway invoca la lambda depende de como
+  # se llame a la ruta:
+  #
+  #   <api-id>/POST/preguntar              (3 segmentos)
+  #   <api-id>/$default/POST/preguntar     (4, con stage)
+  #   <api-id>/POST/api/preguntar          (4, con prefijo)
+  #   <api-id>/$default/POST/api/preguntar (5, con stage y prefijo)
+  #
+  # AWS compara el patron contra el arn EXACTO de la ruta, asi que hacen
+  # falta los cuatro patrones. Con uno solo, las demas formas responden
+  # 403 Forbidden.
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*/*"
 }
+
+resource "aws_lambda_permission" "api_gateway_stage" {
+  statement_id  = "AllowExecutionFromAPIGatewayStage"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.api.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*/*/*"
+}
+
+resource "aws_lambda_permission" "api_gateway_prefijo" {
+  statement_id  = "AllowExecutionFromAPIGatewayPrefijo"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.api.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*/*/*"
+}
+
 
 # ---------------------------------------------------------------------------
 #  Cognito — autenticacion (el cliente es un autonomo, no un empleado)
@@ -1030,7 +1190,16 @@ resource "aws_cloudfront_cache_policy" "api_no_cache" {
 # La validacion es por DNS: hay que crear en la zona los dos CNAME que
 # indica `aws acm describe-certificate` (uno para el dominio y otro
 # para www). Si se recrea el certificado, esos CNAME cambian.
+# Certificado ACM del dominio PROPIO en CloudFront. Solo para produccion:
+#
+# OJO: si var.dominio_cloudfront esta vacio (que es el caso en el
+# hackathon, donde el front se sirve en el VPS y en el CloudFront
+# autogenerado), este recurso NO debe existir: con el dominio vacio, el
+# SAN seria "www." y ACM responde "invalid value for
+# subject_alternative_names.0 (cannot end with a period)".
 resource "aws_acm_certificate" "dominio" {
+  count = var.dominio_cloudfront == "" ? 0 : 1
+
   domain_name               = var.dominio_cloudfront
   subject_alternative_names = ["www.${var.dominio_cloudfront}"]
   validation_method         = "DNS"
@@ -1042,11 +1211,16 @@ resource "aws_acm_certificate" "dominio" {
 
 variable "dominio_cloudfront" {
   description = <<-EOT
-    Dominio que sirve CloudFront (solo prod). Debe estar validado en ACM
-    con los CNAME de validacion puestos en la zona DNS.
+    Dominio que sirve CloudFront.
+
+    OJO: el default NO puede estar vacio. Si lo estuviera, un "terraform
+    apply" sin -var dejaria la distribucion sin alias y con el
+    certificado por defecto de CloudFront, y el dominio REAL dejaria de
+    funcionar (TLS: "no alternative certificate subject name matches").
+    Ponerlo aqui, como default, hace que cualquier apply lo mantenga.
   EOT
   type        = string
-  default     = ""
+  default     = "welcomeandorra.com"
 }
 
 resource "aws_cloudfront_distribution" "web" {
@@ -1203,7 +1377,9 @@ resource "aws_cloudfront_distribution" "web" {
   # Con alias hace falta un certificado propio (ACM en us-east-1). Sin
   # dominio configurado se usa el certificado por defecto de CloudFront.
   viewer_certificate {
-    acm_certificate_arn      = var.dominio_cloudfront != "" ? aws_acm_certificate.dominio.arn : null
+    # OJO: el ACM tiene count, asi que se accede con el splat y one(),
+    # no con .arn a secas.
+    acm_certificate_arn      = var.dominio_cloudfront != "" ? one(aws_acm_certificate.dominio[*].arn) : null
     ssl_support_method       = var.dominio_cloudfront != "" ? "sni-only" : null
     minimum_protocol_version = "TLSv1.2_2021"
     cloudfront_default_certificate = var.dominio_cloudfront == ""
@@ -1805,6 +1981,25 @@ locals {
     "data/demo_comercio.csv"             = "text/csv; charset=utf-8"
     "data/demo_freelancer_contratar.csv" = "text/csv; charset=utf-8"
     "data/demo_freelancer_cierre.csv"    = "text/csv; charset=utf-8"
+
+    # El portal de empresas (login + portal + sus assets). Sin estos
+    # tipos, el navegador los DESCARGA en vez de mostrarlos: el .html
+    # llega como application/octet-stream y el navegador lo abre como
+    # descarga, no como pagina.
+    "mb-login.html"                  = "text/html; charset=utf-8"
+    "mb-empresas.html"               = "text/html; charset=utf-8"
+    "assets/mb-portal.js"            = "application/javascript; charset=utf-8"
+    "assets/mb-portal.css"           = "text/css; charset=utf-8"
+    "assets/mb-login.js"             = "application/javascript; charset=utf-8"
+    "assets/mb-login.css"            = "text/css; charset=utf-8"
+    "data/mb_escenarios.json"        = "application/json; charset=utf-8"
+
+    # Los recursos oficiales de MoraBanc (assets/mb/).
+    "assets/mb/logoMB.svg"           = "image/svg+xml"
+    "assets/mb/logoMB-dark.svg"      = "image/svg+xml"
+    "assets/mb/keyboard.svg"         = "image/svg+xml"
+    "assets/mb/info-blue.svg"        = "image/svg+xml"
+    "assets/mb/login-bg.png"         = "image/png"
   }
 }
 
@@ -1873,12 +2068,27 @@ output "frontend_url_config" {
     bucket_extractos = aws_s3_bucket.datos.id
     # La clave de la API. El front la envia en la cabecera x-api-key.
     # El output "api_key" de este mismo modulo es sensitive; aqui va dentro
-    # de un jsonencode para que deploy_front.sh lo lea de una vez. para que deploy_front.sh lo lea de una vez.
+    # de un jsonencode para que deploy_front.sh lo lea de una vez.
     api_key = random_password.api_key.result
+
+    # El id del agente de voz de ElevenLabs (Conversational AI). Es un id
+    # PUBLICO, no una credencial: identifica a quien hablar, no da acceso.
+    # Sin el, el front cae al SpeechRecognition del navegador.
+    elevenlabs_agent_id = var.elevenlabs_agent_id
   })
 }
 
 output "cloudfront_distribution_id" {
   description = "ID de la distribucion de CloudFront (para invalidar cache tras publicar)"
   value       = aws_cloudfront_distribution.web.id
+}
+
+variable "elevenlabs_agent_id" {
+  description = <<-EOT
+    Id del agente de voz de ElevenLabs (Conversational AI) que usa el
+    asesor. Es un id publico (a quien hablar), no una credencial. Si
+    esta vacio, el front cae al SpeechRecognition del navegador.
+  EOT
+  type        = string
+  default     = "agent_5301m6vbwqpnea1spa0mwkyvs2ap"
 }

@@ -25,6 +25,8 @@ import json
 import os
 
 API_KEY = os.environ.get("API_KEY", "")
+REGION = os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "eu-west-1"))
+ACCOUNT = os.environ.get("MB_ACCOUNT_ID", "")
 
 # El ARN de la ruta NO se guarda aqui a proposito: si el authorizer lo
 # leyera de su entorno, Terraform crearia un ciclo (la ruta depende del
@@ -72,7 +74,32 @@ def handler(event, context):
         print("AUTH: clave incorrecta")
         return _error(401, "clave invalida")
 
-    route_arn = event.get("routeArn") or event.get("requestContext", {}).get(
-        "routeArn", ""
-    )
+    # OJO: en HTTP API con authorizer REQUEST, el "routeArn" del evento
+    # NO viene (es una opcion de payload format 1.0). El arn de la ruta
+    # hay que construirlo a mano con lo que si viene:
+    # requestContext.http.method + requestContext.http.path.
+    #
+    # Si el arn sale vacio o incorrecto, la policy que devuelve el
+    # authorizer no autoriza la invocacion y API Gateway responde 403
+    # Forbidden (aunque la clave sea correcta).
+    rc = event.get("requestContext", {}) or {}
+    http = rc.get("http", {}) or {}
+    metodo = http.get("method", "POST")
+    camino = http.get("path", "") or event.get("rawPath", "") or ""
+    api_id = rc.get("apiId", "") or os.environ.get("MB_API_ID", "")
+    stage = rc.get("stage", "$default")
+
+    # El arn que espera API Gateway para una ruta: <api-id>/<stage>/<metodo>/<ruta>
+    # Con el stage "$default" NO va (las rutas del stage por defecto se
+    # invocan como <api-id>/<metodo>/<ruta>).
+    if stage and stage != "$default":
+        route_arn = f"arn:aws:execute-api:{REGION}:{ACCOUNT}:{api_id}/{stage}/{metodo}{camino}"
+    else:
+        route_arn = f"arn:aws:execute-api:{REGION}:{ACCOUNT}:{api_id}/{metodo}{camino}"
+
+    if not route_arn or "None" in route_arn:
+        route_arn = event.get("routeArn", "") or ""
+
+    print("AUTH", metodo, camino, "->", route_arn)
+
     return _policy("front-morabanc", "Allow", "clave correcta", route_arn)

@@ -26,7 +26,7 @@ if command -v terraform >/dev/null 2>&1; then
     # Leemos TODOS los valores del output de una vez. Ojo: las claves son
     # api_url / cognito_client / cognito_domain / region (las define
     # terraform/main.tf en el output "frontend_url_config").
-    read -r API_URL COGNITO_DOMAIN COGNITO_CLIENT_ID AWS_REGION API_KEY <<EOF
+    read -r API_URL COGNITO_DOMAIN COGNITO_CLIENT_ID AWS_REGION API_KEY ELEVEN_AGENT <<EOF
 $(python3 -c "
 import json, sys
 cfg = json.loads(sys.argv[1])
@@ -39,7 +39,8 @@ print(cfg.get('api_url', ''),
       cfg.get('cognito_domain', ''),
       cfg.get('cognito_client', ''),
       cfg.get('region', 'us-east-1'),
-      cfg.get('api_key', ''))
+      cfg.get('api_key', ''),
+      cfg.get('elevenlabs_agent_id', ''))
 " "$CFG_JSON")
 EOF
     echo "    API:      $API_URL"
@@ -49,9 +50,9 @@ EOF
     # "mora-inject-api-key" la anade en el edge, en las rutas /api/*.
     # Asi la clave nunca se descarga en el navegador.
     echo "    API key:  la anade la CloudFront Function en el edge (no va en el bundle)"
-    python3 - "$COGNITO_DOMAIN" "$COGNITO_CLIENT_ID" "$AWS_REGION" <<'PY'
+    python3 - "$COGNITO_DOMAIN" "$COGNITO_CLIENT_ID" "$AWS_REGION" "$ELEVEN_AGENT" <<'PY'
 import json, re, sys
-cognito_domain, cognito_client_id, region = sys.argv[1:4]
+cognito_domain, cognito_client_id, region, eleven_agent = sys.argv[1:5]
 path = "frontend/index.html"
 s = open(path, encoding="utf-8").read()
 
@@ -61,9 +62,11 @@ s = re.sub(r"\n?<script>window\.__API_URL__=.*?</script>", "", s, flags=re.S)
 
 cfg = ('<script>window.__API_URL__="/api";window.__API_KEY__="";'
        'window.__COGNITO_DOMAIN__=%s;'
-       'window.__COGNITO_CLIENT_ID__=%s;window.__AWS_REGION__=%s;</script>'
+       'window.__COGNITO_CLIENT_ID__=%s;window.__AWS_REGION__=%s;'
+       'window.__ELEVENLABS_AGENT_ID__=%s;</script>'
        % (json.dumps(cognito_domain),
-          json.dumps(cognito_client_id), json.dumps(region)))
+          json.dumps(cognito_client_id), json.dumps(region),
+          json.dumps(eleven_agent)))
 
 # El marcador tiene que tolerar el versionado de assets (?v=...) que se
 # usa para que un despliegue se vea al instante y no 5 minutos despues
@@ -124,14 +127,7 @@ if command -v aws >/dev/null 2>&1 && aws sts get-caller-identity >/dev/null 2>&1
     # La CloudFront Function se queda en stage DEVELOPMENT si no se
     # publica. Sin publicar, no inyecta la x-api-key y la API
     # responde 403. Terraform no lo hace solo.
-    FN_ETAG=$(aws cloudfront describe-function --name mora-inject-api-key \
-                 --query ETag --output text 2>/dev/null || true)
-    if [ -n "$FN_ETAG" ] && [ "$FN_ETAG" != "None" ]; then
-      aws cloudfront publish-function --name mora-inject-api-key \
-        --if-match "$FN_ETAG" >/dev/null 2>&1 && \
-        echo "    CloudFront Function publicada (LIVE)" || \
-        echo "    AVISO: no se pudo publicar la CloudFront Function"
-    fi
+    bash scripts/publish_cf_function.sh | sed "s/^/    /" || true
 
     # Invalidar la cache de CloudFront: si no, el front servido sigue
     # siendo el anterior durante hasta 5 minutos.

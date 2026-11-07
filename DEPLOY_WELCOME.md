@@ -122,14 +122,73 @@ ssh hvps "chown -R www-data:www-data /var/www/welcomeandorra"
 
 ---
 
-## 7. Nota sobre el DNS del hackathon (AWS)
+## 7. welcomeandorra.com ya está en AWS (no en el VPS)
 
-Este despliegue es **independiente** del del hackathon:
+Desde el 7 de noviembre de 2026, **todo vive en AWS**. El requisito del
+hackathon es infra 100% en AWS, y el dominio propio quedó detrás de
+CloudFront:
 
-| | Dónde | Para qué |
-|---|---|---|
-| **Hackathon** | S3 + CloudFront (Terraform) | Requisito de las bases: infra 100% IaC + el código en el GitLab de MoraBanc. Es lo que se presenta el día 8. |
-| **welcomeandorra.com** | VPS Hostinger + nginx | El front en un dominio propio, sin depender de AWS. |
+| Capa | Recurso AWS |
+|---|---|
+| DNS del dominio | Zona en Hostinger: `ALIAS @` y `CNAME www` → `d1px306wtnmcnv.cloudfront.net` |
+| CDN + TLS | CloudFront `E1B4Z63SX4G4H8`, alias `welcomeandorra.com` y `www` |
+| Certificado | ACM `a42fa5e0-359e-4189-853b-f7834ae41840` (us-east-1), validado por DNS |
+| Front estático | S3 `morabanc-hackathon-dev-datos-539756034803-5397` (cifrado con KMS, OAC) |
+| API | API Gateway `768lyxix1a` → Lambda `morabanc-hackathon-dev-api` |
+| Motor | Lambda `morabanc-hackathon-dev-motor` + Bedrock |
+| Voz | ElevenLabs (agente `agent_5301m6vbwqpnea1spa0mwkyvs2ap`) |
 
-El backend (motor + agente de Bedrock) vive en AWS en los dos casos: el front
-es estático y solo llama a la API.
+El VPS de Hostinger (`hvps`, `srv2059981`) **ya no sirve el front**: su
+configuración de nginx sigue ahí por si hay que volver atrás, pero el
+dominario no apunta a él.
+
+### Por qué el front no lleva la API key
+
+El bundle del navegador se puede leer. La clave va en una **CloudFront
+Function** (`mora-inject-api-key`) que la añade en el *edge* a las rutas
+`/api/*`, `/preguntar` y `/salud`. El navegador pide `/api/preguntar` sin
+cabeceras especiales y CloudFront las pone antes de llegar al API Gateway.
+
+Verificado en producción: `window.__API_KEY__` está vacío en el bundle
+servido y la API responde con el cálculo real.
+
+### La Function hay que publicarla DESPUÉS de cada apply
+
+Terraform **no publica** las CloudFront Functions: las deja en stage
+`DEVELOPMENT`, donde no se ejecutan. Sin publicar, la API responde 403.
+
+```bash
+bash scripts/publish_cf_function.sh
+```
+
+El script está conectado a `scripts/deploy_front.sh`, que lo llama tras
+publicar. Si algún `terraform apply` deja la función sin publicar, este
+script la arregla.
+
+### Los Content-Type importan
+
+`aws s3 sync` **no infiere** el Content-Type: los `.html` y `.js` se
+quedan como `application/octet-stream` y el navegador los descarga en vez
+de mostrarlos. El mapa `local.content_types` del terraform lo arregla, y
+`scripts/sync_front_s3.py` lo hace al publicar a mano.
+
+### Publicar el front
+
+```bash
+cd /data/projects/morabanc_hackathon
+bash scripts/deploy_front.sh
+```
+
+O con terraform, que sube los `aws_s3_object` con su Content-Type:
+
+```bash
+terraform -chdir=terraform apply
+```
+
+Después, invalidar la caché de CloudFront (si no, el front servido
+tarda hasta 5 minutos en actualizarse):
+
+```bash
+aws cloudfront create-invalidation \
+  --distribution-id E1B4Z63SX4G4H8 --paths "/*"
+```
