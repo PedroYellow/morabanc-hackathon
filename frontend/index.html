@@ -1263,6 +1263,14 @@ async function iniciarVozReal(){
                 .join(' ');
               if (reglas) texto += '\n\n' + reglas;
             }
+            // Se devuelve un objeto con campos claros, no un texto
+            // suelto: al agente le resulta mas fiable leer "cifras" y
+            // "regla" que un parrafo. Y se marca que es un resultado
+            // del motor, para que no lo interprete como su opinion.
+            // Se devuelve TEXTO PLANO, no un objeto: es lo que
+            // espera el SDK (hace JSON.stringify de lo que sea, pero
+            // el texto plano llega tal cual al agente) y lo que
+            // muestra la documentacion de ElevenLabs.
             return texto;
           } catch (e) {
             return 'No he podido calcularlo: ' + (e && e.message ? e.message : 'error');
@@ -1294,7 +1302,7 @@ async function iniciarVozReal(){
         var texto = (m && m.message) || '';
         if (!texto) return;
         if (m.source === 'ai') {
-          añadirMensaje(escapar(texto).replace(/\n/g, '<br>'), 'asesor');
+          añadirMensaje(escapar(limpiarEtiquetasAgente(texto)).replace(/\n/g, '<br>'), 'asesor');
         } else if (m.source === 'user') {
           var limpio = texto.trim();
           // Los mensajes de control del agente ("...") no son
@@ -1308,6 +1316,11 @@ async function iniciarVozReal(){
         console.warn('[MoraBanc] voz:', e && e.message);
         pararVoz();
         vozSimulada();
+      },
+      onUnhandledClientToolCall: function(ev){
+        window.__unhandled = window.__unhandled || [];
+        window.__unhandled.push(ev && ev.client_tool_call);
+        console.warn('[MoraBanc] herramienta no definida:', ev && ev.client_tool_call && ev.client_tool_call.tool_name);
       },
       onDisconnect: function(){ if (conv) { conv = null; pararVoz(); } },
     });
@@ -1832,6 +1845,25 @@ function pintarTarjetaDelChat(d){
   } else {
     set('chat-kpiColchon', '—');
   }
+}
+
+
+// ── Las etiquetas del agente ────────────────────────────────────
+//
+// ElevenLabs devuelve el texto con marcas de emocion y de accion:
+// "[happy] Hola", "Dejame que lo mire *un segundo*". En pantalla
+// eso parece un error, y en un pitch distrae: el texto que se lee
+// tiene que ser el que se oye.
+function limpiarEtiquetasAgente(texto){
+  var t = String(texto || '');
+  // Etiquetas de emocion al principio: [happy], [amable], [excited],
+  // [cercano], [serio]... (con o sin espacios).
+  t = t.replace(/^\s*(\[[a-zA-Z_áéíóúñÁÉÍÓÚÑ\s]+\]\s*)+/g, '');
+  // Las que queden por dentro.
+  t = t.replace(/\[[a-zA-Z_áéíóúñÁÉÍÓÚÑ\s]{2,20}\]/g, '');
+  // Las acciones entre asteriscos: *mira esto*, *sonrise*.
+  t = t.replace(/\*([^*\n]{1,40})\*/g, '$1');
+  return t.trim();
 }
 
 
