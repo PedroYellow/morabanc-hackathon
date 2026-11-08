@@ -1384,9 +1384,28 @@
       typing.remove();
 
       const texto = r.respuesta || "";
-      const reglas = (r.herramientas || []).map((h) =>
-        '<div class="regla"><b>' + escapar(h.tool) + ":</b> " + escapar(h.regla || "") + "</div>"
-      ).join("");
+
+      // Las reglas se pintan SOLO si la respuesta no las trae ya.
+      //
+      // El motor escribe "Regla aplicada: <regla>" al final de la
+      // respuesta. Si ademas se pinta la lista de herramientas, la
+      // misma frase aparece dos veces seguidas ("Regla aplicada:
+      // CASS 100%..." y luego "tramo_cass: CASS 100%..."). En una
+      // sala, un texto repetido parece un error.
+      const textoLower = texto.toLowerCase();
+      const reglas = (r.herramientas || [])
+        .filter((h) => {
+          const regla = String(h.regla || "").trim();
+          if (!regla) return false;
+          // Si la respuesta ya contiene esa regla (o una parte
+          // identificativa), no se repite.
+          const clave = regla.split(/[.,(]/)[0].trim();
+          return !(clave && textoLower.includes(clave.toLowerCase()));
+        })
+        .map((h) =>
+          '<div class="regla"><b>' + escapar(h.tool) + ":</b> " + escapar(h.regla || "") + "</div>"
+        )
+        .join("");
 
       const d = divMsg("bot", "<p>" + md(texto) + "</p>" + reglas);
       msgs.appendChild(d);
@@ -1568,6 +1587,32 @@
   "use strict";
 
   const $ = (s) => document.querySelector(s);
+
+  // ---------------------------------------------------------------
+  // Utilidades propias de este IIFE
+  // ---------------------------------------------------------------
+  //
+  // Este bundle de voz es un IIFE APARTE del principal: no ve sus
+  // funciones. Al pintarse el mensaje del agente salia un
+  // "ReferenceError: divMsg is not defined" (y el catch del SDK
+  // reportaba un "t is not defined" que era el mismo error).
+  //
+  // Se definen aqui las que usa este modulo.
+  function escapar(txt) {
+    return String(txt === undefined || txt === null ? "" : txt)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function divMsg(rol, html) {
+    const d = document.createElement("div");
+    d.className = "msg " + rol;
+    d.innerHTML = html;
+    return d;
+  }
 
   // ---------------------------------------------------------------
   // Config
@@ -2163,11 +2208,11 @@
     // despliegue no lo incluye todavia).
     var Conversation = null;
     try {
-      var mod = await import("./elevenlabs-client.js?v=20261107e");
+      var mod = await import("./elevenlabs-client.js?v=20261108b");
       Conversation = mod.Conversation;
     } catch (e1) {
       console.warn("[MoraBanc] SDK local no disponible, se usa el CDN:", e1 && e1.message);
-      var mod2 = await import("https://cdn.jsdelivr.net/npm/@elevenlabs/client@latest/+esm");
+      var mod2 = await import("./elevenlabs-client.js?v=20261108b");
       Conversation = mod2.Conversation;
     }
     if (!Conversation) throw new Error("SDK de ElevenLabs no disponible");
