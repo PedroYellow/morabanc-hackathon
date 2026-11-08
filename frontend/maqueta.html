@@ -775,7 +775,7 @@ window.__ELEVENLABS_AGENT_ID__ = window.__ELEVENLABS_AGENT_ID__ || "agent_5301m6
               <!-- Donut: lo pinta pintarTarjetaDelChat con las
                    categorias reales del motor. -->
               <div class="gfx">
-                <div class="titulo">Reparto de tus ingresos <span>12 meses</span></div>
+                <div class="titulo">Reparto de tus gastos <span>12 meses</span></div>
                 <div class="donut-wrap">
                   <svg class="donut" id="chat-donutSvg" viewBox="0 0 42 42"></svg>
                   <div class="leyenda" id="chat-donutLeyenda"></div>
@@ -859,36 +859,9 @@ window.__ELEVENLABS_AGENT_ID__ = window.__ELEVENLABS_AGENT_ID__ || "agent_5301m6
       </div>
 
       <div class="panel">
-        <div class="pt">Reparto de ingresos</div>
-        <div class="cuerpo">
-          <div class="donut-wrap">
-            <svg class="donut" id="donutSvg2" viewBox="0 0 42 42"></svg>
-            <div class="leyenda" id="donutLeyenda2"></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="panel">
         <div class="pt">Gastos por categoría</div>
         <div class="cuerpo">
-          <div class="bars" id="barrasCat">
-            <div class="bar-fila">
-              <div class="top"><span>Alquiler y suministros</span><b>1.850 €</b></div>
-              <div class="pista"><i style="width:74%;background:#e23b4a"></i></div>
-            </div>
-            <div class="bar-fila">
-              <div class="top"><span>Material y subcontratas</span><b>1.240 €</b></div>
-              <div class="pista"><i style="width:50%;background:#ec7e00"></i></div>
-            </div>
-            <div class="bar-fila">
-              <div class="top"><span>Software y servicios</span><b>680 €</b></div>
-              <div class="pista"><i style="width:27%;background:#494fdf"></i></div>
-            </div>
-            <div class="bar-fila">
-              <div class="top"><span>Impuestos y CASS</span><b>735 €</b></div>
-              <div class="pista"><i style="width:29%;background:#00a87e"></i></div>
-            </div>
-          </div>
+          <div class="bars" id="barrasCat"></div>
         </div>
       </div>
 
@@ -1746,10 +1719,32 @@ function escapar(txt) {
     .replace(/'/g, "&#39;");
 }
 
+// El formato de los numeros: en español, con el punto separando los
+// miles y la coma los decimales ("8.100,00 €").
+//
+// No se usa toLocaleString('es-ES') porque su resultado depende de los
+// datos de idioma del navegador: en un navegador sin locale completo
+// devolvia "8100" en vez de "8.100", y el mismo numero se veia de dos
+// formas en la misma pantalla.
+function numeroES(n, dec){
+  var d = dec === undefined ? 0 : dec;
+  var s = Math.abs(Number(n)).toFixed(d);
+  var partes = s.split('.');
+  var entero = partes[0];
+  var decs = partes.length > 1 ? partes[1] : '';
+
+  // Los miles, de tres en tres desde la derecha.
+  var enteroLimpio = entero.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  // Y la coma decimal.
+  var out = decs ? enteroLimpio + ',' + decs : enteroLimpio;
+
+  // El signo, delante.
+  return (Number(n) < 0 ? '-' : '') + out;
+}
+
 function eur(n, dec){
   if (n === undefined || n === null || isNaN(n)) return '—';
-  var d = dec === undefined ? 0 : dec;
-  return Number(n).toLocaleString('es-ES', { minimumFractionDigits: d, maximumFractionDigits: d }) + ' €';
+  return numeroES(n, dec) + ' €';
 }
 function pct(n){ return (n === undefined || n === null) ? '—' : Math.round(n * 100) + ' %'; }
 
@@ -1891,39 +1886,45 @@ function pintarResumen(d){
     kpiColchon.className = 'n';
   }
 
-  // Donut: las 4 categorias principales del motor.
+  // Gastos por categoria: las barras, con las categorias del motor.
   //
   // Las categorias van en d.tesoreria.por_categoria. Con
   // "d.categorias" (undefined) el acceso a las claves lanzaba
   // TypeError y ABORTABA cambiarPerfil antes de pintar la vista
   // Perfil: por eso salia con todos los campos en "—".
+  //
+  // Antes habia aqui tambien un donut ("Reparto de ingresos"), pero
+  // con otra base de datos (las categorias del CSV) que la del motor:
+  // dos graficos del mismo reparto con numeros distintos. Se ha
+  // quitado: ahora solo hay un grafico de gastos, y es el del motor.
   var categorias = (d.tesoreria && d.tesoreria.por_categoria) || {};
   var cats = Object.keys(categorias).filter(function(k){ return categorias[k] > 0; })
                      .sort(function(a,b){ return categorias[b] - categorias[a]; });
-  var total = cats.reduce(function(a,k){ return a + categorias[k]; }, 0) || 1;
-  var colores = ['#00a87e', '#494fdf', '#ec7e00', '#e23b4a'];
-  var off = 25;
-  var svg = '';
-  var leyenda = '';
-  cats.slice(0,4).forEach(function(k, i){
-    var pctCat = categorias[k] / total * 100;
-    svg += '<circle cx="21" cy="21" r="15.915" fill="none" stroke="' + colores[i] +
-           '" stroke-width="6" stroke-dasharray="' + pctCat.toFixed(1) + ' ' + (100-pctCat).toFixed(1) +
-           '" stroke-dashoffset="' + (-off).toFixed(1) + '"/>';
-    off += pctCat;
-    leyenda += '<div><i style="background:' + colores[i] + '"></i><span>' +
-              (CAT[k] || k) + '</span><b>' + Math.round(pctCat) + ' %</b></div>';
-  });
-  document.getElementById('donutSvg2').innerHTML = svg;
-  document.getElementById('donutLeyenda2').innerHTML = leyenda;
+  var colores = ['#00a87e', '#494fdf', '#ec7e00', '#e23b4a', '#8e44ad', '#16a085'];
 
-  // Barras: las 4 categorias que mas pesan
-  var maxCat = cats[0] ? categorias[cats[0]] : 1;
-  document.getElementById('barrasCat').innerHTML = cats.slice(0,4).map(function(k, i){
-    var v = categorias[k];
-    return '<div class="bar-fila"><div class="top"><span>' + (CAT[k]||k) + '</span><b>' + eur(v) + '</b></div>' +
-           '<div class="pista"><i style="width:' + (v/maxCat*100).toFixed(0) + '%;background:' + colores[i] + '"></i></div></div>';
-  }).join('');
+  // Las 5 categorias que mas pesan, y el resto agrupado en "Otros"
+  // (para no perder los gastos pequenos, que son los que se
+  // pueden recuperar).
+  var topCats = cats.slice(0, 5);
+  var resto = cats.slice(5);
+  var sumaResto = resto.reduce(function(a,k){ return a + categorias[k]; }, 0);
+  if (sumaResto > 0) {
+    topCats = topCats.concat(['__otros__']);
+  }
+
+  var maxCat = topCats.length && categorias[topCats[0]] ? categorias[topCats[0]] : 1;
+  var barras = document.getElementById('barrasCat');
+  if (barras) {
+    barras.innerHTML = topCats.map(function(k, i){
+      var v = (k === '__otros__') ? sumaResto : categorias[k];
+      var nombre = (k === '__otros__') ? 'Otros' : (CAT[k] || k);
+      var color = (k === '__otros__') ? '#8b95a1' : colores[i % colores.length];
+      return '<div class="bar-fila"><div class="top"><span>' + escapar(nombre) + '</span><b>' +
+             eur(v) + '</b></div>' +
+             '<div class="pista"><i style="width:' + (v/maxCat*100).toFixed(0) +
+             '%;background:' + color + '"></i></div></div>';
+    }).join('');
+  }
 
   // Curva de caja: los saldos proyectados por el motor.
   //
