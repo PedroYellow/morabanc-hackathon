@@ -339,6 +339,24 @@ input  { font: inherit; color: inherit; }
 .tab.activo { color: var(--navy); }
 .tab.activo svg { stroke-width: 2.1; }
 
+/* ---------- Carga del extracto ---------- */
+.drop-overlay {
+  position: fixed; inset: 0; z-index: 90;
+  background: rgba(10, 53, 80, .92);
+  display: grid; place-items: center;
+  color: #fff;
+}
+.drop-overlay[hidden] { display: none; }
+.drop-overlay-inner {
+  display: grid; place-items: center; gap: 10px;
+  border: 2px dashed rgba(255,255,255,.4);
+  border-radius: 18px;
+  padding: 44px 64px;
+  text-align: center;
+}
+.drop-overlay-inner strong { font-size: 19px; }
+.drop-overlay-inner span { font-size: 13.5px; opacity: .78; }
+
 /* ---------- Vistas ---------- */
 .vista { display: none; flex: 1; flex-direction: column; overflow-y: auto; }
 .vista.activa { display: flex; }
@@ -875,6 +893,20 @@ function responder(texto) {
 
 var API_URL = (window.__API_URL__ || '/api').replace(/\/$/, '');
 
+// El extracto que el cliente ha subido (si ha subido alguno). El
+// motor lo necesita para analizar la tesoreria real. Es global a
+// proposito: lo usan la peticion a la API y la recarga del perfil.
+var extractoCliente = '';
+
+// Volver a pintar todo con el extracto nuevo (que cambia el analisis
+// del motor).
+function recargarConExtracto(texto){
+  extractoCliente = texto || '';
+  try {
+    if (typeof cambiarPerfil === 'function') cambiarPerfil(perfilActual);
+  } catch (e) {}
+}
+
 function tokenDeSesion() {
   try { return localStorage.getItem('mb-token') || ''; } catch (e) { return ''; }
 }
@@ -906,6 +938,9 @@ async function preguntarAlMotor(pregunta) {
       renta_neta_anual: ctx.renta_neta_anual,
       margen_bruto: ctx.margen_bruto,
       actividad: ctx.actividad,
+      // El extracto que el cliente ha arrastrado. El motor lo lee
+      // como el contexto.csv.
+      extracto_csv: extractoCliente || undefined,
     }),
   });
 
@@ -917,6 +952,17 @@ async function preguntarAlMotor(pregunta) {
       // tiene el perfil activo embebidos: son los MISMOS numeros
       // (el motor es determinista), calculados por el mismo codigo
       // Python en el build.
+      //
+      // Salvo que el cliente haya subido un extracto nuevo: entonces
+      // sus numeros son distintos y no se pueden inventar. Se le
+      // dice que entre en MoraBanc Digital para que el motor pueda
+      // leerlo.
+      if (extractoCliente) {
+        throw new Error(
+          'He cargado tu extracto, pero para calcular sobre el necesito que ' +
+          'entres en MoraBanc Digital (la sesion va con el token del banco).'
+        );
+      }
       return respuestaDesdeElPerfil(pregunta);
     }
     throw new Error(err.error || ('HTTP ' + resp.status));
@@ -1141,6 +1187,16 @@ var guionIdx = 0;
 
 var agentId = (window.__ELEVENLABS_AGENT_ID__ || '').trim();
 
+// Cerrar la sesion de voz y abrir otra con el dossier de ahora.
+// Se usa al cambiar de perfil de prueba.
+async function reiniciarVoz(){
+  try { if (conv) await conv.endSession(); } catch (e) {}
+  conv = null;
+  pararVoz();
+  await new Promise(function(r){ setTimeout(r, 250); });
+  await iniciarVozReal();
+}
+
 // El boton del micro: arranca (o para) la sesion de voz.
 function arrancarVoz(){
   if (conv) { pararVoz(); return; }
@@ -1165,6 +1221,14 @@ async function iniciarVozReal(){
     conv = await mod.Conversation.startSession({
       agentId: agentId,
       connectionType: 'webrtc',
+      // El dossier del cliente: lo que el banco ya sabe de el. Con esto
+      // el agente NO pregunta la renta ni el saldo ni si tributa como
+      // sociedad: ya lo tiene.
+      dynamicVariables: {
+        dossier_cliente: typeof dossierDelCliente === 'function'
+          ? dossierDelCliente()
+          : 'PENDIENTE'
+      },
       onConnect: function(){
         medidorTexto.textContent = 'El asesor está escuchando…';
       },
@@ -1393,6 +1457,16 @@ function cambiarPerfil(clave){
   try { pintarPerfilVista(d); } catch (e) { console.error('[pintarPerfilVista]', e && e.stack || e); }
   try { if (typeof pintarTarjetaDelChat === 'function') pintarTarjetaDelChat(d); }
   catch (e) { console.error('[pintarTarjetaDelChat]', e && e.stack || e); }
+
+  // Si el agente de voz esta hablando, el dossier que tiene ya no
+  // vale: hay que abrir una sesion nueva con el del perfil nuevo.
+  // (El perfil es de prueba; en produccion el dossier seria siempre
+  // el del cliente real y no cambiaria al cambiar de pestana.)
+  try {
+    if (typeof conv !== 'undefined' && conv && !conv.simulado && typeof reiniciarVoz === 'function') {
+      reiniciarVoz();
+    }
+  } catch (e) {}
 }
 
 // ── Resumen: todo desde el motor ─────────────────────────────
@@ -1708,6 +1782,155 @@ function pintarTarjetaDelChat(d){
 }
 
 
+// ── Carga del extracto ──────────────────────────────────────────
+//
+// El motor de tesoreria trabaja con el extracto en CSV. El cliente
+// lo arrastra (o lo elige) y se manda al motor como "contexto.csv",
+// que es lo que el motor espera.
+//
+// El boton de "adherir" (el clip) abre el selector de ficheros.
+(function(){
+  var input = document.getElementById('fileInput');
+  var overlay = document.getElementById('dropOverlay');
+  var adherir = document.getElementById('adherir');
+  if (!input || !overlay) return;
+
+  if (adherir) {
+    adherir.addEventListener('click', function(){ input.click(); });
+  }
+
+  var dragged = 0;
+  window.addEventListener("dragenter", function(e){
+    e.preventDefault();
+    dragged++;
+    overlay.hidden = false;
+  });
+  window.addEventListener("dragleave", function(e){
+    e.preventDefault();
+    dragged = Math.max(0, dragged - 1);
+    if (!dragged) overlay.hidden = true;
+  });
+  window.addEventListener("dragover", function(e){ e.preventDefault(); });
+  window.addEventListener("drop", function(e){
+    e.preventDefault();
+    dragged = 0;
+    overlay.hidden = true;
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+      enviarExtracto(e.dataTransfer.files);
+    }
+  });
+
+  input.addEventListener('change', function(){
+    if (input.files && input.files.length) enviarExtracto(input.files);
+  });
+
+  // Leer el CSV y mandarlo al motor.
+  function enviarExtracto(ficheros){
+    var csv = null;
+    var nombre = '';
+    var pendientes = ficheros.length;
+
+    for (var i = 0; i < ficheros.length; i++) {
+      (function(f){
+        if (f.type === 'application/pdf' || /image\//.test(f.type)) {
+          // El motor no lee PDF ni imagenes: se adjuntan a la
+          // conversacion (el agente puede verlas) y se avisa.
+          pendientes--;
+          if (pendientes === 0 && !csv) {
+            avisarFichero(ficheros);
+          }
+          return;
+        }
+        var lector = new FileReader();
+        lector.onload = function(){
+          csv = { texto: lector.result, nombre: f.name };
+          pendientes--;
+          if (pendientes === 0) {
+            if (csv) mandarAlMotor(csv);
+            else avisarFichero(ficheros);
+          }
+        };
+        lector.onerror = function(){ pendientes--; if (pendientes === 0) avisarFichero(ficheros); };
+        lector.readAsText(f);
+      })(ficheros[i]);
+    }
+  }
+
+  function avisarFichero(ficheros){
+    var nombres = ficheros.map(function(f){ return f.name; }).join(', ');
+    if (typeof añadirMensaje === 'function') {
+      añadirMensaje('He adjuntado ' + nombres + '. El motor calcula con el extracto en CSV.', 'yo');
+    }
+  }
+
+  function mandarAlMotor(csv){
+    if (typeof añadirMensaje === 'function') {
+      añadirMensaje('Extracto <b>' + escapar(csv.nombre) + '</b> cargado (' +
+        csv.texto.length.toLocaleString('es-ES') + ' caracteres). Lo paso al motor.', 'yo');
+    }
+    // El motor espera el extracto como "contexto.csv".
+    if (typeof window.__EXTRACTO_CSV__ !== 'undefined') {
+      window.__EXTRACTO_CSV__ = csv.texto;
+    }
+    if (typeof recargarConExtracto === 'function') {
+      recargarConExtracto(csv.texto);
+    }
+  }
+})();
+
+
+// ── El dossier del cliente ──────────────────────────────────────
+//
+// Lo que el banco ya sabe del cliente. Se le pasa al agente de voz
+// (para que no pregunte lo que ya sabe) y se usa para responder las
+// preguntas de decision ("¿puedo comprarme un coche?").
+//
+// El dossier va SIEMPRE en espanol: es el idioma de la normativa del
+// banco y como el cliente lo ve en sus declaraciones. La conversacion
+// va en el idioma en el que hable el cliente.
+
+function dossierDelCliente(){
+  var d = MOTOR[perfilActual] || {};
+  var lineas = [];
+
+  if (perfilActual === 'empleado') {
+    lineas.push('- Cliente: persona fisica, asalariada (no tiene actividad economica)');
+    lineas.push('- Renta neta anual: ' + eur(d.renta, 0));
+    lineas.push('- Saldo actual en cuenta: ' + eur(d.saldo, 0));
+    lineas.push('- Actividad: ' + (d.actividad || 'Treballador per compte d\'altri'));
+  } else {
+    lineas.push('- Figura fiscal: ' + (perfilActual === 'comercio' || perfilActual === 'crecimiento'
+      ? 'sociedad (andorrana, sujeta al IGI)' : 'autonomo (persona fisica con actividad economica)'));
+    lineas.push('- Actividad: ' + (d.actividad || d.etiqueta || 'autonomo'));
+    lineas.push('- Renta neta anual: ' + eur(d.renta, 0));
+    lineas.push('- Margen bruto: ' + Math.round((d.margen || 0) * 100) + ' %');
+    lineas.push('- Saldo actual en cuenta: ' + eur(d.saldo, 0));
+  }
+
+  // El gasto fijo y el colchon salen del motor, si estan.
+  var proy = d.proyeccion || {};
+  if (proy.meses && proy.meses.length) {
+    var gastos = proy.meses.reduce(function(a, m){ return a + (m.gastos || 0); }, 0) / proy.meses.length;
+    lineas.push('- Gasto fijo mensual estimado: ' + eur(gastos, 0));
+  }
+  if (d.proyeccion && d.proyeccion.resumen) {
+    lineas.push('- Caja: ' + d.proyeccion.resumen);
+  }
+  if (d.fugas && d.fugas.n_fugas) {
+    lineas.push('- ' + d.fugas.n_fugas + ' fugas en la cuenta (' + eur(d.fugas.recuperable_mensual, 2) + '/mes recuperables)');
+  }
+
+  lineas.push('- Extracto: ' + (d.n_movimientos || 0) + ' movimientos cargados');
+  lineas.push('');
+  lineas.push('Datos que el banco NO tiene y que solo hay que preguntar si hacen falta para la decision:');
+  if (!d.renta) lineas.push('- Su renta neta anual');
+  lineas.push('- El importe de la compra o del contrato que quiere hacer');
+  lineas.push('- El bruto anual, si va a contratar a alguien');
+
+  return lineas.join('\n');
+}
+
+
 // ── Pestañas ────────────────────────────────────────────────────
 //
 // Los botones de la barra inferior existian en el HTML pero NO
@@ -1856,6 +2079,21 @@ function arrancarTodo(){
 
 
 </script>
+
+<!-- ── Carga del extracto: arrastrar o elegir fichero ── -->
+<!-- El motor trabaja con el CSV. El navegador adjunta el fichero a
+     la conversacion (CSV, PDF, Excel o imagen) y el motor sigue
+     leyendo el CSV del contexto. -->
+<div class="drop-overlay" id="dropOverlay" hidden aria-hidden="true">
+  <div class="drop-overlay-inner">
+    <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17 V4"/><path d="M7 9 L12 4 L17 9"/><path d="M4 20 H20"/></svg>
+    <strong>Suelta aquí tu extracto</strong>
+    <span>CSV, PDF, Excel o imágenes</span>
+  </div>
+</div>
+
+<input type="file" id="fileInput" multiple
+       accept=".csv,text/csv,.pdf,application/pdf,.png,.jpg,.jpeg,image/*,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
 
 <!-- Overlay de arrastre (escritorio) -->
 <div class="drop" id="drop">

@@ -154,12 +154,22 @@ class ContextoEmpresa:
         margen_bruto: Optional[Decimal] = None,
         actividad: str = "",
         fecha_consejo: Optional[date] = None,
+        figura_fiscal: str = "",
+        colchon_meses: Optional[Decimal] = None,
+        gasto_fijo_mensual: Optional[Decimal] = None,
     ):
         self.movimientos = movimientos or []
         self.saldo_actual = Decimal(str(saldo_actual))
         self.renta_neta_anual = Decimal(str(renta_neta_anual)) if renta_neta_anual is not None else None
         self.margen_bruto = Decimal(str(margen_bruto)) if margen_bruto is not None else None
         self.actividad = actividad
+        #: "persona_fisica" | "autonomo" | "sociedad". Lo sabe el banco:
+        #: es su cliente, tiene su perfil fiscal. El agente no lo pregunta.
+        self.figura_fiscal = figura_fiscal
+        #: Colchon de caja en meses (lo calcula el motor de tesoreria).
+        self.colchon_meses = Decimal(str(colchon_meses)) if colchon_meses is not None else None
+        #: Gasto fijo mensual ya comprometido (alquiler, cuotas).
+        self.gasto_fijo_mensual = Decimal(str(gasto_fijo_mensual)) if gasto_fijo_mensual is not None else None
         #: Fecha en la que el motor dio el consejo por ultima vez. Si es None,
         #: el cierre del bucle usa la fecha del primer movimiento.
         self.fecha_consejo = fecha_consejo
@@ -394,6 +404,168 @@ def _tool_simular_contratacion(
     }
 
 
+#: Los objetivo de compra y como se detectan en la pregunta.
+#: El orden importa: "local comercial" es "vivienda", no "comercio".
+_OBJETIVOS_COMPRA: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("vivienda", ("casa", "piso", "vivienda", "local", "apartamento", "adosado",
+                  "un piso", "un local", "immobilier", "house", "home", "flat",
+                  "appartement", "maison", "casa")),
+    ("maquinaria", ("maquinaria", "maquina", "equipo", "herramienta", "utillaje",
+                    "vehicle de reparto", "furgoneta", "camion", "camión",
+                    "maquinaria", "machine", "equipment")),
+    ("coche", ("coche", "carro", "vehiculo", "vehículo", "automovil", "automóvil",
+               "4x4", "car", "voiture", "auto", "macchina")),
+    ("contratar", ("contratar", "empleado", "empleada", "persona", "personal",
+                   "ayudante", "trabajador")),
+    ("ampliar", ("ampliar", "ampliacion", "ampliación", "nueva sede", "otra sede",
+                 "sucursal", "expand")),
+    ("invertir", ("invertir", "inversion", "inversión", "bolsa", "cripto",
+                  "fondo", "invert")),
+)
+
+
+def _detectar_decision_compra(p: str) -> tuple[str, Optional[float]]:
+    """
+    De una pregunta en español, (a) que decision se esta tomando y
+    (b) por cuanto dinero.
+
+    "Quiero comprar un coche de 30.000 euros" -> ("coche", 30000.0)
+    "Me quiero comprar una casa" -> ("vivienda", None)
+
+    El importe se busca con las dos convenciones: 30.000 (europeo) y
+    30,000 (anglosajon). Los millares se distinguen por el numero de
+    decimales: "30.000" son treinta mil, "30,000" tambien (en una
+    cuenta bancaria el separador de millares va antes).
+    """
+    objetivo = ""
+    for nombre, claves in _OBJETIVOS_COMPRA:
+        if any(k in p for k in claves):
+            objetivo = nombre
+            break
+
+    # El importe: el numero mas grande de la frase, que es el de la
+    # compra (los porcentajes y los plazos son mas pequenos).
+    import re as _re2
+    candidatos = []
+    for m in _re2.finditer(r"([0-9][0-9.]*(?:,[0-9]{3})*(?:\.[0-9]+)?)", p):
+        bruto = m.group(1)
+        try:
+            if "," in bruto and "." in bruto:
+                # Formato europeo: 1.234.567,89 -> el punto es millar
+                valor = float(bruto.replace(".", "").replace(",", "."))
+            elif "," in bruto:
+                partes = bruto.split(",")
+                if len(partes[-1]) == 3 and len(partes[0]) <= 3:
+                    # 30,000 -> treinta mil (separador de millares)
+                    valor = float(bruto.replace(",", ""))
+                else:
+                    valor = float(bruto.replace(",", "."))
+            elif "." in bruto:
+                partes = bruto.split(".")
+                # "30.000" son treinta mil (punto de millares, formato
+                # europeo); "30.5" son treinta coma cinco. La regla: si
+                # lo que va detras del separador tiene 3 digitos y lo de
+                # antes es un numero de 1 a 3 cifras, el separador es de
+                # millares. Si lo de antes tiene mas de 3 cifras
+                # ("300.000"), es millares seguro.
+                if len(partes[-1]) == 3 and (len(partes[0]) <= 3 or len(partes) > 2):
+                    valor = float(bruto.replace(".", ""))
+                else:
+                    valor = float(bruto)
+            else:
+                valor = float(bruto)
+        except (ValueError, TypeError):
+            continue
+        if valor >= 100:
+            candidatos.append(valor)
+
+    importe = max(candidatos) if candidatos else None
+    return objetivo, importe
+
+
+def _tool_evaluar_compra(
+    ctx: ContextoEmpresa,
+    objetivo: Optional[str] = None,
+    importe: Optional[float] = None,
+    meses_prestamo: Optional[int] = None,
+    **_,
+) -> dict:
+    """
+    "¿Puedo comprar esto?"
+
+    Es la pregunta de un asesor de verdad: no "¿cuanto ganas?", sino
+    "¿puedo permitirme este coche / esta casa / esta maquinaria?".
+    El motor responde con el limite, el margen que queda y los avisos
+    (efecto fiscal, colchon de caja, compromiso mensual).
+    """
+    from engine.perfil_cliente import (
+        ProfileCliente,
+        ProductoContratado,
+        evaluar_compra as _evaluar,
+        evaluar_contratacion as _evaluar_contratacion,
+    )
+
+    perfil = ProfileCliente(
+        figura_fiscal=ctx.figura_fiscal or ("autonomo" if ctx.actividad else "persona_fisica"),
+        actividad=ctx.actividad,
+        renta_neta_anual=ctx.renta_neta_anual,
+        margen_bruto=ctx.margen_bruto,
+        saldo_actual=ctx.saldo_actual or Decimal("0"),
+        colchon_meses=ctx.colchon_meses,
+        gasto_fijo_mensual=ctx.gasto_fijo_mensual or Decimal("0"),
+        objetivo=objetivo or "",
+    )
+
+    obj = (objetivo or "").strip().lower()
+    kwargs = {}
+    if meses_prestamo:
+        kwargs["meses_prestamo"] = int(meses_prestamo)
+    if importe is not None:
+        kwargs["importe"] = Decimal(str(importe))
+
+    if obj in ("contratar", "empleado", "personal"):
+        # El objetivo de contratar necesita el bruto, que es un dato
+        # NUEVO (no lo tiene el banco: es la decision que se esta
+        # tomando).
+        #
+        # El usuario dice el bruto MENSUAL ("2.400 brutos al mes"), que
+        # es como se habla. La herramienta necesita el ANUAL.
+        bruto_mensual = kwargs.pop("importe", None)
+        if bruto_mensual is None:
+            return {
+                "resultado": {
+                    "error": "Falta el bruto del contrato",
+                    "pregunta_necesaria": "¿De que bruto mensual es el contrato?",
+                },
+                "regla": "Para calcular el coste real de un contrato hay que "
+                         "saber el bruto: las contribuciones sociales van "
+                         "encima (21 %).",
+            }
+        # El usuario dice el bruto MENSUAL ("2.400 brutos al mes"), que
+        # es como se habla. Si ha dicho "al año", el numero ya es anual.
+        texto = kwargs.pop("texto", "") or ""
+        if re.search(r"(bruto|coste|sueldo)[^.]{0,20}(anual|al a[nñ]o)", texto):
+            bruto_anual = Decimal(str(bruto_mensual))
+        else:
+            bruto_anual = Decimal(str(bruto_mensual)) * Decimal(12)
+        res = _evaluar_contratacion(perfil, bruto_anual=bruto_anual, **kwargs)
+    else:
+        res = _evaluar(perfil, objetivo=obj or "coche", **kwargs)
+
+    return {
+        "resultado": _jsonable({
+            "cabe": res.cabe,
+            "veredicto": res.veredicto(),
+            "importe_maximo_eur": res.importe_maximo,
+            "importe_pedido_eur": res.importe_pedido,
+            "margen_mensual_tras_pago_eur": res.margen_mensual_tras_pago,
+            "meses_colchon_tras_pago": res.meses_colchon_tras_pago,
+            "avisos": res.avisos,
+        }),
+        "regla": res.regla,
+    }
+
+
 def _tool_punto_optimo(ctx: ContextoEmpresa, margen_bruto: Optional[float] = None, **_) -> dict:
     if ctx.renta_neta_anual is None:
         return {"resultado": {"error": "Falta la renta neta anual"}, "regla": "n/a"}
@@ -450,6 +622,47 @@ TOOL_SCHEMAS: list[dict] = [
                     "type": "object",
                     "properties": {
                         "renta_neta": {"type": "number", "description": "Renta neta anual en euros"}
+                    },
+                    "required": [],
+                }
+            },
+        }
+    },
+    {
+        "toolSpec": {
+            "name": "evaluar_compra",
+            "description": (
+                "Responde a la pregunta de un asesor: '¿puedo permitirme esta "
+                "compra?'. Devuelve el limite (cuanto puede gastar), el margen "
+                "mensual que le queda, los meses de colchon de caja que le "
+                "quedan y los avisos (efecto fiscal, compromiso mensual, "
+                "colchon). Usala para decisiones de compra: un coche, una "
+                "vivienda, maquinaria, un local, o contratar a alguien. Los "
+                "datos del cliente (renta neta, saldo, margen, gasto fijo) ya "
+                "estan en el contexto: NO los pidas."
+            ),
+            "inputSchema": {
+                "json": {
+                    "type": "object",
+                    "properties": {
+                        "objetivo": {
+                            "type": "string",
+                            "description": (
+                                "La decision: 'coche', 'vivienda', 'maquinaria', "
+                                "'contratar', 'ampliar' o 'invertir'"
+                            ),
+                        },
+                        "importe": {
+                            "type": "number",
+                            "description": (
+                                "El importe en euros. Para 'contratar', el bruto "
+                                "MENSUAL (la herramienta lo pasa a anual)"
+                            ),
+                        },
+                        "meses_prestamo": {
+                            "type": "integer",
+                            "description": "El plazo del prestamo en meses (por defecto 60)",
+                        },
                     },
                     "required": [],
                 }
@@ -627,6 +840,7 @@ TOOL_IMPLS = {
     "calcular_igi": _tool_igi,
     "detectar_crossover_fiscal": _tool_crossover,
     "simular_contratacion": _tool_simular_contratacion,
+    "evaluar_compra": _tool_evaluar_compra,
     "punto_optimo_facturacion": _tool_punto_optimo,
     "comparar_escenarios": _tool_comparar_escenarios,
     "cerrar_ciclo": _tool_cerrar_ciclo,
@@ -639,7 +853,12 @@ def ejecutar_tool(nombre: str, ctx: ContextoEmpresa, argumentos: Optional[dict] 
     if nombre not in TOOL_IMPLS:
         return {"resultado": {"error": f"Herramienta desconocida: {nombre}"}, "regla": "n/a"}
     try:
-        out = TOOL_IMPLS[nombre](ctx, **(argumentos or {}))
+        args = dict(argumentos or {})
+        if nombre == "evaluar_compra":
+            # La herramienta necesita el texto original para saber si
+            # el bruto que ha dicho el usuario es mensual o anual.
+            args.setdefault("texto", "")
+        out = TOOL_IMPLS[nombre](ctx, **args)
     except Exception as e:  # noqa: BLE001
         return {"resultado": {"error": f"{type(e).__name__}: {e}"}, "regla": "n/a"}
     return {
@@ -926,6 +1145,19 @@ class AgenteFinanciero:
         if m:
             params["meses"] = int(m.group(1))
 
+        # --- la decision de compra: que quiere y por cuanto ---
+        #
+        # "Quiero comprar un coche de 30.000 euros" -> objetivo=coche,
+        # importe=30000. Sin esto, el motor no sabe que decision se
+        # esta evaluando y devuelve el importe por defecto.
+        if herramienta == "evaluar_compra":
+            objetivo, importe = _detectar_decision_compra(p)
+            if objetivo:
+                params["objetivo"] = objetivo
+            if importe is not None:
+                params["importe"] = float(importe)
+            params["texto"] = p
+
         return params
 
     def _preguntar_bedrock(self, pregunta: str, historial: list[dict]) -> dict:
@@ -934,6 +1166,25 @@ class AgenteFinanciero:
         contexto_normativa = self._recuperar_contexto(pregunta)
 
         system = SYSTEM_PROMPT
+
+        # ── El idioma del cliente ──
+        #
+        # El cliente puede hablar cualquier idioma (Andorra es
+        # trilingue y hay clientes de fuera). El motor y las cifras van
+        # siempre en espanol (es el idioma de la normativa del banco),
+        # pero la respuesta va en el idioma del cliente.
+        from engine.idiomas import (
+            detectar_en_conversacion,
+            detectar_idioma,
+            instruction_de_idioma,
+        )
+
+        codigo_idioma, confianza = detectar_idioma(pregunta)
+        if historial:
+            codigo_idioma = detectar_en_conversacion(
+                [{"source": "user", "message": h.get("content", "")} for h in historial]
+            )
+        system += "\n\n" + instruction_de_idioma(codigo_idioma, confianza)
 
         # ------------------------------------------------------------------
         # HERRAMIENTA DETERMINISTA: el motor calcula, el LLM redacta.
@@ -1220,6 +1471,27 @@ class AgenteFinanciero:
     # "cotizo"/"cotizacion" (CASS) debe ir antes que "renta"/"impuesto" (IRPF),
     # porque una pregunta de cotizacion suele mencionar tambien la renta.
     _REGLAS_ROUTER: list[tuple[tuple[str, ...], str, list[str]]] = [
+        # ── LAS DECISIONES DE COMPRA ──
+        #
+        # "Quiero comprar un coche de 30.000 euros" NO es una pregunta
+        # de CASS ni de IRPF: es la pregunta de un asesor. Y va la
+        # PRIMERA, porque si no, cae en "cuanto me queda" (que es
+        # "cuanto me queda" con el CASS) y el motor responde con la
+        # cuota de la CASS en vez de con si la compra cabe.
+        (("puedo comprar", "puedo permitirme", "me puedo permitir",
+          "me puedo permitir", "me允许", "queria comprar", "quiero comprar",
+          "querria comprar", "queria comprarme", "quiero comprarme",
+          "comprar un coche", "comprar un carro", "comprar un vehiculo",
+          "comprar coche", "comprar carro", "comprar vehiculo",
+          "comprar una casa", "comprar casa", "comprar vivienda",
+          "comprar un piso", "comprar piso", "comprar el local",
+          "comprar maquinaria", "comprar una maquina", "comprar equipo",
+          "comprar una nave", "comprar nave", "comprarMaterial",
+          "me sale comprar", "me conviene comprar", "meVendría", "me vendria",
+          "afford", "can i buy", "can i afford", "should i buy",
+          "je peux acheter", "posso comprar", "puedo comprar",
+          "meur", "kann ich kaufen"),
+         "evaluar_compra", ["objetivo", "importe"]),
         # "y si" / "en vez de" / "que pasaria" son preguntas de RECALCULO sobre
         # una decision. Si la pregunta menciona un coste de empleado o un
         # sueldo, es una simulacion de contratacion aunque no diga

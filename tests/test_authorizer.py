@@ -121,7 +121,8 @@ check("el handler de la API tambien comprueba la clave",
 # --- El front envia la cabecera -------------------------------------------
 f = open(os.path.join(RAIZ, "frontend", "assets", "app.js"), encoding="utf-8").read()
 check("el front envia la cabecera x-api-key", '"x-api-key"' in f)
-check("el front lee la clave de la config", "__API_KEY__" in f)
+check("el front NO lleva la clave de la API en el bundle",
+      "__API_KEY__" not in f and "apiKey:" in f)
 
 # --- Terraform: el authorizer esta cableado ------------------------------
 tf = open(os.path.join(RAIZ, "terraform", "main.tf"), encoding="utf-8").read()
