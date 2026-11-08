@@ -424,6 +424,59 @@ _OBJETIVOS_COMPRA: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
+def _detectar_cambio_dato(p: str) -> tuple[str, Optional[float]]:
+    """
+    De una frase como "quiero cambiar mi renta a 35.000 euros", el campo
+    que se cambia y el valor nuevo.
+
+    ("renta", 35000.0)
+    """
+    campo = ""
+    if re.search(r"\brenta\b", p):
+        campo = "renta"
+    elif re.search(r"\bmargen\b", p):
+        campo = "margen"
+    elif re.search(r"\bsaldo\b", p):
+        campo = "saldo"
+    if not campo:
+        return "", None
+
+    # El valor: el numero que va despues de la palabra clave.
+    valor: Optional[float] = None
+    m = re.search(
+        r"(?:renta|margen|saldo)[^0-9]{0,25}([0-9][0-9.,]*)", p
+    )
+    if m:
+        bruto = m.group(1)
+        try:
+            if "." in bruto and "," in bruto:
+                valor = float(bruto.replace(".", "").replace(",", "."))
+            elif "," in bruto:
+                partes = bruto.split(",")
+                valor = (
+                    float(bruto.replace(",", ""))
+                    if len(partes[-1]) == 3 and len(partes[0]) <= 3
+                    else float(bruto.replace(",", "."))
+                )
+            elif "." in bruto:
+                partes = bruto.split(".")
+                valor = (
+                    float(bruto.replace(".", ""))
+                    if len(partes[-1]) == 3 and (len(partes[0]) <= 3 or len(partes) > 2)
+                    else float(bruto)
+                )
+            else:
+                valor = float(bruto)
+        except ValueError:
+            valor = None
+
+    # El margen va en decimal: "70" es 70 %.
+    if campo == "margen" and valor is not None and valor > 1:
+        valor = valor / 100.0
+
+    return campo, valor
+
+
 def _detectar_decision_compra(p: str) -> tuple[str, Optional[float]]:
     """
     De una pregunta en español, (a) que decision se esta tomando y
@@ -481,6 +534,157 @@ def _detectar_decision_compra(p: str) -> tuple[str, Optional[float]]:
 
     importe = max(candidatos) if candidatos else None
     return objetivo, importe
+
+
+def _tool_actualizar_dato(
+    ctx: ContextoEmpresa,
+    campo: Optional[str] = None,
+    valor: Optional[float] = None,
+    **_,
+) -> dict:
+    """
+    Cambia un dato del perfil del cliente: su renta neta, su margen o
+    su saldo.
+
+    Es lo que hace el panel "Editar con el asesor": el cliente pide
+    un cambio y el motor se lo aplica (y recalcula con el nuevo
+    dato, que es lo que de verdad importa: si subes la renta, cambian
+    el IRPF, el CASS y el punto de salto).
+    """
+    campo = (campo or "").strip().lower()
+    if valor is None:
+        return {
+            "resultado": {"error": "Falta el valor nuevo"},
+            "regla": "n/a",
+        }
+
+    valor_d = Decimal(str(valor))
+
+    if campo in ("renta", "renta_neta", "renta_neta_anual"):
+        anterior = ctx.renta_neta_anual
+        ctx.renta_neta_anual = valor_d
+        # Con la nueva renta, el motor recalcula: el IRPF, el CASS y
+        # el punto de salto pueden cambiar.
+        recomputado = _recalcular_con_nueva_renta(ctx)
+        return {
+            "resultado": _jsonable({
+                "campo": "renta_neta_anual",
+                "valor_anterior": float(anterior) if anterior is not None else None,
+                "valor_nuevo": float(valor_d),
+                "recalculado": recomputado,
+            }),
+            "regla": _frase_cambio_renta(anterior, valor_d, recomputado),
+        }
+
+    if campo in ("margen", "margen_bruto"):
+        anterior = ctx.margen_bruto
+        ctx.margen_bruto = valor_d
+        return {
+            "resultado": _jsonable({
+                "campo": "margen_bruto",
+                "valor_anterior": float(anterior) if anterior is not None else None,
+                "valor_nuevo": float(valor_d),
+            }),
+            "regla": "Listo: tu margen bruto pasa a ser "
+                     f"{valor_d * 100:.0f} %.",
+        }
+
+    if campo in ("saldo", "saldo_actual", "saldo_en_cuenta"):
+        anterior = ctx.saldo_actual
+        ctx.saldo_actual = valor_d
+        return {
+            "resultado": _jsonable({
+                "campo": "saldo_actual",
+                "valor_anterior": float(anterior),
+                "valor_nuevo": float(valor_d),
+            }),
+            "regla": f"Listo: tu saldo pasa a ser {_eur_es(valor_d)} EUR.",
+        }
+
+    return {
+        "resultado": {"error": f"Campo desconocido: {campo}"},
+        "regla": "Los campos que se pueden cambiar son la renta neta, el margen "
+                 "bruto y el saldo.",
+    }
+
+
+def _eur_es(valor) -> str:
+    """
+    Un numero en formato español: 7.055,40 (punto de miles, coma
+    decimal). Es como el cliente lo ve en sus Extractos y en las
+    declaraciones, no como 7,055.40.
+    """
+    try:
+        v = float(valor)
+    except (TypeError, ValueError):
+        return str(valor)
+    s = f"{v:,.2f}"
+    return s.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
+
+
+def _frase_cambio_renta(anterior, nuevo, recomputado: dict) -> str:
+    """
+    La frase que ve el cliente cuando cambia su renta, en lenguaje de
+    asesor y con las cifras nuevas recalculadas.
+
+    No es solo cambiar un numero: al cambiar la renta cambian el IRPF,
+    el CASS y el punto de salto de tramo. Eso es lo que le importa.
+    """
+    partes = [
+        f"Hecho: tu renta pasa de {_eur_es(anterior)} EUR a {_eur_es(nuevo)} EUR."
+    ]
+
+    cass = (recomputado or {}).get("cass") or {}
+    if cass.get("cuota_anual"):
+        partes.append(
+            f"Tu CASS es de {_eur_es(cass['cuota_anual'])} EUR al año "
+            f"({_eur_es(cass.get('cuota_mensual', 0))} EUR al mes), en el tramo "
+            f"del {cass.get('tramo', '')}."
+        )
+
+    irpf = (recomputado or {}).get("irpf") or {}
+    # El IRPF puede venir como "total" o como "cuota_total", segun la
+    # version del motor.
+    cuota_irpf = irpf.get("cuota_total") or irpf.get("total")
+    if cuota_irpf:
+        tipo = irpf.get("tipo_efectivo")
+        extra = f" (efectivo {tipo} %)" if tipo else ""
+        partes.append(f"El IRPF te sale en {_eur_es(cuota_irpf)} EUR{extra}.")
+
+    cross = (recomputado or {}).get("crossover") or {}
+    if cross.get("existe") and cross.get("tipo"):
+        # El punto donde el IRPF y la CASS se separan: lo mas
+        # importante que se puede decir cuando cambia la renta. El
+        # "detalle" del motor es largo y tecnico; aqui va la frase
+        # clave, que es la que el cliente entiende.
+        puntos = cross.get("renta_punto")
+        extra = f" Te lo explico en detalle si quieres." if puntos else ""
+        partes.append(f"Ojo con esto: {cross['tipo']}.{extra}")
+
+    return " ".join(partes)
+
+
+def _recalcular_con_nueva_renta(ctx: ContextoEmpresa) -> dict:
+    """Recalcula IRPF, CASS y el punto de salto con la renta nueva."""
+    out: dict = {}
+    renta = float(ctx.renta_neta_anual)
+
+    try:
+        cass = ejecutar_tool("tramo_cass", ctx, {"renta_neta": renta})
+        out["cass"] = cass.get("resultado", {})
+    except Exception as e:  # noqa: BLE001
+        out["cass_error"] = str(e)
+    try:
+        irpf = ejecutar_tool("calcular_irpf", ctx, {"renta_neta": renta})
+        out["irpf"] = irpf.get("resultado", {})
+    except Exception as e:  # noqa: BLE001
+        out["irpf_error"] = str(e)
+    try:
+        cross = ejecutar_tool("detectar_crossover_fiscal", ctx, {"renta_neta": renta})
+        out["crossover"] = cross.get("resultado", {})
+    except Exception as e:  # noqa: BLE001
+        out["crossover_error"] = str(e)
+    return out
 
 
 def _tool_evaluar_compra(
@@ -624,6 +828,34 @@ TOOL_SCHEMAS: list[dict] = [
                         "renta_neta": {"type": "number", "description": "Renta neta anual en euros"}
                     },
                     "required": [],
+                }
+            },
+        }
+    },
+    {
+        "toolSpec": {
+            "name": "actualizar_dato",
+            "description": (
+                "Cambia un dato del perfil del cliente: su renta neta anual, su "
+                "margen bruto o su saldo actual. Usala cuando el cliente pide "
+                "un cambio ('cambia mi renta a 35.000'). Al cambiar la renta se "
+                "recalcula el IRPF, el CASS y el punto de salto de tramo, y el "
+                "resultado te dice los numeros nuevos."
+            ),
+            "inputSchema": {
+                "json": {
+                    "type": "object",
+                    "properties": {
+                        "campo": {
+                            "type": "string",
+                            "description": "'renta', 'margen' o 'saldo'",
+                        },
+                        "valor": {
+                            "type": "number",
+                            "description": "El valor nuevo. Para la renta y el saldo, en euros; para el margen, en decimal (0.70 = 70 %)",
+                        },
+                    },
+                    "required": ["campo", "valor"],
                 }
             },
         }
@@ -841,6 +1073,7 @@ TOOL_IMPLS = {
     "detectar_crossover_fiscal": _tool_crossover,
     "simular_contratacion": _tool_simular_contratacion,
     "evaluar_compra": _tool_evaluar_compra,
+    "actualizar_dato": _tool_actualizar_dato,
     "punto_optimo_facturacion": _tool_punto_optimo,
     "comparar_escenarios": _tool_comparar_escenarios,
     "cerrar_ciclo": _tool_cerrar_ciclo,
@@ -1150,6 +1383,13 @@ class AgenteFinanciero:
         # "Quiero comprar un coche de 30.000 euros" -> objetivo=coche,
         # importe=30000. Sin esto, el motor no sabe que decision se
         # esta evaluando y devuelve el importe por defecto.
+        if herramienta == "actualizar_dato":
+            campo, valor = _detectar_cambio_dato(p)
+            if campo:
+                params["campo"] = campo
+            if valor is not None:
+                params["valor"] = valor
+
         if herramienta == "evaluar_compra":
             objetivo, importe = _detectar_decision_compra(p)
             if objetivo:
@@ -1478,6 +1718,18 @@ class AgenteFinanciero:
     # "cotizo"/"cotizacion" (CASS) debe ir antes que "renta"/"impuesto" (IRPF),
     # porque una pregunta de cotizacion suele mencionar tambien la renta.
     _REGLAS_ROUTER: list[tuple[tuple[str, ...], str, list[str]]] = [
+        # ── LOS CAMBIOS DE DATOS ──
+        #
+        # "cambia mi renta a 35.000" no es una pregunta de calculo: es
+        # una peticion de cambio. Va la PRIMERA, porque si no, cae en
+        # "cuanto cotizo" y el motor responde con la cuota en vez de
+        # aplicar el cambio.
+        (("cambia mi renta", "cambiar mi renta", "cambio mi renta",
+          "mi renta a", "cambia el margen", "cambiar el margen",
+          "mi margen a", "cambia el saldo", "cambiar el saldo",
+          "mi saldo a", "actualiza mi renta", "actualizar mi renta",
+          "pon mi renta", "mi renta nueva", "nueva renta"),
+         "actualizar_dato", ["campo", "valor"]),
         # ── LAS DECISIONES DE COMPRA ──
         #
         # "Quiero comprar un coche de 30.000 euros" NO es una pregunta

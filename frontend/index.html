@@ -551,6 +551,38 @@ input  { font: inherit; color: inherit; }
 .en-curso .punto { width: 6px; height: 6px; border-radius: 50%; background: var(--danger); animation: latido-dot 1.4s infinite; }
 
 
+/* ---------- Los datos del perfil, editables ---------- */
+.fila-dato.editable {
+  width: 100%; border: 0; background: transparent;
+  font: inherit; color: inherit; text-align: left;
+  cursor: pointer;
+  display: flex; align-items: center; gap: 8px;
+}
+.fila-dato.editable .l { flex: 1; }
+.fila-dato.editable .pencil {
+  width: 13px; height: 13px; flex: none;
+  fill: none; stroke: var(--ink-3); stroke-width: 1.9;
+  stroke-linecap: round; stroke-linejoin: round;
+  opacity: 0; transition: opacity .15s;
+}
+.fila-dato.editable:hover { background: var(--surface); }
+.fila-dato.editable:hover .pencil { opacity: 1; }
+.pt-hint {
+  font-size: 10.5px; font-weight: 400; letter-spacing: 0;
+  text-transform: none; color: var(--ink-3); margin-left: 6px;
+}
+.acciones-editar {
+  display: flex; gap: 8px; padding-top: 4px;
+}
+.btn-sec {
+  flex: 1;
+  padding: 9px 12px; border-radius: var(--r-pill);
+  border: 1px solid var(--line); background: var(--white);
+  font: inherit; font-size: 12.5px; font-weight: 500; color: var(--ink-2);
+  cursor: pointer; transition: border-color .15s, color .15s;
+}
+.btn-sec:hover { border-color: var(--ink-3); color: var(--ink); }
+
 /* ---------- Selector de perfil (datos de prueba) ---------- */
 .perfiles {
   display: flex; gap: 7px; overflow-x: auto; padding: 0 0 9px;
@@ -882,10 +914,23 @@ window.__ELEVENLABS_AGENT_ID__ = window.__ELEVENLABS_AGENT_ID__ || "agent_5301m6
       </div>
 
       <div class="panel">
-        <div class="fila-dato"><span class="l">Renta neta anual</span><span class="v" id="perfilRenta">—</span></div>
-        <div class="fila-dato"><span class="l">Margen</span><span class="v" id="perfilMargen">—</span></div>
-        <div class="fila-dato"><span class="l">Saldo actual</span><span class="v" id="perfilSaldo">—</span></div>
-        <div class="fila-dato"><span class="l">Actividad</span><span class="v" id="perfilActividad2">—</span></div>
+        <div class="pt">Tus datos <span class="pt-hint">púlsalos para corregirlos</span></div>
+        <button class="fila-dato editable" data-campo="renta" title="Púlsalo para cambiarlo con el asesor">
+          <span class="l">Renta neta anual</span><span class="v" id="perfilRenta">—</span>
+          <svg class="pencil" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        </button>
+        <button class="fila-dato editable" data-campo="margen" title="Púlsalo para cambiarlo con el asesor">
+          <span class="l">Margen</span><span class="v" id="perfilMargen">—</span>
+          <svg class="pencil" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        </button>
+        <button class="fila-dato editable" data-campo="saldo" title="Púlsalo para cambiarlo con el asesor">
+          <span class="l">Saldo actual</span><span class="v" id="perfilSaldo">—</span>
+          <svg class="pencil" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        </button>
+        <button class="fila-dato editable" data-campo="actividad" title="Púlsalo para cambiarlo con el asesor">
+          <span class="l">Actividad</span><span class="v" id="perfilActividad2">—</span>
+          <svg class="pencil" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        </button>
       </div>
 
       <div class="panel">
@@ -894,10 +939,17 @@ window.__ELEVENLABS_AGENT_ID__ = window.__ELEVENLABS_AGENT_ID__ || "agent_5301m6
           Di «cambia mi renta a 35.000» y el asesor lo actualiza solo.
           O vuelve a empezar la conversación.
         </div>
+        <div class="cuerpo acciones-editar">
+          <button class="btn-sec" id="btnEditarRenta">Cambiar la renta</button>
+          <button class="btn-sec" id="btnReiniciar">Empezar de nuevo</button>
+        </div>
       </div>
 
       <div class="panel">
-        <div class="fila-dato"><span class="l">Idioma</span><span class="v">Español</span></div>
+        <button class="fila-dato editable" id="btnIdiomaPerfil" title="Cambiar el idioma de la respuesta">
+          <span class="l">Idioma</span><span class="v" id="perfilIdioma">Español</span>
+          <svg class="pencil" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        </button>
         <div class="fila-dato"><span class="l">Notificaciones</span><span class="v">Activadas</span></div>
         <div class="fila-dato"><span class="l">Privacidad</span><span class="v">Tus datos no se comparten</span></div>
       </div>
@@ -1135,11 +1187,76 @@ function respuestaDesdeElPerfil(pregunta) {
 // El texto del motor viene con saltos de linea y algo de markdown
 // (**negrita**). Se pinta sin permitir HTML.
 function textoDelMotor(r) {
-  var s = (r && r.respuesta) || '';
+  // Si el motor aplico un cambio de dato, su respuesta cruda es un
+  // volcado tecnico (campo, valor anterior, valor nuevo). Lo que ve
+  // el cliente es la frase del asesor, que viene en la herramienta.
+  var herramientaCambio = null;
+  ((r && r.herramientas) || []).forEach(function (h) {
+    if (h && h.tool === 'actualizar_dato' && !herramientaCambio) herramientaCambio = h;
+  });
+  var s = herramientaCambio
+    ? (herramientaCambio.regla || '')
+    : ((r && r.respuesta) || '');
   return s
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
     .replace(/\n/g, '<br>');
+}
+
+// Cuando el asesor (o el motor) responde, si habia un campo del
+// perfil esperando, se actualiza con la cifra que venga.
+function revisarDatoPendiente(texto, herramientas){
+  // Si el motor aplico un cambio, se aplica aunque no haya un campo
+  // pendiente: el cliente puede escribirlo directamente en el chat
+  // ("cambia mi renta a 35.000") sin haber pulsado nada.
+  var cambio = null;
+  if (herramientas && herramientas.length) {
+    for (var i = 0; i < herramientas.length; i++) {
+      var h = herramientas[i];
+      if (h && h.tool === 'actualizar_dato' && h.resultado && h.resultado.valor_nuevo !== undefined) {
+        cambio = h.resultado;
+        break;
+      }
+    }
+  }
+  if (!cambio) {
+    if (!pendingCampo) return;
+    aplicarDatoSiCorresponde(texto, herramientas);
+    return;
+  }
+
+  // Que campo cambio: el del pendiente, o el que dice el motor.
+  var campo = pendingCampo || '';
+  if (!campo) {
+    var nom = String(cambio.campo || '');
+    if (nom.indexOf('renta') >= 0) campo = 'renta';
+    else if (nom.indexOf('margen') >= 0) campo = 'margen';
+    else if (nom.indexOf('saldo') >= 0) campo = 'saldo';
+  }
+  pendingCampo = null;
+
+  var entradaEl = document.getElementById('entrada');
+  if (entradaEl) entradaEl.placeholder = 'Escribe o habla…';
+
+  var valor = cambio.valor_nuevo;
+  var d = MOTOR[perfilActual];
+  if (!d || valor === undefined || valor === null) return;
+  if (campo === 'renta') d.renta = valor;
+  else if (campo === 'margen') d.margen = valor;
+  else if (campo === 'saldo') d.saldo = valor;
+  else return;
+
+  try { cambiarPerfil(perfilActual); } catch (e) {}
+
+  var msg = 'Hecho: ' + etiquetaDeCampo(campo) + ' es ahora ' + eur(valor, 0) + '.';
+  var recomputado = cambio.recalculado;
+  if (recomputado && recomputado.cass && recomputado.cass.cuota_anual) {
+    var cass = recomputado.cass;
+    msg += ' Con esa renta, tu CASS pasa a ser ' + eur(cass.cuota_anual, 2) +
+           ' al año (' + eur(cass.cuota_mensual, 2) + ' al mes) y la cuota de ' +
+           (cass.tramo || '') + '.';
+  }
+  // La frase ya la ha dado el motor (en "html"): no se duplica.
 }
 
 async function enviar() {
@@ -1156,11 +1273,18 @@ async function enviar() {
     var html = textoDelMotor(r);
     // La regla que aplico el motor: es la parte que demuestra que
     // la respuesta sale de la normativa, no de un modelo.
-    var reglas = (r.herramientas || []).map(function (h) {
+    var hayCambio = (r.herramientas || []).some(function (h) {
+      return h && h.tool === 'actualizar_dato';
+    });
+    var reglas = hayCambio ? '' : (r.herramientas || []).map(function (h) {
       var clave = String(h.regla || '').trim().split(/[.,(]/)[0].trim();
       if (!clave || html.toLowerCase().indexOf(clave.toLowerCase()) >= 0) return '';
       return '<div class="regla"><b>' + escapar(h.tool) + ':</b> ' + escapar(h.regla || '') + '</div>';
     }).join('');
+    // El perfil se actualiza siempre que el motor haya aplicado un
+    // cambio (la cifra ya va en el texto de arriba, asi que aqui no
+    // se vuelve a pintar).
+    revisarDatoPendiente(r.respuesta || '', r.herramientas || []);
     añadirMensaje(html + reglas, 'asesor');
   } catch (e) {
     t.remove();
@@ -1414,7 +1538,10 @@ async function iniciarVozReal(){
         var texto = (m && m.message) || '';
         if (!texto) return;
         if (m.source === 'ai') {
-          añadirMensaje(escapar(limpiarEtiquetasAgente(texto)).replace(/\n/g, '<br>'), 'asesor');
+          var limpio = limpiarEtiquetasAgente(texto);
+          // Si habia un dato del perfil esperando, se actualiza.
+          try { revisarDatoPendiente(limpio); } catch (e) {}
+          añadirMensaje(escapar(limpio).replace(/\n/g, '<br>'), 'asesor');
         } else if (m.source === 'user') {
           var limpio = texto.trim();
           // Los mensajes de control del agente ("...") no son
@@ -2076,6 +2203,105 @@ function limpiarEtiquetasAgente(texto){
 })();
 
 
+// ── Editar los datos del perfil ─────────────────────────────────
+//
+// Los datos del perfil (renta, margen, saldo, actividad) se
+// corrigen con el asesor: se pulsa el campo, se pregunta al motor y
+// se actualiza el perfil con lo que devuelva.
+//
+// Es lo que dice el panel ("cambia mi renta a 35.000 y el asesor lo
+// actualiza solo"), asi que tiene que funcionar de verdad.
+
+function editarDato(campo){
+  var etiquetas = {
+    renta: 'tu renta neta anual',
+    margen: 'tu margen bruto',
+    saldo: 'tu saldo en la cuenta',
+    actividad: 'tu actividad economica',
+  };
+  var pregunta = 'Quiero cambiar ' + (etiquetas[campo] || campo) + '. ¿Cuál es el valor nuevo?';
+  mostrarVista('vistaAsesor');
+  if (typeof añadirMensaje === 'function') {
+    añadirMensaje(escapar(pregunta), 'yo');
+  }
+  // El campo queda esperando la respuesta del asesor.
+  pendingCampo = campo;
+  if (typeof entrada !== 'undefined' && entrada) {
+    entrada.focus();
+    entrada.placeholder = 'Escribe aqui el valor nuevo...';
+  }
+}
+
+var pendingCampo = null;
+
+// Cuando el asesor responde y hay un campo pendiente, se actualiza.
+function aplicarDatoSiCorresponde(respuesta, herramientas){
+  if (!pendingCampo) return;
+  var campo = pendingCampo;
+  pendingCampo = null;
+  var entradaEl = document.getElementById('entrada');
+  if (entradaEl) entradaEl.placeholder = 'Escribe o habla…';
+
+  // El valor sale del resultado de la herramienta "actualizar_dato"
+  // (que es el motor quien lo ha aplicado), no de buscar numeros en
+  // un texto: asi el cambio es el que ha hecho el motor.
+  var valor = null;
+  var recomputado = null;
+  if (herramientas && herramientas.length) {
+    for (var i = 0; i < herramientas.length; i++) {
+      var h = herramientas[i];
+      if (!h || h.tool !== 'actualizar_dato') continue;
+      var res = h.resultado || {};
+      valor = res.valor_nuevo;
+      recomputado = res.recalculado;
+      break;
+    }
+  }
+
+  if (valor === null || valor === undefined) {
+    // Sin herramienta (por ejemplo, si responde el agente de voz),
+    // se busca el numero en el texto.
+    var m = String(respuesta || '').match(/[0-9][0-9.,]*/);
+    if (!m) return;
+    valor = parseFloat(m[0].replace(/\./g, '').replace(',', '.'));
+    if (isNaN(valor)) return;
+  }
+
+  var d = MOTOR[perfilActual];
+  if (!d) return;
+  if (campo === 'renta') d.renta = valor;
+  else if (campo === 'margen') d.margen = valor;
+  else if (campo === 'saldo') d.saldo = valor;
+  else if (campo === 'actividad') return;
+
+  try { cambiarPerfil(perfilActual); } catch (e) {}
+
+  var msg = 'Hecho: ' + etiquetaDeCampo(campo) + ' es ahora ' + eur(valor, 0) + '.';
+  // Y si el motor recalculo (cambio de renta), se dice con las cifras
+  // nuevas: eso es lo que le importa al cliente.
+  if (recomputado && recomputado.cass) {
+    var cass = recomputado.cass;
+    if (cass.cuota_anual) {
+      msg += ' Con esa renta, tu CASS pasa a ser ' + eur(cass.cuota_anual, 2) +
+             ' al año (' + eur(cass.cuota_mensual, 2) + ' al mes) y la cuota de ' +
+             cass.tramo + '.';
+    }
+  }
+  if (typeof añadirMensaje === 'function') {
+    añadirMensaje(msg, 'asesor');
+  }
+}
+
+function etiquetaDeCampo(campo){
+  return ({
+    renta: 'Tu renta neta anual',
+    margen: 'Tu margen bruto',
+    saldo: 'Tu saldo',
+    actividad: 'Tu actividad',
+  })[campo] || 'El dato';
+}
+
+
 // ── El idioma de la respuesta ───────────────────────────────────
 //
 // El motor (y el agente de voz) detectan solos el idioma en el que
@@ -2097,6 +2323,12 @@ var IDIOMAS_MENU = [
 var idiomaForzado = 'auto';
 
 function pintarMenuIdioma(){
+  // El perfil muestra el idioma actual.
+  var et = document.getElementById('perfilIdioma');
+  if (et) {
+    var encontrado = IDIOMAS_MENU.filter(function(x){ return x.cod === idiomaForzado; })[0];
+    et.textContent = encontrado ? encontrado.etiqueta : 'Automatico';
+  }
   var lista = document.getElementById('listaIdiomas');
   if (!lista) return;
   lista.innerHTML = '';
@@ -2147,6 +2379,31 @@ function cerrarMenuIdioma(){
 }
 
 (function(){
+  // Los datos del perfil: al pulsarlos, se pide al asesor el valor
+  // nuevo y se actualiza.
+  document.querySelectorAll('.fila-dato.editable[data-campo]').forEach(function(b){
+    b.addEventListener('click', function(){
+      if (b.id === 'btnIdiomaPerfil') { abrirMenuIdioma(); return; }
+      editarDato(b.dataset.campo);
+    });
+  });
+
+  // Los botones del panel "Editar con el asesor".
+  var btnRenta = document.getElementById('btnEditarRenta');
+  if (btnRenta) btnRenta.addEventListener('click', function(){ editarDato('renta'); });
+
+  var btnReiniciar = document.getElementById('btnReiniciar');
+  if (btnReiniciar) btnReiniciar.addEventListener('click', function(){
+    // Empezar de nuevo: se vacia el chat y se vuelve al saludo.
+    var th = document.getElementById('thread');
+    if (!th) return;
+    th.innerHTML = '';
+    if (typeof anadirMensaje === 'function') {
+      anadirMensaje('Hola, soy tu asesor financiero de MoraBanc. Cuentame que quieres hacer y me dices de que: un coche, una casa, maquinaria, contratar a alguien... Con los datos que ya tengo de tu cuenta te digo si te cabe y de que manera.', 'asesor');
+    }
+    mostrarVista('vistaAsesor');
+  });
+
   var b = document.getElementById('btnIdioma');
   var m = document.getElementById('menuIdioma');
   if (!b || !m) return;
@@ -2301,6 +2558,7 @@ function arrancarTodo(){
   }
 
   engancharPestanas();
+  pintarMenuIdioma();
   pintarPerfiles();
   cambiarPerfil('freelance');
   pintarTarjetaDelChat(MOTOR[perfilActual]);
