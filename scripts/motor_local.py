@@ -114,17 +114,127 @@ def _respuesta_determinista(ctx: ContextoEmpresa, pregunta: str) -> dict:
     }
 
 
+def _eur(v) -> str:
+    """Un importe en formato europeo: 7.055,40 EUR."""
+    try:
+        return f"{float(v):,.2f}".replace(",", "\x00").replace(".", ",").replace("\x00", ".")
+    except (TypeError, ValueError):
+        return str(v)
+
+
+def _pct(v) -> str:
+    try:
+        return f"{float(v):.2f}".replace(".", ",") + " %"
+    except (TypeError, ValueError):
+        return str(v)
+
+
+#: Como se cuenta cada resultado: (que dice, como se formatea, que
+#: unidad tiene). Sin esto, la respuesta al cliente era un volcado de
+#: claves del motor ("tramo: 100%; base_cotizacion: 2.672,52"), que
+#: no se lee como una respuesta.
+_FORMATO_RESULTADOS: dict[str, list[tuple[str, str, str]]] = {
+    "tramo_cass": [
+        ("cuota_anual", "Tu CASS de 2026 es de", "eur"),
+        ("tramo", "en el tramo", "texto"),
+        ("cuota_mensual", "Son", "eur_mes"),
+        ("base_cotizacion", "Tu base de cotizacion es de", "eur"),
+    ],
+    "calcular_irpf": [
+        ("cuota_total", "Tu IRPF es de", "eur"),
+        ("tipo_efectivo", "El tipo efectivo te queda en", "pct"),
+    ],
+    "calcular_igi": [
+        ("cuota", "Tu IGI es de", "eur"),
+        ("tipo", "El tipo aplicable es del", "pct"),
+    ],
+    "resumen_carga_fiscal": [
+        ("cuota_anual_cass", "CASS", "eur_anual"),
+        ("cuota_anual_irpf", "IRPF", "eur_anual"),
+        ("total_carga_fiscal_anual", "El total", "eur_anual"),
+    ],
+    "detectar_fugas": [
+        ("n_fugas", "Tienes", "fugas"),
+        ("recuperable_mensual", "Recuperas", "eur_mes"),
+        ("recuperable_anual", "Al año son", "eur"),
+    ],
+    "proyectar_caja": [
+        ("meses", "Tu caja aguanta", "meses"),
+        ("saldo_minimo", "El punto mas bajo es de", "eur"),
+    ],
+    "simular_contratacion": [
+        ("coste_anual", "Contratar cuesta", "eur_anual"),
+        ("facturacion_adicional", "Necesitas facturar", "eur_anual"),
+    ],
+    "analizar_tesoreria": [
+        ("ingresos", "Ingresos", "eur_anual"),
+        ("gastos", "Gastos", "eur_anual"),
+        ("flujo_neto", "El flujo neto es de", "eur_anual"),
+    ],
+}
+
+
 def _texto_de_resultado(nombre: str, res: dict) -> str:
-    """Un texto legible con los numeros del motor."""
+    """Un texto de asesor, con los numeros en formato europeo."""
     if not isinstance(res, dict):
         return str(res)
 
-    def eur(v):
-        try:
-            return f"{float(v):,.2f}".replace(",", "\x00").replace(".", ",").replace("\x00", ".")
-        except (TypeError, ValueError):
-            return str(v)
+    formato = _FORMATO_RESULTADOS.get(nombre)
+    if not formato:
+        # Sin formato conocido: se(listo los pares clave-valor, pero
+        # con las etiquetas en espanol y los numeros en formato
+        # europeo.
+        return _texto_generico(res)
 
+    frases = []
+    for clave, antes, como in formato:
+        if clave not in res or res[clave] in (None, ""):
+            continue
+        valor = res[clave]
+        if como == "eur":
+            frases.append(f"{antes} {_eur(valor)} EUR.")
+        elif como == "eur_mes":
+            frases.append(f"{antes} {_eur(valor)} EUR al mes.")
+        elif como == "eur_anual":
+            frases.append(f"{antes} {_eur(valor)} EUR al año.")
+        elif como == "pct":
+            v = str(valor)
+            if "%" not in v:
+                v = f"{v.rstrip('%')} %"
+            if frases and not frases[-1].endswith("."):
+                frases[-1] = frases[-1] + "."
+            frases.append(f"{antes} {v}.")
+        elif como == "meses":
+            frases.append(f"{antes} {valor} meses.")
+        elif como == "fugas":
+            frases.append(f"{antes} {valor} fugas en la cuenta.")
+        elif como == "texto":
+            # La primera letra en mayuscula si empieza la frase, y
+            # punto antes si la anterior no lo lleva.
+            v = str(valor)
+            if v.endswith("%"):
+                v = v[:-1].rstrip() + " %"
+            if frases and not frases[-1].endswith("."):
+                frases[-1] = frases[-1] + "."
+            frases.append(f"{antes} {v}.")
+        else:
+            frases.append(f"{antes} {valor}.")
+
+    if not frases:
+        return _texto_generico(res)
+
+    # Cada frase empieza en mayuscula: el texto se lee como una
+    # respuesta, no como un volcado de datos.
+    capitalizadas = []
+    for f in frases:
+        f = f.strip()
+        if f:
+            f = f[0].upper() + f[1:]
+        capitalizadas.append(f)
+    return " ".join(capitalizadas)
+
+
+def _texto_generico(res: dict) -> str:
     etiquetas = {
         "cuota_anual": "cuota anual",
         "cuota_mensual": "cuota mensual",
@@ -145,16 +255,14 @@ def _texto_de_resultado(nombre: str, res: dict) -> str:
         "saldo_minimo": "saldo minimo",
         "saldo_final": "saldo final",
     }
-
     partes = []
     for k, v in res.items():
         if isinstance(v, (dict, list)):
             continue
         if isinstance(v, (int, float, Decimal)) and not isinstance(v, bool):
-            partes.append(f"{etiquetas.get(k, k)}: {eur(v)} EUR")
+            partes.append(f"{etiquetas.get(k, k)}: {_eur(v)} EUR")
         elif v not in (None, ""):
             partes.append(f"{etiquetas.get(k, k)}: {v}")
-
     return "; ".join(partes)
 
 

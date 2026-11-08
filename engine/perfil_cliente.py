@@ -227,20 +227,20 @@ class CapacidadGasto:
 
     def veredicto(self) -> str:
         colchon = (
-            f" y {self.meses_colchon_tras_pago} meses de colchon"
+            f" y {_meses(self.meses_colchon_tras_pago)} meses de colchón"
             if self.meses_colchon_tras_pago is not None
             else ""
         )
         if self.cabe:
             return (
-                f"Sí cabe. Puedes gastar hasta {self.importe_maximo} EUR. "
-                f"Después te quedarían {self.margen_mensual_tras_pago} EUR de margen al mes"
-                f"{colchon}."
+                f"Sí cabe. Puedes gastar hasta {_eur(self.importe_maximo)} EUR. "
+                f"Después te quedarían {_eur(self.margen_mensual_tras_pago)} EUR "
+                f"de margen al mes{colchon}."
             )
         return (
-            f"No cabe de una vez. Tu límite son {self.importe_maximo} EUR "
-            f"(un {self.importe_pedido} EUR te deja el margen mensual en "
-            f"{self.margen_mensual_tras_pago} EUR)."
+            f"No cabe de una vez. Tu límite son {_eur(self.importe_maximo)} EUR "
+            f"(un {_eur(self.importe_pedido)} EUR te deja el margen mensual en "
+            f"{_eur(self.margen_mensual_tras_pago)} EUR)."
         )
 
 
@@ -265,6 +265,28 @@ TIPO_INTERES_DEFECTO = Decimal("0.05")
 
 #: Coste social aproximado sobre el bruto de un empleado (Andorra).
 COSTE_SOCIAL_PORCENTAJE = Decimal("0.21")
+
+
+def _eur(valor) -> str:
+    """Un importe en formato europeo: 7.055,40 EUR.
+
+    El formato por defecto de Python (108000.0) no vale para un
+    cliente: en un pitch, un numero asi se lee como anglosajon y
+    parece un dato crudo.
+    """
+    try:
+        return f"{float(valor):,.2f}".replace(",", "\x00").replace(".", ",").replace("\x00", ".")
+    except (TypeError, ValueError):
+        return str(valor)
+
+
+def _meses(valor) -> str:
+    """Un numero de meses con una coma decimal si hace falta."""
+    try:
+        v = float(valor)
+        return (f"{v:.1f}".replace(".", ",") if v != int(v) else str(int(v)))
+    except (TypeError, ValueError):
+        return str(valor)
 
 
 def _cuota_mensual(capital: Decimal, tipo_anual: Decimal, meses: int) -> Decimal:
@@ -381,8 +403,8 @@ def evaluar_compra(
             margen_mensual_tras_pago=margen_disponible,
             avisos=[
                 "Ya tienes todo tu margen fijo comprometido: gastas "
-                f"{ya_comprometido} EUR al mes y tu tope sostenible es "
-                f"{tope_sostenible} EUR. Cualquier compra nueva te obliga a "
+                f"{_eur(ya_comprometido)} EUR al mes y tu tope sostenible es "
+                f"{_eur(tope_sostenible)} EUR. Cualquier compra nueva te obliga a "
                 "reestructurar lo que ya tienes, no a anadir."
             ],
             regla="Gasto fijo sostenible = 30 % de la renta neta anual.",
@@ -516,10 +538,10 @@ def evaluar_compra(
             ],
             regla=(
                 f"Compra de vivienda: se mide con el compromiso total, no con "
-                f"el margen operativo. El 40 % de la renta neta ({renta} EUR) "
+                f"el margen operativo. El 40 % de la renta neta ({_eur(renta)} EUR) "
                 f"es el tope de compromiso mensual: ya tienes "
-                f"{ya_comprometido} EUR/mes, y la vivienda sumaria "
-                f"{cuota_vivienda} EUR/mes."
+                f"{_eur(ya_comprometido)} EUR/mes, y la vivienda sumaria "
+                f"{_eur(cuota_vivienda)} EUR/mes."
             ),
         )
 
@@ -527,8 +549,8 @@ def evaluar_compra(
     if meses_colchon is not None and meses_colchon < COLCHON_MINIMO_MESES:
         avisos.append(
             f"Cuidado con la caja: despues de esta compra te quedan "
-            f"{meses_colchon} meses de colchon. Con menos de "
-            f"{COLCHON_MINIMO_MESES} meses, un imprevisto te obliga a "
+            f"{_meses(meses_colchon)} meses de colchon. Con menos de "
+            f"{_meses(COLCHON_MINIMO_MESES)} meses, un imprevisto te obliga a "
             "vender o a pedir un prestamo en el peor momento."
         )
 
@@ -570,11 +592,11 @@ def evaluar_compra(
         )
 
     regla = (
-        f"Capacidad de gasto: el 30 % de la renta neta ({renta} EUR) es el "
-        f"tope de gasto fijo sostenible ({tope_sostenible} EUR/mes); ya "
-        f"tienes comprometidos {ya_comprometido} EUR/mes, asi que te "
-        f"quedan {margen_disponible} EUR/mes de margen. "
-        f"Compra {via}: cuota {cuota} EUR/mes."
+        f"Capacidad de gasto: el 30 % de la renta neta ({_eur(renta)} EUR) es el "
+        f"tope de gasto fijo sostenible ({_eur(tope_sostenible)} EUR/mes); ya "
+        f"tienes comprometidos {_eur(ya_comprometido)} EUR/mes, asi que te "
+        f"quedan {_eur(margen_disponible)} EUR/mes de margen. "
+        f"Compra {via}: cuota {_eur(cuota)} EUR/mes."
     )
 
     return CapacidadGasto(
@@ -639,9 +661,9 @@ def evaluar_contratacion(
         )
     elif not cabe:
         avisos.append(
-            f"Contratar a {n} persona(s) cuesta {total_mensual} EUR/mes "
-            f"(bruto {bruto_anual} EUR + {coste_social} EUR de seguridad social) "
-            f"y te quedan {margen_disponible} EUR/mes de margen. "
+            f"Contratar a {n} persona(s) cuesta {_eur(total_mensual)} EUR/mes "
+            f"(bruto {_eur(bruto_anual)} EUR + {_eur(coste_social)} EUR de seguridad social) "
+            f"y te quedan {_eur(margen_disponible)} EUR/mes de margen. "
             f"Solo te entran {maximo_personas} persona(s) hoy."
         )
 
@@ -654,12 +676,12 @@ def evaluar_contratacion(
     cuota_prestamo = _cuota_mensual(total_anual, tipo_interes, meses_prestamo)
 
     regla = (
-        f"Coste de contratar: bruto {bruto_anual} EUR/ano por persona mas un "
+        f"Coste de contratar: bruto {_eur(bruto_anual)} EUR/ano por persona mas un "
         f"{COSTE_SOCIAL_PORCENTAJE * 100:.0f} % de contribuciones sociales = "
-        f"{coste_total_anual} EUR/ano ({coste_mensual_unitario} EUR/mes). "
-        f"Tope de gasto fijo sostenible: 30 % de {renta} EUR = "
-        f"{tope_sostenible} EUR/mes; ya comprometido "
-        f"{perfil.gasto_fijo_mensual} EUR/mes."
+        f"{_eur(coste_total_anual)} EUR/ano ({_eur(coste_mensual_unitario)} EUR/mes). "
+        f"Tope de gasto fijo sostenible: 30 % de {_eur(renta)} EUR = "
+        f"{_eur(tope_sostenible)} EUR/mes; ya comprometido "
+        f"{_eur(perfil.gasto_fijo_mensual)} EUR/mes."
     )
 
     return CapacidadGasto(
