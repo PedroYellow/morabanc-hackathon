@@ -126,7 +126,7 @@
       "razon_social": "Barnes i Fils SL",
       "actividad": "Comerç amb botiga local",
       "es_autonomo": false,
-      "empleados": 3,
+      "empleados": 1,
       "facturacion_anual": 157007,
       "renta_neta": 45000,
       "margen_bruto": 35,
@@ -168,7 +168,7 @@
         "prestamos": 0,
         "lineas_credito": 25000
       },
-      "nomina_mensual": 8400,
+      "nomina_mensual": 2100,
       "escenario_narrativo": "Comercio con tienda local, 3 empleados y turno de nomina. Cruza el umbral de la CASS: el 125% duele.",
       "pregunta_sugerida": "¿Me afecta el salto de tramo del CASS?"
     },
@@ -181,8 +181,8 @@
       "razon_social": "Ceramica Canillo SL",
       "actividad": "Taller de ceramica",
       "es_autonomo": false,
-      "empleados": 2,
-      "facturacion_anual": 96000,
+      "empleados": 1,
+      "facturacion_anual": 109413,
       "renta_neta": 38000,
       "margen_bruto": 40,
       "saldo_actual": 6900,
@@ -212,7 +212,7 @@
         "prestamos": 15000,
         "lineas_credito": 0
       },
-      "nomina_mensual": 5600,
+      "nomina_mensual": 1950,
       "escenario_narrativo": "Taller de ceramica con un empleado. La caja aguanta, pero esta a 2.000 EUR del salto de tramo: si facturara un poco mas, pasaria al tramo siguiente y el margen se le Comes.",
       "pregunta_sugerida": "¿Debería facturar más o me quedo aquí?"
     }

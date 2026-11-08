@@ -15,6 +15,19 @@
   var $ = function (s) { return document.querySelector(s); };
   var $$ = function (s) { return Array.from(document.querySelectorAll(s)); };
 
+  // Escapar HTML. Este fichero no la tenia (vive en el bundle del
+  // motor, que es otro): sin ella, construir el HTML del selector de
+  // empresa daba ReferenceError y el selector salia VACIO, sin que
+  // se viera ningun error en la pagina.
+  function escapar(txt) {
+    return String(txt === undefined || txt === null ? "" : txt)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
   // ---------------------------------------------------------------
   // Parametros
   // ---------------------------------------------------------------
@@ -269,15 +282,23 @@
 
     var frame = $("#frameAsesor");
     if (frame) {
-      var sep = frame.src.indexOf("?") === -1 ? "?" : "&";
-      frame.src = frame.src + sep +
-        "v=" + Date.now() +
+      // El src se RECONSTRUYE entero desde cero. Si se le anaden los
+      // parametros al que ya tenia, se acumulan (perfil=freelance&
+      // perfil=crecimiento&...) y el motor lee el PRIMERO, no el
+      // nuevo: el asesor seguia mostrando la empresa anterior.
+      //
+      // "embed=1" va siempre: es lo que hace que el motor se calle
+      // su cabecera y se lea como una seccion del portal.
+      var base = frame.src.split("?")[0];
+      frame.src = base +
+        "?embed=1" +
+        "&v=" + Date.now() +
         "&perfil=" + encodeURIComponent(esc.perfil_motor) +
         "&escenario=" + encodeURIComponent(esc.id) +
         "&empresa=" + encodeURIComponent(esc.empresa) +
         "&renta=" + encodeURIComponent(esc.renta_neta) +
-        "&margen=" + encodeURIComponent(Math.round(esc.margen * 100)) +
-        "&saldo=" + encodeURIComponent(esc.saldo) +
+        "&margen=" + encodeURIComponent(esc.margen_bruto) +
+        "&saldo=" + encodeURIComponent(esc.saldo_actual) +
         "&actividad=" + encodeURIComponent(esc.actividad || "");
     }
   }
