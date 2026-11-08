@@ -212,6 +212,77 @@
   }
 
   // ---------------------------------------------------------------
+  // Selector de empresa
+  // ---------------------------------------------------------------
+  //
+  // En un banco real, un cliente puede tener varias empresas y
+  // cambiar de una a otra sin volver a entrar. Aqui los cuatro
+  // usuarios de prueba son cuatro empresas distintas, cada una con su
+  // escenario (y su historia: freelance estable, nomina reciente,
+  // comercio con tienda, pyme cerca del umbral).
+  //
+  // El selector cumple dos funciones: es lo que haria el producto
+  // real, y permite recorrer los cuatro casos en el pitch sin
+  // depender de tener cuatro sesiones abiertas.
+  function pintarSelectorEmpresas() {
+    if (!ESCENARIOS || ESCENARIOS.length < 2) return;
+    var cont = $("#mb-selector-empresas");
+    if (!cont) {
+      // Se inserta justo despues de la cabecera del usuario.
+      var ancla = $(".mb-portal-user-meta");
+      if (!ancla || !ancla.parentNode) return;
+      cont = document.createElement("div");
+      cont.id = "mb-selector-empresas";
+      cont.className = "mb-portal-company-switch";
+      ancla.parentNode.insertBefore(cont, ancla.nextSibling);
+    }
+
+    var html = '<span class="mb-switch-label">Empresa</span><div class="mb-switch-list">';
+    ESCENARIOS.forEach(function (e) {
+      var activa = e.usuario === usuario;
+      html += '<button type="button" class="mb-switch-btn' + (activa ? " is-active" : "") +
+        '" data-usuario="' + e.usuario + '" data-escenario="' + e.id + '">' +
+        '<b>' + escapar(e.razon_social.split(" ")[0].toUpperCase()) + "</b>" +
+        '<small>' + escapar(e.empresa || "") + "</small></button>";
+    });
+    html += "</div>";
+    cont.innerHTML = html;
+
+    cont.querySelectorAll(".mb-switch-btn").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var destino = b.getAttribute("data-usuario");
+        if (!destino) return;
+        // El token de sesion sigue siendo el de la empresa real: el
+        // selector es de demo (para recorrer los casos), no un
+        // cambio de sesion.
+        mostrarEscenario(destino);
+      });
+    });
+  }
+
+  function mostrarEscenario(codUsuario) {
+    var esc = escenarioPorUsuario(codUsuario);
+    if (!esc) return;
+    usuario = codUsuario;
+    aplicarEscenario(esc);
+    pintarSelectorEmpresas();
+
+    var frame = $("#frameAsesor");
+    if (frame) {
+      var sep = frame.src.indexOf("?") === -1 ? "?" : "&";
+      frame.src = frame.src + sep +
+        "v=" + Date.now() +
+        "&perfil=" + encodeURIComponent(esc.perfil_motor) +
+        "&escenario=" + encodeURIComponent(esc.id) +
+        "&empresa=" + encodeURIComponent(esc.empresa) +
+        "&renta=" + encodeURIComponent(esc.renta_neta) +
+        "&margen=" + encodeURIComponent(Math.round(esc.margen * 100)) +
+        "&saldo=" + encodeURIComponent(esc.saldo) +
+        "&actividad=" + encodeURIComponent(esc.actividad || "");
+    }
+  }
+
+  // ---------------------------------------------------------------
   // Arranque
   // ---------------------------------------------------------------
   cargarEscenarios()
@@ -219,6 +290,7 @@
       var esc = escenarioPorUsuario(usuario);
       if (esc) {
         aplicarEscenario(esc);
+        pintarSelectorEmpresas();
         // El asesor recibe el escenario por la URL: el motor carga el
         // perfil de datos demo correspondiente y precarga la situacion.
         var frame = $("#frameAsesor");

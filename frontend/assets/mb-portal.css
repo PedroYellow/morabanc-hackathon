@@ -422,3 +422,50 @@ button { font-family: inherit; }
   .mb-asesor-frame { height: 720px; }
   .mb-patrimoni-value { font-size: 32px; }
 }
+
+/* Selector de empresa (pestana del portal) */
+.mb-portal-company-switch {
+  margin: 10px 0 14px;
+  padding: 10px 12px;
+  background: #f4f8fc;
+  border: 1px solid #d6e4f0;
+  border-radius: 10px;
+}
+.mb-switch-label {
+  display: block;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: #5b7793;
+  margin-bottom: 7px;
+}
+.mb-switch-list {
+  display: flex; gap: 8px; overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
+}
+.mb-switch-btn {
+  flex: 0 0 auto;
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: 1px;
+  padding: 7px 11px;
+  background: #fff;
+  border: 1px solid #cfe0ee;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  transition: background .15s, border-color .15s;
+}
+.mb-switch-btn b {
+  font-size: 12.5px; font-weight: 700; color: #0a3550;
+  letter-spacing: .01em;
+}
+.mb-switch-btn small {
+  font-size: 10.5px; color: #5b7793;
+}
+.mb-switch-btn.is-active {
+  background: #0a3550;
+  border-color: #0a3550;
+}
+.mb-switch-btn.is-active b,
+.mb-switch-btn.is-active small { color: #fff; }
+.mb-switch-btn.is-active small { opacity: .78; }

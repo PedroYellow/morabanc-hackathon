@@ -208,7 +208,7 @@
       // front publicado nunca se cumple.
       return Promise.resolve(
         (PASSWORD_VALIDA && contrasena === PASSWORD_VALIDA)
-          ? { ok: true, demo: true, empresa: String(usuario).toUpperCase() === USUARIO_EMPRESA }
+          ? { ok: true, demo: true, empresa: esEmpresa(usuario) }
           : { ok: false, mensaje: "Autenticacion no configurada" }
       );
     }
@@ -246,7 +246,7 @@
             localStorage.setItem("mb-refresh", j.refresh_token || "");
             localStorage.setItem("mb-codigo", cod);
           } catch (e) {}
-          return { ok: true, empresa: cod === USUARIO_EMPRESA, codigo: cod };
+          return { ok: true, empresa: esEmpresa(cod), codigo: cod };
         });
       })
       .catch(function () {
@@ -269,6 +269,18 @@
     }
     caja.textContent = texto || "";
     caja.hidden = !texto;
+  }
+
+  // Los cuatro usuarios de prueba (12TJ28 a 12TJ31) son EMPRESAS: los
+  // cuatro tienen su escenario en data/mb_escenarios.json y su portal
+  // es el de empresas, con el asesor financiero integrado.
+  //
+  // Antes solo 12TJ28 iba al portal de empresas (era el unico codigo
+  // que se comparaba) y los otros tres caian en el portal de
+  // particulares, que no tiene el asesor: sus escenarios no se veian.
+  function esEmpresa(codigo) {
+    var c = String(codigo || "").toUpperCase();
+    return !!c && /^(12TJ2[89]|12TJ3[01])$/.test(c);
   }
 
   function entrar(r) {
@@ -294,7 +306,7 @@
       }
     } catch (e) {}
 
-    var destino = siguiente || ((r.empresa || r.codigo === USUARIO_EMPRESA)
+    var destino = siguiente || (esEmpresa(r.codigo || r.empresa)
       ? "mb-empresas.html"      // portal de empresas, con el asesor
       : "mb-particulares.html"); // portal de particulares
 
