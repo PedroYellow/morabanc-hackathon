@@ -437,16 +437,17 @@ input  { font: inherit; color: inherit; }
   transition: transform .18s, background .25s;
 }
 .orb svg { width: 23px; height: 23px; fill: none; stroke: #fff; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
-/* Cuando el navegador aun no ha dado permiso de microfono, el
-   boton pulsa: hay que pulsarlo para que el asesor pueda hablar. */
-.orb.pide-permiso {
+/* En reposo, el boton del micro esta en dorado y respira: es la
+   llamada a la accion ("pulsame y hablamos"). Cuando el asesor esta
+   hablando, el dorado se queda y las ondas se mueven. */
+.orb[data-mode="idle"] {
   background: var(--gold);
-  animation: pidePermiso 1.8s ease-in-out infinite;
+  animation: respirar 2.6s ease-in-out infinite;
 }
-.orb.pide-permiso svg { stroke: var(--navy); }
-@keyframes pidePermiso {
-  0%, 100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(241,198,87,.55); }
-  50%      { transform: scale(1.06); box-shadow: 0 0 0 12px rgba(241,198,87,0); }
+.orb[data-mode="idle"] svg { stroke: var(--navy); }
+@keyframes respirar {
+  0%, 100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(241,198,87,.5); }
+  50%      { transform: scale(1.05); box-shadow: 0 0 0 14px rgba(241,198,87,0); }
 }
 .orb[data-mode="listening"] { background: var(--navy-2); }
 .orb[data-mode="speaking"]  { background: var(--gold); }
@@ -672,10 +673,10 @@ window.__ELEVENLABS_AGENT_ID__ = window.__ELEVENLABS_AGENT_ID__ || "agent_5301m6
         <button>Repíteme el CASS</button>
       </div>
       <div class="en-curso" id="enCurso">
-        <span class="punto"></span> Sesión de voz activa · toca el micro para cortarla
+        <span class="punto"></span> Hablando con el asesor · toca el micro para cortarlo
       </div>
       <div class="medidor" id="medidor">
-        <span id="medidorTexto">Pulsa el micro (el punto dorado) para que el asesor te oiga</span>
+        <span id="medidorTexto">Pulsa el micro y el asesor empieza a hablar contigo</span>
         <span class="barra"><i id="medidorBarra"></i></span>
       </div>
       <div class="fila">
@@ -683,7 +684,7 @@ window.__ELEVENLABS_AGENT_ID__ = window.__ELEVENLABS_AGENT_ID__ || "agent_5301m6
           <svg viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
         </button>
         <textarea id="entrada" rows="1" placeholder="Escribe o habla…"></textarea>
-        <button class="orb" id="orb" data-mode="idle" aria-label="Hablar con el asesor">
+        <button class="orb" id="orb" data-mode="idle" aria-label="Hablar con el asesor (activa el micrófono)" title="Pulsa para hablar con el asesor">
           <svg viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0014 0v-1M12 18v4M8 22h8"/></svg>
           <span class="ondas"><i></i><i></i><i></i><i></i><i></i></span>
         </button>
@@ -1148,6 +1149,13 @@ orb.addEventListener('click', function(){
   arrancarVoz();
 });
 
+// Al volver a la pagina (o al cambiar de pestana), si habia una
+// sesion abierta, se cierra: el microfono no puede quedarse abierto
+// sin que el usuario lo sepa.
+window.addEventListener('beforeunload', function(){
+  try { if (conv) conv.endSession(); } catch (e) {}
+});
+
 // ═══════════════════════════════════════════════════════════
 //  Ciclo de voz continuo (habla -> espera -> habla -> ...)
 // ═══════════════════════════════════════════════════════════
@@ -1233,11 +1241,17 @@ async function iniciarVozReal(){
         medidorTexto.textContent = 'El asesor está escuchando…';
       },
       onModeChange: function(m){
+        // Si la sesion ya se ha parado, el SDK sigue mandando eventos
+        // (el endSession no los cancela). Si se escribieran, el texto
+        // se quedaria en "el asesor esta hablando" con la sesion
+        // cerrada: mentira en la interfaz.
+        if (!conv) return;
         var modo = m && m.mode;
         if (modo === 'speaking') { orb.dataset.mode = 'speaking'; medidorTexto.textContent = 'El asesor está hablando…'; }
         else if (modo === 'listening') { orb.dataset.mode = 'listening'; medidorTexto.textContent = 'Escuchando…'; }
       },
       onMessage: function(m){
+        if (!conv) return;
         var texto = (m && m.message) || '';
         if (!texto) return;
         if (m.source === 'ai') {
@@ -1339,7 +1353,7 @@ function pararVoz(){
   orb.dataset.mode = 'idle';
   medidor.classList.remove('activo');
   document.getElementById('enCurso').classList.remove('visible');
-  medidorTexto.textContent = 'Toca el micro: el asesor te oirá y te responderá';
+  medidorTexto.textContent = 'Pulsa el micro y el asesor empieza a hablar contigo';
   medidorBarra.style.width = '0%';
 }
 
@@ -1992,43 +2006,16 @@ function engancharPestanas(){
 /* ═══════════════════════════════════════════════════════════
    Arranque
    ═══════════════════════════════════════════════════════════ */
-// El asesor habla solo al abrir, como en uBotPay. El microfono lo
-// pide el navegador con su propio permiso: por eso se pide con un
-// boton, pero se avisa antes de que empiece.
+// El asesor NO habla solo al abrir: habla cuando le pulsan el micro.
 //
-// El saludo del agente lo pone el agente (o el motor), no el HTML:
-// si el mensaje esta escrito en la pagina parece un chat de mentira
-// y no se ve quien esta hablando.
-function arrancarVozAlAbrir(){
-  var btn = document.getElementById('btnMicro');
-  if (btn) btn.classList.add('pide-permiso');
+// Es lo que hace un asesor de verdad (no te empieza a hablar sin que
+// se lo pidas) y ademas evita el susto de abrir la pagina con el
+// microfono ya encendido. El boton del micro es el que pide el
+// permiso del navegador.
+//
+// El texto de debajo del campo de texto avisa de que al pulsarlo el
+// asesor va a hablar, para que no haya sorpresa.
 
-  // El navegador solo deja usar el microfono si el usuario lo
-  // permite. Se intenta al abrir (funciona si ya estaba permitido) y
-  // si no, el boton queda marcado para que se pulse.
-  if (!agentId) { vozSimulada(); return; }
-  try {
-    // El permiso ya estaba concedido: se arranca ya.
-    if (navigator.permissions && navigator.permissions.query) {
-      navigator.permissions.query({name: 'microphone'}).then(function(st){
-        if (st.state === 'granted') iniciarVozReal();
-        else marcarBotonMicro();
-      }).catch(marcarBotonMicro);
-    } else {
-      marcarBotonMicro();
-    }
-  } catch (e) { marcarBotonMicro(); }
-}
-
-function marcarBotonMicro(){
-  var btn = document.getElementById('btnMicro');
-  if (btn) btn.classList.add('pide-permiso');
-  var t = document.getElementById('enCurso');
-  if (t) {
-    t.textContent = 'Toca el micro para que el asesor te oiga';
-    t.classList.add('visible');
-  }
-}
 
 // El arranque espera a que el DOM este completo y a que los datos
 // del motor esten cargados: antes se leia el bloque JSON al empezar
@@ -2048,8 +2035,6 @@ function arrancarTodo(){
   pintarTarjetaDelChat(MOTOR[perfilActual]);
   thread.scrollTop = thread.scrollHeight;
 
-  // El asesor habla solo al abrir, como en uBotPay.
-  arrancarVozAlAbrir();
 }
 
 // Se arranca cuando el DOM esta listo. Si el bloque de datos
