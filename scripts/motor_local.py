@@ -28,6 +28,7 @@ LLM. Los numeros salen del motor, igual que en AWS.
 from __future__ import annotations
 
 import json
+import re
 import os
 import sys
 from decimal import Decimal
@@ -384,6 +385,79 @@ def _traducir(out: dict, idioma: str) -> dict:
     return out
 
 
+#: Donde estan los CSV de prueba, uno por perfil.
+RUTA_CSVS: dict[str, str] = {
+    "freelance": "demo_ceramica.csv",
+    "comercio": "demo_ceramica.csv",
+    "crecimiento": "demo_ceramica.csv",
+    "contratar": "demo_empleado.csv",
+    "empleado": "demo_empleado.csv",
+    "cierre": "demo_empleado.csv",
+}
+
+
+def _leer_extracto_demo(perfil: str) -> list[dict]:
+    """
+    Lee el CSV de prueba del perfil y devuelve sus movimientos, del
+    mas reciente al mas antiguo.
+
+    El formato del CSV es el mismo que el que sube el cliente: fecha,
+    concepto, importe y categoria.
+    """
+    import csv
+    from pathlib import Path
+
+    nombre = RUTA_CSVS.get(perfil, "demo_ceramica.csv")
+
+    # El CSV esta en el directorio de datos del front, que en el VPS
+    # esta en /var/www/welcomeandorra/data.
+    candidatas = [
+        Path(__file__).resolve().parent.parent / "frontend" / "data" / nombre,
+        Path("/var/www/welcomeandorra/data") / nombre,
+        Path(__file__).resolve().parent / nombre,
+    ]
+    csv_path = next((p for p in candidatas if p.exists()), None)
+    if csv_path is None:
+        raise FileNotFoundError(f"No encuentro el CSV {nombre}")
+
+    movimientos: list[dict] = []
+    with csv_path.open(encoding="utf-8-sig", newline="") as fh:
+        # El extracto del banco viene en formato español: separador
+        # ";", fechas DD/MM/AAAA e importes con coma decimal.
+        lector = csv.DictReader(fh, delimiter=";")
+        for fila in lector:
+            crudos = {k.lower().strip(): (v or "").strip() for k, v in fila.items() if k}
+            fecha = crudos.get("fecha", "")
+            concepto = crudos.get("concepto") or crudos.get("descripcion") or ""
+            cat = crudos.get("categoria") or ""
+
+            bruto = (crudos.get("importe") or crudos.get("cantidad") or "0").strip()
+            # "1.234,56" o "-950,00": se quitan los puntos de miles y
+            # la coma pasa a punto.
+            try:
+                importe = round(float(bruto.replace(".", "").replace(",", ".")), 2)
+            except ValueError:
+                continue
+
+            # La fecha se pasa a ISO, para poder ordenarla.
+            fecha_iso = fecha
+            m = re.match(r"^(\d{2})/(\d{2})/(\d{4})$", fecha)
+            if m:
+                fecha_iso = f"{m.group(3)}-{m.group(2)}-{m.group(1)}"
+
+            movimientos.append({
+                "fecha": fecha_iso,
+                "fecha_original": fecha,
+                "concepto": concepto,
+                "categoria": cat,
+                "importe": importe,
+            })
+
+    # Del mas reciente al mas antiguo.
+    movimientos.sort(key=lambda m: m["fecha"], reverse=True)
+    return movimientos
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "MoraBancMotor/1.0"
 
@@ -399,10 +473,62 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(crudo)
 
     def do_GET(self):
-        if self.path.rstrip("/") in ("/salud", "/health"):
+        ruta = self.path.split("?")[0].rstrip("/")
+        if ruta in ("/salud", "/health"):
             self._json(200, {"ok": True, "servicio": "motor-morabanc"})
-        else:
-            self._json(404, {"error": "no encontrado"})
+            return
+        if ruta == "/extracto":
+            self._servir_extracto()
+            return
+        self._json(404, {"error": "no encontrado"})
+
+    def _servir_extracto(self):
+        """
+        Los movimientos del extracto del cliente, para pintar la vista
+        "Extracto" de la app.
+
+        En produccion, estos movimientos vienen de la cuenta del
+        cliente (OpenSearch / DynamoDB / el core del banco). En el
+        hackathon, del CSV de prueba que hay junto al motor.
+
+        Los movimientos se paginan: el extracto de un año puede tener
+        cientos de lineas y no tiene sentido mandarlas todas de golpe.
+        """
+        from urllib.parse import urlparse, parse_qs
+
+        q = parse_qs(urlparse(self.path).query)
+        perfil = (q.get("perfil") or ["freelance"])[0]
+        pagina = int((q.get("pagina") or ["1"])[0])
+        por_pagina = min(int((q.get("por_pagina") or ["50"])[0]), 200)
+
+        try:
+            movimientos = _leer_extracto_demo(perfil)
+        except Exception as e:  # noqa: BLE001
+            self._json(500, {"error": f"No se pudo leer el extracto: {e}"})
+            return
+
+        total = len(movimientos)
+        inicio = (pagina - 1) * por_pagina
+        trozo = movimientos[inicio:inicio + por_pagina]
+
+        ingresos = sum(m["importe"] for m in movimientos if m["importe"] > 0)
+        gastos = -sum(m["importe"] for m in movimientos if m["importe"] < 0)
+
+        self._json(200, {
+            "perfil": perfil,
+            "total": total,
+            "pagina": pagina,
+            "por_pagina": por_pagina,
+            "hay_mas": inicio + por_pagina < total,
+            "ingresos": round(ingresos, 2),
+            "gastos": round(gastos, 2),
+            "resultado": round(ingresos - gastos, 2),
+            "periodo": {
+                "desde": movimientos[-1]["fecha"] if movimientos else None,
+                "hasta": movimientos[0]["fecha"] if movimientos else None,
+            },
+            "movimientos": trozo,
+        })
 
     def do_POST(self):
         if self.path.rstrip("/") != "/preguntar":

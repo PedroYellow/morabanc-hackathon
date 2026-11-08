@@ -554,6 +554,32 @@ input  { font: inherit; color: inherit; }
 .en-curso .punto { width: 6px; height: 6px; border-radius: 50%; background: var(--danger); animation: latido-dot 1.4s infinite; }
 
 
+/* ---------- La tabla de movimientos del extracto ---------- */
+.ext-tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ext-tabla thead th {
+  text-align: left; font-size: 10.5px; font-weight: 600;
+  letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-3); padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; background: var(--white); z-index: 1;
+}
+.ext-tabla td {
+  padding: 9px 12px; border-bottom: 1px solid var(--line);
+  color: var(--ink-2); vertical-align: middle;
+}
+.ext-tabla td.cuenta { color: var(--ink); font-weight: 500; }
+.ext-tabla td.fecha { white-space: nowrap; color: var(--ink-3); font-size: 12.5px; }
+.ext-tabla td.importe { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ext-tabla tr:last-child td { border-bottom: 0; }
+.ext-mas {
+  display: block; width: 100%; margin-top: 10px;
+  padding: 9px; border-radius: var(--r-pill);
+  border: 1px solid var(--line); background: var(--white);
+  font: inherit; font-size: 12.5px; font-weight: 500; color: var(--ink-2);
+  cursor: pointer;
+}
+.ext-mas:hover { border-color: var(--ink-3); color: var(--ink); }
+
 /* ---------- Los datos del perfil, editables ---------- */
 .fila-dato.editable {
   width: 100%; border: 0; background: transparent;
@@ -898,7 +924,8 @@ window.__ELEVENLABS_AGENT_ID__ = window.__ELEVENLABS_AGENT_ID__ || "agent_5301m6
         <div class="fila-dato"><span class="l">Gastos</span><span class="v" id="extGastos" style="color:var(--danger)">—</span></div>
         <div class="fila-dato"><span class="l">Resultado</span><span class="v" id="extResultado">—</span></div>
       </div>
-      <div class="vacio">
+      <div id="extMovimientos"></div>
+      <div class="vacio" id="extVacio" hidden>
         <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>
         Aquí aparecerán los movimientos de tu extracto cuando subas el CSV
       </div>
@@ -1751,6 +1778,9 @@ function pintarPerfiles(){
 
 function cambiarPerfil(clave){
   perfilActual = clave;
+  // El extracto vuelve a la primera pagina: es otro cliente, con
+  // otros movimientos.
+  extractPagina = 1;
   pintarPerfiles();
   var d = MOTOR[clave];
   var chip = '<span class="chip"><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg> ';
@@ -2247,6 +2277,94 @@ if (typeof ResizeObserver !== 'undefined') {
 }
 
 
+// ── La vista Extracto: los movimientos del cliente ───────────────
+//
+// Los movimientos no vienen en el JSON del perfil (solo viene el
+// numero y los totales). Vienen del motor, que los lee del extracto
+// del cliente: en produccion, de la cuenta; en el hackathon, del CSV
+// de prueba. Se piden paginados, porque un extracto de un ano puede
+// tener cientos de lineas.
+
+var extractPagina = 1;
+
+async function pintarExtracto(){
+  var d = MOTOR[perfilActual];
+  if (!d) return;
+
+  var sub = document.getElementById('extSubtitulo');
+  var cont = document.getElementById('extMovimientos');
+  var vacio = document.getElementById('extVacio');
+  if (!cont) return;
+
+  // Los totales y el periodo, del perfil (ya estan calculados).
+  if (sub) {
+    sub.textContent = (d.n_movimientos || 0) + ' movimientos · ' +
+      (d.periodo || 'el ultimo ano');
+  }
+
+  try {
+    var r = await fetch((window.__API_URL__ || '/api') + '/extracto?perfil=' +
+      encodeURIComponent(perfilActual) + '&pagina=' + extractPagina +
+      '&por_pagina=50');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var e = await r.json();
+
+    if (sub) {
+      sub.textContent = e.total + ' movimientos · ' +
+        (e.periodo && e.periodo.desde ? e.periodo.desde + ' a ' + e.periodo.hasta : 'el ultimo ano');
+    }
+    var elIng = document.getElementById('extIngresos');
+    var elGas = document.getElementById('extGastos');
+    var elRes = document.getElementById('extResultado');
+    if (elIng) elIng.textContent = eur(e.ingresos, 0);
+    if (elGas) elGas.textContent = '-' + eur(Math.abs(e.gastos), 0);
+    if (elRes) elRes.textContent = (e.resultado >= 0 ? '+ ' : '- ') + eur(Math.abs(e.resultado), 0);
+
+    if (!e.movimientos || !e.movimientos.length) {
+      cont.innerHTML = '';
+      if (vacio) vacio.hidden = false;
+      return;
+    }
+    if (vacio) vacio.hidden = true;
+
+    var filas = e.movimientos.map(function (m) {
+      var signo = m.importe >= 0 ? '+' : '-';
+      var color = m.importe >= 0 ? 'var(--green)' : 'var(--ink)';
+      return '<tr>' +
+        '<td class="fecha">' + escapar(m.fecha_original || m.fecha) + '</td>' +
+        '<td class="cuenta">' + escapar(m.concepto) + '</td>' +
+        '<td class="importe" style="color:' + color + '">' + signo +
+          eur(Math.abs(m.importe), 2) + '</td>' +
+        '</tr>';
+    }).join('');
+
+    var html = '<table class="ext-tabla"><thead><tr>' +
+      '<th>Fecha</th><th>Concepto</th><th style="text-align:right">Importe</th>' +
+      '</tr></thead><tbody>' + filas + '</tbody></table>';
+
+    if (e.hay_mas) {
+      html += '<button class="ext-mas" id="btnMasMovimientos">Ver mas movimientos</button>';
+    }
+    cont.innerHTML = html;
+
+    var btnMas = document.getElementById('btnMasMovimientos');
+    if (btnMas) {
+      btnMas.addEventListener('click', function(){
+        extractPagina += 1;
+        pintarExtracto();
+        var v = document.getElementById('vistaExtracto');
+        if (v) v.scrollTop = v.scrollHeight;
+      });
+    }
+  } catch (err) {
+    // Sin motor (o sin extractos): se avisa, no se rompe.
+    cont.innerHTML = '';
+    if (vacio) vacio.hidden = false;
+    if (sub) sub.textContent = 'No se pudo cargar el extracto (' + (err.message || err) + ')';
+  }
+}
+
+
 // ── Editar los datos del perfil ─────────────────────────────────
 //
 // Los datos del perfil (renta, margen, saldo, actividad) se
@@ -2533,6 +2651,8 @@ function esEscritorio(){
 }
 
 function mostrarVista(nombre){
+  // La vista Extracto pide los movimientos al motor.
+  if (nombre === 'vistaExtracto') pintarExtracto();
   var escritorio = esEscritorio();
 
   document.querySelectorAll('.vista').forEach(function(v){
