@@ -59,6 +59,8 @@
 
 html, body {
   margin: 0; padding: 0; height: 100%;
+  /* La pagina NO hace scroll: el scroll es de cada vista. */
+  overflow: hidden;
   background: var(--bg);
   color: var(--ink);
   font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -78,7 +80,73 @@ input  { font: inherit; color: inherit; }
 }
 @media (min-width: 700px) {
   body { background: #e9edf1; }
-  .app { box-shadow: 0 0 60px rgba(25,28,31,.10); }
+  .app {
+    box-shadow: 0 0 60px rgba(25,28,31,.10);
+    /* En escritorio la app se ensancha y se reparte en dos columnas:
+       el chat del asesor a la izquierda (es lo que se ve siempre) y
+       la vista que elijas a la derecha. Sin scroll global: cada
+       zona scrolla por su cuenta.
+
+       Se hace con position:absolute en vez de con una rejilla porque
+       el HTML tiene el chat, las tres vistas de datos, el composer y
+       la barra de pestanas como hermanos, y la rejilla descuadraba
+       los cierres de las secciones. */
+    max-width: 1240px;
+    position: relative;
+  }
+  .app .topbar {
+    position: absolute; top: 0; left: 0; right: 0;
+    z-index: 3;
+  }
+  /* El chat: columna izquierda, desde la cabecera hasta el composer. */
+  .app #vistaAsesor {
+    position: absolute;
+    top: 60px; left: 0; bottom: 0;
+    width: 500px;
+    background: var(--white);
+    border-right: 1px solid var(--line);
+    display: flex; flex-direction: column;
+    min-height: 0;
+  }
+  /* El hilo hace su propio scroll: la conversacion se recorre dentro
+     del hueco, sin empujar la pagina. */
+  .app #vistaAsesor .thread {
+    flex: 1; min-height: 0; overflow-y: auto;
+    /* Hueco para que el composer no tape el final del chat. */
+    padding-bottom: 212px;
+  }
+  /* El composer, abajo de la columna izquierda. */
+  .app .composer {
+    position: absolute;
+    left: 0; bottom: 56px; width: 500px;
+    z-index: 2;
+    background: var(--white);
+    border-right: 1px solid var(--line);
+    border-top: 1px solid var(--line);
+  }
+  /* La barra de pestanas, abajo del todo, a todo ancho. */
+  .app .tabbar {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    z-index: 2;
+    background: var(--white);
+  }
+  /* Las vistas de datos, a la derecha. */
+  .app #vistaResumen,
+  .app #vistaExtracto,
+  .app #vistaPerfil {
+    position: absolute;
+    top: 60px; left: 500px; right: 0; bottom: 56px;
+    background: var(--bg);
+    overflow-y: auto;
+  }
+  .app #vistaResumen:not(.activa),
+  .app #vistaExtracto:not(.activa),
+  .app #vistaPerfil:not(.activa) { display: none; }
+  /* En la columna derecha se centran con un ancho legible. */
+  .app #vistaResumen .resumen,
+  .app #vistaExtracto .resumen,
+  .app #vistaPerfil .resumen { max-width: 760px; width: 100%; margin: 0 auto; }
 }
 
 /* ---------- Cabecera ---------- */
@@ -498,98 +566,78 @@ window.__ELEVENLABS_AGENT_ID__ = window.__ELEVENLABS_AGENT_ID__ || "agent_5301m6
       <div class="contexto" id="chipsPerfil"></div>
 
       <!-- Tarjeta de resultado DENTRO del chat -->
-      <div class="msg asesor" style="max-width:100%">
-        <div class="burbuja" style="margin-bottom:8px">
-          Listo, ya tengo lo que necesito. Aquí va:
-        </div>
+          <div class="msg asesor" style="max-width:100%">
+            <div class="burbuja" style="margin-bottom:8px">
+              Listo, ya tengo lo que necesito. Aquí va:
+            </div>
 
-        <div class="resultado">
-          <div class="cabeza">
-            <span class="punto"></span>
-            <h4 id="chat-cassTitulo">Tu CASS de 2026</h4>
-          </div>
-
-          <div class="cifra-grande">
-            <div class="num" id="chat-cassAnual">—</div>
-            <div class="et" id="chat-cassTramo">—</div>
-            <div class="delta">
-              <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-              <span id="chat-cassMensual">—</span> al mes
-            </div>
-          </div>
-
-          <div class="kpis">
-            <div class="kpi">
-              <div class="n" id="chat-kpiCassMensual">—</div>
-              <div class="l">CASS mensual</div>
-            </div>
-            <div class="kpi">
-              <div class="n verde" id="chat-kpiRecuperableGrande">—</div>
-              <div class="l">recuperable al mes</div>
-            </div>
-            <div class="kpi">
-              <div class="n rojo" id="chat-kpiPeorMes">—</div>
-              <div class="l">peor mes de caja</div>
-            </div>
-            <div class="kpi">
-              <div class="n" id="chat-kpiColchon">—</div>
-              <div class="l">colchón de caja</div>
-            </div>
-          </div>
-            </div>
-          </div>
-
-          <!-- Donut -->
-          <div class="gfx">
-            <div class="titulo">Reparto de tus ingresos <span>12 meses</span></div>
-            <div class="donut-wrap">
-              <svg class="donut" id="chat-donutSvg" viewBox="0 0 42 42">
-                <circle cx="21" cy="21" r="15.915" fill="none" stroke="#e6e9ec" stroke-width="6"/>
-                <circle cx="21" cy="21" r="15.915" fill="none" stroke="#00a87e" stroke-width="6"
-                        stroke-dasharray="52 48" stroke-dashoffset="25"/>
-                <circle cx="21" cy="21" r="15.915" fill="none" stroke="#494fdf" stroke-width="6"
-                        stroke-dasharray="26 74" stroke-dashoffset="-27"/>
-                <circle cx="21" cy="21" r="15.915" fill="none" stroke="#ec7e00" stroke-width="6"
-                        stroke-dasharray="14 86" stroke-dashoffset="-53"/>
-                <circle cx="21" cy="21" r="15.915" fill="none" stroke="#e23b4a" stroke-width="6"
-                        stroke-dasharray="8 92" stroke-dashoffset="-67"/>
-              </svg>
-              <div class="leyenda" id="chat-donutLeyenda">
-                <div><i style="background:#00a87e"></i><span>Servicios</span><b>52 %</b></div>
-                <div><i style="background:#494fdf"></i><span>Subcontratas</span><b>26 %</b></div>
-                <div><i style="background:#ec7e00"></i><span>Material</span><b>14 %</b></div>
-                <div><i style="background:#e23b4a"></i><span>Otros</span><b>8 %</b></div>
+            <div class="resultado">
+              <div class="cabeza">
+                <span class="punto"></span>
+                <h4 id="chat-cassTitulo">Tu CASS de 2026</h4>
               </div>
+
+              <div class="cifra-grande">
+                <div class="num" id="chat-cassAnual">—</div>
+                <div class="et" id="chat-cassTramo">—</div>
+                <div class="delta">
+                  <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                  <span id="chat-cassMensual">—</span> al mes
+                </div>
+              </div>
+
+              <div class="kpis">
+                <div class="kpi">
+                  <div class="n" id="chat-kpiCassMensual">—</div>
+                  <div class="l">CASS mensual</div>
+                </div>
+                <div class="kpi">
+                  <div class="n verde" id="chat-kpiRecuperableGrande">—</div>
+                  <div class="l">recuperable al mes</div>
+                </div>
+                <div class="kpi">
+                  <div class="n rojo" id="chat-kpiPeorMes">—</div>
+                  <div class="l">peor mes de caja</div>
+                </div>
+                <div class="kpi">
+                  <div class="n" id="chat-kpiColchon">—</div>
+                  <div class="l">colchón de caja</div>
+                </div>
+              </div>
+
+              <!-- Donut: lo pinta pintarTarjetaDelChat con las
+                   categorias reales del motor. -->
+              <div class="gfx">
+                <div class="titulo">Reparto de tus ingresos <span>12 meses</span></div>
+                <div class="donut-wrap">
+                  <svg class="donut" id="chat-donutSvg" viewBox="0 0 42 42"></svg>
+                  <div class="leyenda" id="chat-donutLeyenda"></div>
+                </div>
+              </div>
+
+              <!-- Curva de caja: la dibuja pintarTarjetaDelChat con
+                   los saldos proyectados por el motor. -->
+              <div class="gfx">
+                <div class="titulo">Tu caja mes a mes <span>enero → diciembre</span></div>
+                <svg class="spark" id="chat-curvaSvg" viewBox="0 0 320 92" preserveAspectRatio="none">
+                  <defs>
+                    <linearGradient id="chat-g" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stop-color="#00a87e" stop-opacity=".22"/>
+                      <stop offset="100%" stop-color="#00a87e" stop-opacity="0"/>
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-3);margin-top:5px">
+                  <span>ene</span><span>abr</span><span>jul</span><span>oct</span><span>dic</span>
+                </div>
+              </div>
+
+              <!-- Hallazgos: los del motor (fugas, caja, umbral). -->
+              <div class="hallazgos" id="hallazgosPerfil"></div>
             </div>
           </div>
-
-          <!-- Curva de caja -->
-          <div class="gfx">
-            <div class="titulo">Tu caja mes a mes <span>enero → diciembre</span></div>
-            <svg class="spark" id="chat-curvaSvg" viewBox="0 0 320 92" preserveAspectRatio="none">
-              <defs>
-                <linearGradient id="chat-g" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="#00a87e" stop-opacity=".22"/>
-                  <stop offset="100%" stop-color="#00a87e" stop-opacity="0"/>
-                </linearGradient>
-              </defs>
-              <!-- La curva la dibuja pintarResumen con los saldos
-                   proyectados del motor (no es un dibujo fijo: cambia
-                   con el perfil). La linea roja marca el saldo 0. -->
-            </svg>
-            <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-3);margin-top:5px">
-              <span>ene</span><span>abr</span><span>jul</span><span>oct</span><span>dic</span>
-            </div>
-          </div>
-
-          <!-- Hallazgos -->
-          <div class="hallazgos" id="hallazgosPerfil"></div>
         </div>
-      </div>
-        </div>
-      </div>
-
-    </div>
+      </section>
 
     <!-- Entrada -->
     <div class="composer">
@@ -647,19 +695,8 @@ window.__ELEVENLABS_AGENT_ID__ = window.__ELEVENLABS_AGENT_ID__ || "agent_5301m6
         <div class="pt">Reparto de ingresos</div>
         <div class="cuerpo">
           <div class="donut-wrap">
-            <svg class="donut" id="donutSvg2" viewBox="0 0 42 42">
-              <circle cx="21" cy="21" r="15.915" fill="none" stroke="#e6e9ec" stroke-width="6"/>
-              <circle cx="21" cy="21" r="15.915" fill="none" stroke="#00a87e" stroke-width="6" stroke-dasharray="52 48" stroke-dashoffset="25"/>
-              <circle cx="21" cy="21" r="15.915" fill="none" stroke="#494fdf" stroke-width="6" stroke-dasharray="26 74" stroke-dashoffset="-27"/>
-              <circle cx="21" cy="21" r="15.915" fill="none" stroke="#ec7e00" stroke-width="6" stroke-dasharray="14 86" stroke-dashoffset="-53"/>
-              <circle cx="21" cy="21" r="15.915" fill="none" stroke="#e23b4a" stroke-width="6" stroke-dasharray="8 92" stroke-dashoffset="-67"/>
-            </svg>
-            <div class="leyenda" id="donutLeyenda2">
-              <div><i style="background:#00a87e"></i><span>Servicios</span><b>52 %</b></div>
-              <div><i style="background:#494fdf"></i><span>Subcontratas</span><b>26 %</b></div>
-              <div><i style="background:#ec7e00"></i><span>Material</span><b>14 %</b></div>
-              <div><i style="background:#e23b4a"></i><span>Otros</span><b>8 %</b></div>
-            </div>
+            <svg class="donut" id="donutSvg2" viewBox="0 0 42 42"></svg>
+            <div class="leyenda" id="donutLeyenda2"></div>
           </div>
         </div>
       </div>
@@ -707,7 +744,6 @@ window.__ELEVENLABS_AGENT_ID__ = window.__ELEVENLABS_AGENT_ID__ || "agent_5301m6
             <span>ene</span><span>abr</span><span>jul</span><span>oct</span><span>dic</span>
           </div>
         </div>
-      </div>
     </div>
   </section>
 
@@ -781,8 +817,10 @@ window.__ELEVENLABS_AGENT_ID__ = window.__ELEVENLABS_AGENT_ID__ || "agent_5301m6
       <span>Perfil</span>
     </button>
   </nav>
-
 </div>
+
+
+
 
 <script id="datos-motor" type="application/json">{"freelance": {"etiqueta": "Freelance de servicios", "saldo": 8500.0, "renta": 30000.0, "margen": 0.7, "actividad": "Freelance de servicios", "n_movimientos": 219, "periodo": {"desde": "2025-10-03", "hasta": "2026-09-27", "meses": 12, "n_movimientos": 219}, "tesoreria": {"ingresos_totales": 50733.0, "gastos_totales": 27967.31, "flujo_neto": 22765.69, "ingresos_mes": 4227.75, "gastos_mes": 2330.61, "por_categoria": {"impuestos": 8100.0, "seguridad_social": 7055.4, "alquiler": 5400.0, "suministros": 2420.8, "transporte": 2203.19, "material": 992.0, "herramientas": 719.88, "sin_categorizar": 527.64, "seguros": 510.0, "banca": 38.4}}, "fugas": {"n_fugas": 5, "recuperable_mensual": 127.96, "recuperable_anual": 1535.52, "por_tipo": {"deriva_gasto": 288.0, "suscripcion": 1247.52}, "fugas": [{"tipo": "suscripcion", "descripcion": "Cobro recurrente de 59,99 € (suscripcion adobe creative cloud). Se repite 12 veces en 12 meses.", "importe_mensual": 59.99, "importe_anual": 719.88, "movimientos_involucrados": [{"fecha": "2025-10-07", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2025-11-12", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2025-12-08", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-01-03", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-02-12", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-03-07", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-04-08", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-05-07", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-06-12", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-07-11", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-08-04", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-09-10", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}], "accion_sugerida": "Revisa si sigues usando 'suscripcion adobe creative cloud'. Cancelarlo libera 59,99 €/mes (719,88 €/año).", "confianza": 0.8}, {"tipo": "deriva_gasto", "descripcion": "El gasto en 'material' ha subido un 94% en 3 meses (51,00 € -> 99,00 €).", "importe_mensual": 24.0, "importe_anual": 288.0, "movimientos_involucrados": [], "accion_sugerida": "Revisa el gasto en 'material': ha crecido 24,00 €/mes de media. Si lo estabilizas, recuperas 288,00 €/año.", "confianza": 0.6}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 19,99 € (dropbox profesional). Se repite 12 veces en 12 meses.", "importe_mensual": 19.99, "importe_anual": 239.88, "movimientos_involucrados": [{"fecha": "2025-10-06", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2025-11-11", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2025-12-10", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-01-08", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-02-09", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-03-08", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-04-08", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-05-08", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-06-07", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-07-05", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-08-06", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-09-10", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}], "accion_sugerida": "Revisa si sigues usando 'dropbox profesional'. Cancelarlo libera 19,99 €/mes (239,88 €/año).", "confianza": 0.8}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 12,99 € (netflix.com). Se repite 12 veces en 12 meses.", "importe_mensual": 12.99, "importe_anual": 155.88, "movimientos_involucrados": [{"fecha": "2025-10-04", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2025-11-05", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2025-12-08", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-01-12", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-02-12", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-03-11", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-04-05", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-05-09", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-06-11", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-07-10", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-08-11", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-09-07", "concepto": "NETFLIX.COM", "importe": -12.99}], "accion_sugerida": "Revisa si sigues usando 'netflix.com'. Cancelarlo libera 12,99 €/mes (155,88 €/año).", "confianza": 0.8}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 10,99 € (spotify premium). Se repite 12 veces en 12 meses.", "importe_mensual": 10.99, "importe_anual": 131.88, "movimientos_involucrados": [{"fecha": "2025-10-05", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2025-11-05", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2025-12-12", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-01-07", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-02-03", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-03-06", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-04-04", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-05-07", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-06-12", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-07-08", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-08-12", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-09-06", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}], "accion_sugerida": "Revisa si sigues usando 'spotify premium'. Cancelarlo libera 10,99 €/mes (131,88 €/año).", "confianza": 0.8}], "mensaje": "Hemos encontrado 5 fugas. Recuperando lo que no uses: 127.96 €/mes (1535.52 €/año)."}, "proyeccion": {"meses": [{"mes": 1, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 10397.14}, {"mes": 2, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 12294.28}, {"mes": 3, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 14191.42}, {"mes": 4, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 16088.56}, {"mes": 5, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 17985.7}, {"mes": 6, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 19882.84}, {"mes": 7, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 21779.98}, {"mes": 8, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 23677.12}, {"mes": 9, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 25574.26}, {"mes": 10, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 27471.4}, {"mes": 11, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 29368.54}, {"mes": 12, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 31265.68}], "mes_quiebre": null, "deuda_en_quiebre": 0.0, "deuda_al_final": 0.0, "ultimo_saldo_positivo": 31265.68, "mes_ultimo_positivo": 12, "resumen": "La caja no se agota en 12 meses. "}, "cass": {"tramo": "100%", "base_cotizacion": 2672.52, "cuota_mensual": 587.95, "rama_general": 267.25, "rama_jubilacion": 320.7, "cuota_anual": 7055.4, "condicion": "Cas general. Tramos inferiors al 100% son opcionals."}, "irpf": {"base_tributable": 6000.0, "cuota_total": 300.0, "bonificacion": 300.0, "tipo_efectivo": 1.0}, "igi": {"cuota": 1350.0, "tipo": 0.045}, "crossover": {"existe": true, "tipo": "Bonificacion IRPF art. 46 toca su techo de 800 €", "renta_punto": 40000.0, "detalle": "Con 30.000,00 € de renta neta el IRPF efectivo es 1.00% (bonificación art. 46 todavia sin tope). Matiz importante: el \"5%\" que se publica es una simplificacion — el tipo real sube del 0% al 2% de forma progresiva entre 24.000 € y 40.000 €, y la bonificacion del 50% alcanza su tope de 800 € exactamente en 40.000 € de base. A partir de ahi la bonificacion se congela, el IRPF acelera y la CASS pasa del 100% al 125%. A 40.000 € la cuota de IRPF pasa de 300,00 € a 800,00 €.", "delta_anual": 0.0, "cuota_cass_ano_siguiente": null, "delta_cass_ano_siguiente": null}, "simular_contratacion": {"coste_nuevo_empleado_anual": 28800.0, "margen_bruto": 70.0, "facturacion_adicional_para_cubrirlo": 42994.29, "igi_adicional": 1851.43, "crossover": {"existe": true, "tipo": "Bonificacion IRPF art. 46 toca su techo de 800 €", "renta_punto": 40000.0, "detalle": "Con 30.000,00 € de renta neta el IRPF efectivo es 1.00% (bonificación art. 46 todavia sin tope). Matiz importante: el \"5%\" que se publica es una simplificacion — el tipo real sube del 0% al 2% de forma progresiva entre 24.000 € y 40.000 €, y la bonificacion del 50% alcanza su tope de 800 € exactamente en 40.000 € de base. A partir de ahi la bonificacion se congela, el IRPF acelera y la CASS pasa del 100% al 125%. A 40.000 € la cuota de IRPF pasa de 300,00 € a 800,00 €.", "delta_anual": 0.0, "cuota_cass_ano_siguiente": null, "delta_cass_ano_siguiente": null}, "comparativa": {"delta_neto_anual": 0.0, "delta_cass_anual": 0.0, "delta_irpf_anual": 0.0, "detalle": {"a": {"renta_neta": 30000.0, "tramo_cass": "100%", "cass_anual": 7055.4, "irpf": 300.0, "neto_tras_fiscalidad": 22644.6}, "b": {"renta_neta": 30000.0, "tramo_cass": "100%", "cass_anual": 7055.4, "irpf": 300.0, "neto_tras_fiscalidad": 22644.6}, "cambios_b": {"coste_nuevo_empleado_anual": 28800.0, "facturacion_adicional_requerida": 42994.29, "igi_adicional": 1851.43}}}, "veredicto": "Contratar cuesta 28800.00 €/año. Necesitas facturar 42994.29 € adicionales para cubrirlo con margen e IGI incluidos."}, "punto_optimo": {"renta_actual": 30000.0, "margen_bruto": 70.0, "mejor_punto": {"renta_neta": 39924.0, "carga_total_anual": 7851.6, "efectivo_sobre_facturacion": 28.09}, "nota": "El coste marginal de facturar mas incluye un salto de tramo CASS, por lo que la relacion coste/beneficio puede empeorar justo despues de un umbral. Este es el insight que un ERP de contabilidad no da."}, "cierre": null}, "contratar": {"etiqueta": "Freelancer de servicios", "saldo": 3200.0, "renta": 28000.0, "margen": 0.7, "actividad": "Freelancer de servicios", "n_movimientos": 236, "periodo": {"desde": "2025-10-03", "hasta": "2026-09-28", "meses": 12, "n_movimientos": 236}, "tesoreria": {"ingresos_totales": 50364.0, "gastos_totales": 53824.32, "flujo_neto": -3460.32, "ingresos_mes": 4197.0, "gastos_mes": 4485.36, "por_categoria": {"nomina": 25200.0, "impuestos": 8100.0, "seguridad_social": 7055.4, "alquiler": 5400.0, "transporte": 2811.2, "suministros": 2450.8, "material": 1011.0, "herramientas": 719.88, "sin_categorizar": 527.64, "seguros": 510.0, "banca": 38.4}}, "fugas": {"n_fugas": 5, "recuperable_mensual": 208.2, "recuperable_anual": 2498.4, "por_tipo": {"deriva_gasto": 1250.88, "suscripcion": 1247.52}, "fugas": [{"tipo": "deriva_gasto", "descripcion": "El gasto en 'transporte' ha subido un 144% en 3 meses (144,78 € -> 353,25 €).", "importe_mensual": 104.24, "importe_anual": 1250.88, "movimientos_involucrados": [], "accion_sugerida": "Revisa el gasto en 'transporte': ha crecido 104,24 €/mes de media. Si lo estabilizas, recuperas 1.250,88 €/año.", "confianza": 0.6}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 59,99 € (suscripcion adobe creative cloud). Se repite 12 veces en 12 meses.", "importe_mensual": 59.99, "importe_anual": 719.88, "movimientos_involucrados": [{"fecha": "2025-10-08", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2025-11-04", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2025-12-10", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-01-10", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-02-11", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-03-06", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-04-05", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-05-05", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-06-05", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-07-07", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-08-06", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-09-10", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}], "accion_sugerida": "Revisa si sigues usando 'suscripcion adobe creative cloud'. Cancelarlo libera 59,99 €/mes (719,88 €/año).", "confianza": 0.8}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 19,99 € (dropbox profesional). Se repite 12 veces en 12 meses.", "importe_mensual": 19.99, "importe_anual": 239.88, "movimientos_involucrados": [{"fecha": "2025-10-10", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2025-11-11", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2025-12-04", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-01-03", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-02-08", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-03-11", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-04-10", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-05-04", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-06-08", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-07-09", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-08-05", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-09-03", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}], "accion_sugerida": "Revisa si sigues usando 'dropbox profesional'. Cancelarlo libera 19,99 €/mes (239,88 €/año).", "confianza": 0.8}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 12,99 € (netflix.com). Se repite 12 veces en 12 meses.", "importe_mensual": 12.99, "importe_anual": 155.88, "movimientos_involucrados": [{"fecha": "2025-10-06", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2025-11-12", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2025-12-12", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-01-10", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-02-04", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-03-04", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-04-04", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-05-07", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-06-08", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-07-12", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-08-04", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-09-05", "concepto": "NETFLIX.COM", "importe": -12.99}], "accion_sugerida": "Revisa si sigues usando 'netflix.com'. Cancelarlo libera 12,99 €/mes (155,88 €/año).", "confianza": 0.8}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 10,99 € (spotify premium). Se repite 12 veces en 12 meses.", "importe_mensual": 10.99, "importe_anual": 131.88, "movimientos_involucrados": [{"fecha": "2025-10-03", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2025-11-12", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2025-12-09", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-01-03", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-02-09", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-03-09", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-04-12", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-05-05", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-06-06", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-07-04", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-08-08", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-09-11", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}], "accion_sugerida": "Revisa si sigues usando 'spotify premium'. Cancelarlo libera 10,99 €/mes (131,88 €/año).", "confianza": 0.8}], "mensaje": "Hemos encontrado 5 fugas. Recuperando lo que no uses: 208.20 €/mes (2498.40 €/año)."}, "proyeccion": {"meses": [{"mes": 1, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": 2911.64}, {"mes": 2, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": 2623.28}, {"mes": 3, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": 2334.92}, {"mes": 4, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": 2046.56}, {"mes": 5, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": 1758.2}, {"mes": 6, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": 1469.84}, {"mes": 7, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": 1181.48}, {"mes": 8, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": 893.12}, {"mes": 9, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": 604.76}, {"mes": 10, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": 316.4}, {"mes": 11, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": 28.04}, {"mes": 12, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": -260.32}], "mes_quiebre": 12, "deuda_en_quiebre": 260.32, "deuda_al_final": 260.32, "ultimo_saldo_positivo": 28.04, "mes_ultimo_positivo": 11, "resumen": "Con el ritmo actual la caja se agota en el mes 12. Tu ultimo saldo positivo es de 28,04 € (mes 11). En el mes del quiebre te faltan 260,32 € para cubrir los pagos."}, "cass": {"tramo": "100%", "base_cotizacion": 2672.52, "cuota_mensual": 587.95, "rama_general": 267.25, "rama_jubilacion": 320.7, "cuota_anual": 7055.4, "condicion": "Cas general. Tramos inferiors al 100% son opcionals."}, "irpf": {"base_tributable": 4000.0, "cuota_total": 200.0, "bonificacion": 200.0, "tipo_efectivo": 0.71}, "igi": {"cuota": 1260.0, "tipo": 0.045}, "crossover": {"existe": true, "tipo": "Bonificacion IRPF art. 46 toca su techo de 800 €", "renta_punto": 40000.0, "detalle": "Con 28.000,00 € de renta neta el IRPF efectivo es 0.71% (bonificación art. 46 todavia sin tope). Matiz importante: el \"5%\" que se publica es una simplificacion — el tipo real sube del 0% al 2% de forma progresiva entre 24.000 € y 40.000 €, y la bonificacion del 50% alcanza su tope de 800 € exactamente en 40.000 € de base. A partir de ahi la bonificacion se congela, el IRPF acelera y la CASS pasa del 100% al 125%. A 40.000 € la cuota de IRPF pasa de 200,00 € a 800,00 €.", "delta_anual": 0.0, "cuota_cass_ano_siguiente": null, "delta_cass_ano_siguiente": null}, "simular_contratacion": {"coste_nuevo_empleado_anual": 28800.0, "margen_bruto": 70.0, "facturacion_adicional_para_cubrirlo": 42994.29, "igi_adicional": 1851.43, "crossover": {"existe": true, "tipo": "Bonificacion IRPF art. 46 toca su techo de 800 €", "renta_punto": 40000.0, "detalle": "Con 28.000,00 € de renta neta el IRPF efectivo es 0.71% (bonificación art. 46 todavia sin tope). Matiz importante: el \"5%\" que se publica es una simplificacion — el tipo real sube del 0% al 2% de forma progresiva entre 24.000 € y 40.000 €, y la bonificacion del 50% alcanza su tope de 800 € exactamente en 40.000 € de base. A partir de ahi la bonificacion se congela, el IRPF acelera y la CASS pasa del 100% al 125%. A 40.000 € la cuota de IRPF pasa de 200,00 € a 800,00 €.", "delta_anual": 0.0, "cuota_cass_ano_siguiente": null, "delta_cass_ano_siguiente": null}, "comparativa": {"delta_neto_anual": 0.0, "delta_cass_anual": 0.0, "delta_irpf_anual": 0.0, "detalle": {"a": {"renta_neta": 28000.0, "tramo_cass": "100%", "cass_anual": 7055.4, "irpf": 200.0, "neto_tras_fiscalidad": 20744.6}, "b": {"renta_neta": 28000.0, "tramo_cass": "100%", "cass_anual": 7055.4, "irpf": 200.0, "neto_tras_fiscalidad": 20744.6}, "cambios_b": {"coste_nuevo_empleado_anual": 28800.0, "facturacion_adicional_requerida": 42994.29, "igi_adicional": 1851.43}}}, "veredicto": "Contratar cuesta 28800.00 €/año. Necesitas facturar 42994.29 € adicionales para cubrirlo con margen e IGI incluidos."}, "punto_optimo": {"renta_actual": 28000.0, "margen_bruto": 70.0, "mejor_punto": {"renta_neta": 39928.0, "carga_total_anual": 7851.8, "efectivo_sobre_facturacion": 28.09}, "nota": "El coste marginal de facturar mas incluye un salto de tramo CASS, por lo que la relacion coste/beneficio puede empeorar justo despues de un umbral. Este es el insight que un ERP de contabilidad no da."}, "cierre": null}, "comercio": {"etiqueta": "Comercio con tienda local", "saldo": 14200.0, "renta": 45000.0, "margen": 0.35, "actividad": "Comercio con tienda local", "n_movimientos": 1995, "periodo": {"desde": "2025-10-01", "hasta": "2026-09-28", "meses": 12, "n_movimientos": 1995}, "tesoreria": {"ingresos_totales": 157007.0, "gastos_totales": 138778.08, "flujo_neto": 18228.92, "ingresos_mes": 13083.92, "gastos_mes": 11564.84, "por_categoria": {"material": 50933.0, "nomina": 25200.0, "impuestos": 22680.0, "alquiler": 22200.0, "seguridad_social": 14279.28, "suministros": 3187.0, "banca": 298.8}}, "fugas": {"n_fugas": 0, "recuperable_mensual": 0.0, "recuperable_anual": 0.0, "mensaje": "No se detectaron fugas claras en el periodo analizado."}, "proyeccion": {"meses": [{"mes": 1, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 15719.08}, {"mes": 2, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 17238.16}, {"mes": 3, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 18757.24}, {"mes": 4, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 20276.32}, {"mes": 5, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 21795.4}, {"mes": 6, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 23314.48}, {"mes": 7, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 24833.56}, {"mes": 8, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 26352.64}, {"mes": 9, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 27871.72}, {"mes": 10, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 29390.8}, {"mes": 11, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 30909.88}, {"mes": 12, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 32428.96}], "mes_quiebre": null, "deuda_en_quiebre": 0.0, "deuda_al_final": 0.0, "ultimo_saldo_positivo": 32428.96, "mes_ultimo_positivo": 12, "resumen": "La caja no se agota en 12 meses. "}, "cass": {"tramo": "125%", "base_cotizacion": 3340.65, "cuota_mensual": 734.94, "rama_general": 334.07, "rama_jubilacion": 400.88, "cuota_anual": 8819.28, "condicion": "Renda neta > 40.000 €, o xifra de negoci > 400.000 € (serveis) / 800.000 € (altres)."}, "irpf": {"base_tributable": 21000.0, "cuota_total": 1300.0, "bonificacion": 800.0, "tipo_efectivo": 2.89}, "igi": {"cuota": 2025.0, "tipo": 0.045}, "crossover": {"existe": true, "tipo": "El tramo CASS sube el año que viene (se declara en enero)", "renta_punto": 40000.0, "detalle": "Cruzar los 40.000 € NO te sube la cuota de CASS de este año: el tramo lo fija el ingreso del AÑO ANTERIOR, que se declara en enero. Con estos ingresos (45.000,00 €), en enero del año que viene declaras este año y la CASS te pasa al tramo 125%: 734,94 €/mes (8.819,28 € al año, +1.763,88 € frente al tramo anterior de 7.055,40 €). Ojo: es el año que viene el que se encarece, no este.", "delta_anual": 1763.88, "cuota_cass_ano_siguiente": 8819.28, "delta_cass_ano_siguiente": 1763.88}, "simular_contratacion": {"coste_nuevo_empleado_anual": 28800.0, "margen_bruto": 35.0, "facturacion_adicional_para_cubrirlo": 85988.57, "igi_adicional": 3702.86, "crossover": {"existe": true, "tipo": "El tramo CASS sube el año que viene (se declara en enero)", "renta_punto": 40000.0, "detalle": "Cruzar los 40.000 € NO te sube la cuota de CASS de este año: el tramo lo fija el ingreso del AÑO ANTERIOR, que se declara en enero. Con estos ingresos (45.000,00 €), en enero del año que viene declaras este año y la CASS te pasa al tramo 125%: 734,94 €/mes (8.819,28 € al año, +1.763,88 € frente al tramo anterior de 7.055,40 €). Ojo: es el año que viene el que se encarece, no este.", "delta_anual": 1763.88, "cuota_cass_ano_siguiente": 8819.28, "delta_cass_ano_siguiente": 1763.88}, "comparativa": {"delta_neto_anual": 0.0, "delta_cass_anual": 0.0, "delta_irpf_anual": 0.0, "detalle": {"a": {"renta_neta": 45000.0, "tramo_cass": "125%", "cass_anual": 8819.28, "irpf": 1300.0, "neto_tras_fiscalidad": 34880.72}, "b": {"renta_neta": 45000.0, "tramo_cass": "125%", "cass_anual": 8819.28, "irpf": 1300.0, "neto_tras_fiscalidad": 34880.72}, "cambios_b": {"coste_nuevo_empleado_anual": 28800.0, "facturacion_adicional_requerida": 85988.57, "igi_adicional": 3702.86}}}, "veredicto": "Contratar cuesta 28800.00 €/año. Necesitas facturar 85988.57 € adicionales para cubrirlo con margen e IGI incluidos."}, "punto_optimo": {"renta_actual": 45000.0, "margen_bruto": 35.0, "mejor_punto": {"renta_neta": 90000.0, "carga_total_anual": 15501.28, "efectivo_sobre_facturacion": 49.21}, "nota": "El coste marginal de facturar mas incluye un salto de tramo CASS, por lo que la relacion coste/beneficio puede empeorar justo despues de un umbral. Este es el insight que un ERP de contabilidad no da."}, "cierre": null}, "crecimiento": {"etiqueta": "Taller de ceramica", "saldo": 6900.0, "renta": 38000.0, "margen": 0.4, "actividad": "Taller de ceramica", "n_movimientos": 1509, "periodo": {"desde": "2025-10-01", "hasta": "2026-09-28", "meses": 12, "n_movimientos": 1509}, "tesoreria": {"ingresos_totales": 109412.6, "gastos_totales": 89147.2, "flujo_neto": 20265.4, "ingresos_mes": 9117.72, "gastos_mes": 7428.93, "por_categoria": {"nomina": 23400.0, "impuestos": 18960.0, "material": 17962.0, "alquiler": 13800.0, "seguridad_social": 12515.4, "suministros": 2211.0, "banca": 298.8}}, "fugas": {"n_fugas": 1, "recuperable_mensual": 17.0, "recuperable_anual": 204.0, "por_tipo": {"deriva_gasto": 204.0}, "fugas": [{"tipo": "deriva_gasto", "descripcion": "El gasto en 'suministros' ha subido un 22% en 3 meses (155,00 € -> 189,00 €).", "importe_mensual": 17.0, "importe_anual": 204.0, "movimientos_involucrados": [], "accion_sugerida": "Revisa el gasto en 'suministros': ha crecido 17,00 €/mes de media. Si lo estabilizas, recuperas 204,00 €/año.", "confianza": 0.6}], "mensaje": "Hemos encontrado 1 fugas. Recuperando lo que no uses: 17.00 €/mes (204.00 €/año)."}, "proyeccion": {"meses": [{"mes": 1, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 8588.79}, {"mes": 2, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 10277.58}, {"mes": 3, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 11966.37}, {"mes": 4, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 13655.16}, {"mes": 5, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 15343.95}, {"mes": 6, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 17032.74}, {"mes": 7, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 18721.53}, {"mes": 8, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 20410.32}, {"mes": 9, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 22099.11}, {"mes": 10, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 23787.9}, {"mes": 11, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 25476.69}, {"mes": 12, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 27165.48}], "mes_quiebre": null, "deuda_en_quiebre": 0.0, "deuda_al_final": 0.0, "ultimo_saldo_positivo": 27165.48, "mes_ultimo_positivo": 12, "resumen": "La caja no se agota en 12 meses. "}, "cass": {"tramo": "100%", "base_cotizacion": 2672.52, "cuota_mensual": 587.95, "rama_general": 267.25, "rama_jubilacion": 320.7, "cuota_anual": 7055.4, "condicion": "Cas general. Tramos inferiors al 100% son opcionals."}, "irpf": {"base_tributable": 14000.0, "cuota_total": 700.0, "bonificacion": 700.0, "tipo_efectivo": 1.84}, "igi": {"cuota": 1710.0, "tipo": 0.045}, "crossover": {"existe": true, "tipo": "Bonificacion IRPF art. 46 toca su techo de 800 €", "renta_punto": 40000.0, "detalle": "Con 38.000,00 € de renta neta el IRPF efectivo es 1.84% (bonificación art. 46 todavia sin tope). Matiz importante: el \"5%\" que se publica es una simplificacion — el tipo real sube del 0% al 2% de forma progresiva entre 24.000 € y 40.000 €, y la bonificacion del 50% alcanza su tope de 800 € exactamente en 40.000 € de base. A partir de ahi la bonificacion se congela, el IRPF acelera y la CASS pasa del 100% al 125%. A 40.000 € la cuota de IRPF pasa de 700,00 € a 800,00 €.", "delta_anual": 0.0, "cuota_cass_ano_siguiente": null, "delta_cass_ano_siguiente": null}, "simular_contratacion": {"coste_nuevo_empleado_anual": 28800.0, "margen_bruto": 40.0, "facturacion_adicional_para_cubrirlo": 75240.0, "igi_adicional": 3240.0, "crossover": {"existe": true, "tipo": "Bonificacion IRPF art. 46 toca su techo de 800 €", "renta_punto": 40000.0, "detalle": "Con 38.000,00 € de renta neta el IRPF efectivo es 1.84% (bonificación art. 46 todavia sin tope). Matiz importante: el \"5%\" que se publica es una simplificacion — el tipo real sube del 0% al 2% de forma progresiva entre 24.000 € y 40.000 €, y la bonificacion del 50% alcanza su tope de 800 € exactamente en 40.000 € de base. A partir de ahi la bonificacion se congela, el IRPF acelera y la CASS pasa del 100% al 125%. A 40.000 € la cuota de IRPF pasa de 700,00 € a 800,00 €.", "delta_anual": 0.0, "cuota_cass_ano_siguiente": null, "delta_cass_ano_siguiente": null}, "comparativa": {"delta_neto_anual": 0.0, "delta_cass_anual": 0.0, "delta_irpf_anual": 0.0, "detalle": {"a": {"renta_neta": 38000.0, "tramo_cass": "100%", "cass_anual": 7055.4, "irpf": 700.0, "neto_tras_fiscalidad": 30244.6}, "b": {"renta_neta": 38000.0, "tramo_cass": "100%", "cass_anual": 7055.4, "irpf": 700.0, "neto_tras_fiscalidad": 30244.6}, "cambios_b": {"coste_nuevo_empleado_anual": 28800.0, "facturacion_adicional_requerida": 75240.0, "igi_adicional": 3240.0}}}, "veredicto": "Contratar cuesta 28800.00 €/año. Necesitas facturar 75240.00 € adicionales para cubrirlo con margen e IGI incluidos."}, "punto_optimo": {"renta_actual": 38000.0, "margen_bruto": 40.0, "mejor_punto": {"renta_neta": 76000.0, "carga_total_anual": 14101.28, "efectivo_sobre_facturacion": 46.39}, "nota": "El coste marginal de facturar mas incluye un salto de tramo CASS, por lo que la relacion coste/beneficio puede empeorar justo despues de un umbral. Este es el insight que un ERP de contabilidad no da."}, "cierre": null}, "cierre": {"etiqueta": "Freelance de servicios", "saldo": 6100.0, "renta": 30000.0, "margen": 0.7, "actividad": "Freelance de servicios", "n_movimientos": 215, "periodo": {"desde": "2025-10-02", "hasta": "2026-09-28", "meses": 12, "n_movimientos": 215}, "tesoreria": {"ingresos_totales": 48223.0, "gastos_totales": 29403.89, "flujo_neto": 18819.11, "ingresos_mes": 4018.58, "gastos_mes": 2450.32, "por_categoria": {"impuestos": 8100.0, "seguridad_social": 7055.4, "alquiler": 5400.0, "transporte": 2471.71, "suministros": 2426.8, "nomina": 1200.0, "material": 1026.0, "herramientas": 719.88, "seguros": 510.0, "sin_categorizar": 455.7, "banca": 38.4}}, "fugas": {"n_fugas": 5, "recuperable_mensual": 116.46, "recuperable_anual": 1397.52, "por_tipo": {"deriva_gasto": 150.0, "suscripcion": 1247.52}, "fugas": [{"tipo": "suscripcion", "descripcion": "Cobro recurrente de 59,99 € (suscripcion adobe creative cloud). Se repite 12 veces en 12 meses.", "importe_mensual": 59.99, "importe_anual": 719.88, "movimientos_involucrados": [{"fecha": "2025-10-09", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2025-11-07", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2025-12-08", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-01-11", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-02-12", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-03-06", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-04-07", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-05-03", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-06-05", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-07-04", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-08-09", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-09-11", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}], "accion_sugerida": "Revisa si sigues usando 'suscripcion adobe creative cloud'. Cancelarlo libera 59,99 €/mes (719,88 €/año).", "confianza": 0.8}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 19,99 € (dropbox profesional). Se repite 12 veces en 12 meses.", "importe_mensual": 19.99, "importe_anual": 239.88, "movimientos_involucrados": [{"fecha": "2025-10-08", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2025-11-07", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2025-12-04", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-01-11", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-02-10", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-03-10", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-04-07", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-05-06", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-06-11", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-07-10", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-08-11", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-09-10", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}], "accion_sugerida": "Revisa si sigues usando 'dropbox profesional'. Cancelarlo libera 19,99 €/mes (239,88 €/año).", "confianza": 0.8}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 12,99 € (netflix.com). Se repite 9 veces en 9 meses.", "importe_mensual": 12.99, "importe_anual": 155.88, "movimientos_involucrados": [{"fecha": "2025-10-09", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2025-11-09", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2025-12-11", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-01-08", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-02-06", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-03-09", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-04-04", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-05-09", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-06-07", "concepto": "NETFLIX.COM", "importe": -12.99}], "accion_sugerida": "Revisa si sigues usando 'netflix.com'. Cancelarlo libera 12,99 €/mes (155,88 €/año).", "confianza": 0.8}, {"tipo": "deriva_gasto", "descripcion": "El gasto en 'material' ha subido un 27% en 3 meses (94,00 € -> 119,00 €).", "importe_mensual": 12.5, "importe_anual": 150.0, "movimientos_involucrados": [], "accion_sugerida": "Revisa el gasto en 'material': ha crecido 12,50 €/mes de media. Si lo estabilizas, recuperas 150,00 €/año.", "confianza": 0.6}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 10,99 € (spotify premium). Se repite 9 veces en 9 meses.", "importe_mensual": 10.99, "importe_anual": 131.88, "movimientos_involucrados": [{"fecha": "2025-10-06", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2025-11-09", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2025-12-11", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-01-09", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-02-10", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-03-06", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-04-04", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-05-05", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-06-09", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}], "accion_sugerida": "Revisa si sigues usando 'spotify premium'. Cancelarlo libera 10,99 €/mes (131,88 €/año).", "confianza": 0.8}], "mensaje": "Hemos encontrado 5 fugas. Recuperando lo que no uses: 116.46 €/mes (1397.52 €/año)."}, "proyeccion": {"meses": [{"mes": 1, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 7668.26}, {"mes": 2, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 9236.52}, {"mes": 3, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 10804.78}, {"mes": 4, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 12373.04}, {"mes": 5, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 13941.3}, {"mes": 6, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 15509.56}, {"mes": 7, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 17077.82}, {"mes": 8, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 18646.08}, {"mes": 9, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 20214.34}, {"mes": 10, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 21782.6}, {"mes": 11, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 23350.86}, {"mes": 12, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 24919.12}], "mes_quiebre": null, "deuda_en_quiebre": 0.0, "deuda_al_final": 0.0, "ultimo_saldo_positivo": 24919.12, "mes_ultimo_positivo": 12, "resumen": "La caja no se agota en 12 meses. "}, "cass": {"tramo": "100%", "base_cotizacion": 2672.52, "cuota_mensual": 587.95, "rama_general": 267.25, "rama_jubilacion": 320.7, "cuota_anual": 7055.4, "condicion": "Cas general. Tramos inferiors al 100% son opcionals."}, "irpf": {"base_tributable": 6000.0, "cuota_total": 300.0, "bonificacion": 300.0, "tipo_efectivo": 1.0}, "igi": {"cuota": 1350.0, "tipo": 0.045}, "crossover": {"existe": true, "tipo": "Bonificacion IRPF art. 46 toca su techo de 800 €", "renta_punto": 40000.0, "detalle": "Con 30.000,00 € de renta neta el IRPF efectivo es 1.00% (bonificación art. 46 todavia sin tope). Matiz importante: el \"5%\" que se publica es una simplificacion — el tipo real sube del 0% al 2% de forma progresiva entre 24.000 € y 40.000 €, y la bonificacion del 50% alcanza su tope de 800 € exactamente en 40.000 € de base. A partir de ahi la bonificacion se congela, el IRPF acelera y la CASS pasa del 100% al 125%. A 40.000 € la cuota de IRPF pasa de 300,00 € a 800,00 €.", "delta_anual": 0.0, "cuota_cass_ano_siguiente": null, "delta_cass_ano_siguiente": null}, "simular_contratacion": {"coste_nuevo_empleado_anual": 28800.0, "margen_bruto": 70.0, "facturacion_adicional_para_cubrirlo": 42994.29, "igi_adicional": 1851.43, "crossover": {"existe": true, "tipo": "Bonificacion IRPF art. 46 toca su techo de 800 €", "renta_punto": 40000.0, "detalle": "Con 30.000,00 € de renta neta el IRPF efectivo es 1.00% (bonificación art. 46 todavia sin tope). Matiz importante: el \"5%\" que se publica es una simplificacion — el tipo real sube del 0% al 2% de forma progresiva entre 24.000 € y 40.000 €, y la bonificacion del 50% alcanza su tope de 800 € exactamente en 40.000 € de base. A partir de ahi la bonificacion se congela, el IRPF acelera y la CASS pasa del 100% al 125%. A 40.000 € la cuota de IRPF pasa de 300,00 € a 800,00 €.", "delta_anual": 0.0, "cuota_cass_ano_siguiente": null, "delta_cass_ano_siguiente": null}, "comparativa": {"delta_neto_anual": 0.0, "delta_cass_anual": 0.0, "delta_irpf_anual": 0.0, "detalle": {"a": {"renta_neta": 30000.0, "tramo_cass": "100%", "cass_anual": 7055.4, "irpf": 300.0, "neto_tras_fiscalidad": 22644.6}, "b": {"renta_neta": 30000.0, "tramo_cass": "100%", "cass_anual": 7055.4, "irpf": 300.0, "neto_tras_fiscalidad": 22644.6}, "cambios_b": {"coste_nuevo_empleado_anual": 28800.0, "facturacion_adicional_requerida": 42994.29, "igi_adicional": 1851.43}}}, "veredicto": "Contratar cuesta 28800.00 €/año. Necesitas facturar 42994.29 € adicionales para cubrirlo con margen e IGI incluidos."}, "punto_optimo": {"renta_actual": 30000.0, "margen_bruto": 70.0, "mejor_punto": {"renta_neta": 39924.0, "carga_total_anual": 7851.6, "efectivo_sobre_facturacion": 28.09}, "nota": "El coste marginal de facturar mas incluye un salto de tramo CASS, por lo que la relacion coste/beneficio puede empeorar justo despues de un umbral. Este es el insight que un ERP de contabilidad no da."}, "cierre": {"n_consejos": 4, "n_evaluables": 4, "cumplidos": 2, "parciales": 0, "incumplidos": 2, "sin_datos": 0, "ahorro_real_mensual": "23.98", "ahorro_esperado_mensual": "103.96", "desviacion_pct": "-76.93", "resumen": "Has seguido 2 de 4 recomendaciones. Llevas ahorrados 23,98 €/mes de los 103,96 €/mes previstos.", "cierres": [{"consejo": {"tipo": "suscripcion", "clave": "netflix.com|12.99", "descripcion": "Revisa si sigues usando 'netflix.com'. Cancelarlo libera 12,99 €/mes (155,88 €/año).", "fecha": "2026-07-01", "esperado_mensual": "12.99", "importe_anual": "155.88", "meses_previstos": 3, "regla": "Motor de tesorería · detección de suscripciones (regla determinista)", "detalle": {"descripcion_fuga": "Cobro recurrente de 12,99 € (netflix.com). Se repite 9 veces en 9 meses.", "confianza": "0.8"}}, "evaluable": true, "veredicto": "cumplido", "ahorro_real_mensual": "12.99", "ahorro_esperado_mensual": "12.99", "desviacion_pct": "0", "meses_observados": 2, "detalle": {"explicacion": "El cargo 'netflix.com' no vuelve a aparecer en los 2 meses posteriores. Se ahorran 12,99 €/mes, exactamente lo previsto.", "cargos_encontrados": 0}}, {"consejo": {"tipo": "suscripcion", "clave": "spotify premium|10.99", "descripcion": "Revisa si sigues usando 'spotify premium'. Cancelarlo libera 10,99 €/mes (131,88 €/año).", "fecha": "2026-07-01", "esperado_mensual": "10.99", "importe_anual": "131.88", "meses_previstos": 3, "regla": "Motor de tesorería · detección de suscripciones (regla determinista)", "detalle": {"descripcion_fuga": "Cobro recurrente de 10,99 € (spotify premium). Se repite 9 veces en 9 meses.", "confianza": "0.8"}}, "evaluable": true, "veredicto": "cumplido", "ahorro_real_mensual": "10.99", "ahorro_esperado_mensual": "10.99", "desviacion_pct": "0", "meses_observados": 2, "detalle": {"explicacion": "El cargo 'spotify premium' no vuelve a aparecer en los 2 meses posteriores. Se ahorran 10,99 €/mes, exactamente lo previsto.", "cargos_encontrados": 0}}, {"consejo": {"tipo": "suscripcion", "clave": "suscripcion adobe creative cloud|59.99", "descripcion": "Revisa si sigues usando 'suscripcion adobe creative cloud'. Cancelarlo libera 59,99 €/mes (719,88 €/año).", "fecha": "2026-07-01", "esperado_mensual": "59.99", "importe_anual": "719.88", "meses_previstos": 3, "regla": "Motor de tesorería · detección de suscripciones (regla determinista)", "detalle": {"descripcion_fuga": "Cobro recurrente de 59,99 € (suscripcion adobe creative cloud). Se repite 12 veces en 12 meses.", "confianza": "0.8"}}, "evaluable": true, "veredicto": "incumplido", "ahorro_real_mensual": "0", "ahorro_esperado_mensual": "59.99", "desviacion_pct": "-100", "meses_observados": 2, "detalle": {"explicacion": "El cargo 'suscripcion adobe creative cloud' sigue apareciendo 3 veces a 59,99 € en los 2 meses posteriores. El consejo no se aplico.", "cargos_encontrados": 3, "importes_vistos": ["59.99"]}}, {"consejo": {"tipo": "suscripcion", "clave": "dropbox profesional|19.99", "descripcion": "Revisa si sigues usando 'dropbox profesional'. Cancelarlo libera 19,99 €/mes (239,88 €/año).", "fecha": "2026-07-01", "esperado_mensual": "19.99", "importe_anual": "239.88", "meses_previstos": 3, "regla": "Motor de tesorería · detección de suscripciones (regla determinista)", "detalle": {"descripcion_fuga": "Cobro recurrente de 19,99 € (dropbox profesional). Se repite 12 veces en 12 meses.", "confianza": "0.8"}}, "evaluable": true, "veredicto": "incumplido", "ahorro_real_mensual": "0", "ahorro_esperado_mensual": "19.99", "desviacion_pct": "-100", "meses_observados": 2, "detalle": {"explicacion": "El cargo 'dropbox profesional' sigue apareciendo 3 veces a 19,99 € en los 2 meses posteriores. El consejo no se aplico.", "cargos_encontrados": 3, "importes_vistos": ["19.99"]}}]}}, "empleado": {"etiqueta": "Treballador per compte d'altri", "saldo": 3400.0, "renta": 23281.0, "margen": 0.0, "actividad": "Treballador per compte d'altri", "n_movimientos": 157, "periodo": {"desde": "2025-10-02", "hasta": "2026-09-28", "meses": 12, "n_movimientos": 157}, "tesoreria": {"ingresos_totales": 24231.44, "gastos_totales": 22465.56, "flujo_neto": 1765.88, "ingresos_mes": 2019.29, "gastos_mes": 1872.13, "por_categoria": {"alquiler": 11400.0, "material": 4744.0, "sin_categorizar": 3473.76, "suministros": 1964.8, "transporte": 853.0, "banca": 30.0}}, "fugas": {"n_fugas": 6, "recuperable_mensual": 159.88, "recuperable_anual": 1918.56, "por_tipo": {"cobro_duplicado": 718.8, "deriva_gasto": 912.0, "suscripcion": 287.76}, "fugas": [{"tipo": "cobro_duplicado", "descripcion": "Cobro duplicado de 59,90 €: 'Internet i mobil ORANGE' el 27/02/2026 y otra vez el 03/03/2026.", "importe_mensual": 59.9, "importe_anual": 718.8, "movimientos_involucrados": [{"fecha": "2026-02-27", "concepto": "Internet i mobil ORANGE", "importe": -59.9}, {"fecha": "2026-03-03", "concepto": "Internet i mobil ORANGE", "importe": -59.9}], "accion_sugerida": "Reclama el cobro duplicado: 59,90 €.", "confianza": 0.9}, {"tipo": "deriva_gasto", "descripcion": "El gasto en 'sin_categorizar' ha subido un 26% en 3 meses (250,98 € -> 316,98 €).", "importe_mensual": 33.0, "importe_anual": 396.0, "movimientos_involucrados": [], "accion_sugerida": "Revisa el gasto en 'sin_categorizar': ha crecido 33,00 €/mes de media. Si lo estabilizas, recuperas 396,00 €/año.", "confianza": 0.6}, {"tipo": "deriva_gasto", "descripcion": "El gasto en 'material' ha subido un 16% en 3 meses (323,00 € -> 374,00 €).", "importe_mensual": 25.5, "importe_anual": 306.0, "movimientos_involucrados": [], "accion_sugerida": "Revisa el gasto en 'material': ha crecido 25,50 €/mes de media. Si lo estabilizas, recuperas 306,00 €/año.", "confianza": 0.6}, {"tipo": "deriva_gasto", "descripcion": "El gasto en 'suministros' ha subido un 22% en 3 meses (159,90 € -> 194,90 €).", "importe_mensual": 17.5, "importe_anual": 210.0, "movimientos_involucrados": [], "accion_sugerida": "Revisa el gasto en 'suministros': ha crecido 17,50 €/mes de media. Si lo estabilizas, recuperas 210,00 €/año.", "confianza": 0.6}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 12,99 € (streaming netflix). Se repite 12 veces en 12 meses.", "importe_mensual": 12.99, "importe_anual": 155.88, "movimientos_involucrados": [{"fecha": "2025-10-15", "concepto": "Streaming NETFLIX", "importe": -12.99}, {"fecha": "2025-11-03", "concepto": "Streaming NETFLIX", "importe": -12.99}, {"fecha": "2025-12-01", "concepto": "Streaming NETFLIX", "importe": -12.99}, {"fecha": "2026-01-15", "concepto": "Streaming NETFLIX", "importe": -12.99}, {"fecha": "2026-02-11", "concepto": "Streaming NETFLIX", "importe": -12.99}, {"fecha": "2026-03-16", "concepto": "Streaming NETFLIX", "importe": -12.99}, {"fecha": "2026-04-21", "concepto": "Streaming NETFLIX", "importe": -12.99}, {"fecha": "2026-05-07", "concepto": "Streaming NETFLIX", "importe": -12.99}, {"fecha": "2026-06-08", "concepto": "Streaming NETFLIX", "importe": -12.99}, {"fecha": "2026-07-24", "concepto": "Streaming NETFLIX", "importe": -12.99}, {"fecha": "2026-08-18", "concepto": "Streaming NETFLIX", "importe": -12.99}, {"fecha": "2026-09-22", "concepto": "Streaming NETFLIX", "importe": -12.99}], "accion_sugerida": "Revisa si sigues usando 'streaming netflix'. Cancelarlo libera 12,99 €/mes (155,88 €/año).", "confianza": 0.8}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 10,99 € (spotify premium). Se repite 12 veces en 12 meses.", "importe_mensual": 10.99, "importe_anual": 131.88, "movimientos_involucrados": [{"fecha": "2025-10-03", "concepto": "Spotify Premium", "importe": -10.99}, {"fecha": "2025-11-06", "concepto": "Spotify Premium", "importe": -10.99}, {"fecha": "2025-12-18", "concepto": "Spotify Premium", "importe": -10.99}, {"fecha": "2026-01-04", "concepto": "Spotify Premium", "importe": -10.99}, {"fecha": "2026-02-05", "concepto": "Spotify Premium", "importe": -10.99}, {"fecha": "2026-03-20", "concepto": "Spotify Premium", "importe": -10.99}, {"fecha": "2026-04-06", "concepto": "Spotify Premium", "importe": -10.99}, {"fecha": "2026-05-14", "concepto": "Spotify Premium", "importe": -10.99}, {"fecha": "2026-06-20", "concepto": "Spotify Premium", "importe": -10.99}, {"fecha": "2026-07-22", "concepto": "Spotify Premium", "importe": -10.99}, {"fecha": "2026-08-23", "concepto": "Spotify Premium", "importe": -10.99}, {"fecha": "2026-09-23", "concepto": "Spotify Premium", "importe": -10.99}], "accion_sugerida": "Revisa si sigues usando 'spotify premium'. Cancelarlo libera 10,99 €/mes (131,88 €/año).", "confianza": 0.8}], "mensaje": "Hemos encontrado 6 fugas. Recuperando lo que no uses: 159.88 €/mes (1918.56 €/año)."}, "proyeccion": {"meses": [{"mes": 1, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 3547.16}, {"mes": 2, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 3694.32}, {"mes": 3, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 3841.48}, {"mes": 4, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 3988.64}, {"mes": 5, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 4135.8}, {"mes": 6, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 4282.96}, {"mes": 7, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 4430.12}, {"mes": 8, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 4577.28}, {"mes": 9, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 4724.44}, {"mes": 10, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 4871.6}, {"mes": 11, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 5018.76}, {"mes": 12, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 5165.92}], "mes_quiebre": null, "deuda_en_quiebre": 0.0, "deuda_al_final": 0.0, "ultimo_saldo_positivo": 5165.92, "mes_ultimo_positivo": 12, "resumen": "La caja no se agota en 12 meses. "}, "cass": {"tramo": "75%", "base_cotizacion": 2004.39, "cuota_mensual": 440.97, "rama_general": 200.44, "rama_jubilacion": 240.53, "cuota_anual": 5291.64, "condicion": "Renda neta de 18.000 € a 24.000 €. Opcional."}, "irpf": {"base_tributable": 0.0, "cuota_total": 0.0, "bonificacion": 0.0, "tipo_efectivo": 0.0}, "igi": {"cuota": 1047.65, "tipo": 0.045}, "crossover": {"existe": true, "tipo": "CASS 75% -> 100%", "renta_punto": 24000.0, "detalle": "Al cruzar 24.000 € de renda neta, la CASS pasa del 75% (440,97 €/mes) al 100% (587,95 €/mes). El IRPF sigue en 0%, asi que el coste real es solo la CASS.", "delta_anual": 1763.76, "cuota_cass_ano_siguiente": null, "delta_cass_ano_siguiente": null}, "simular_contratacion": {"coste_nuevo_empleado_anual": 28800.0, "margen_bruto": 0.0, "facturacion_adicional_para_cubrirlo": 0.0, "igi_adicional": 0.0, "crossover": {"existe": true, "tipo": "CASS 75% -> 100%", "renta_punto": 24000.0, "detalle": "Al cruzar 24.000 € de renda neta, la CASS pasa del 75% (440,97 €/mes) al 100% (587,95 €/mes). El IRPF sigue en 0%, asi que el coste real es solo la CASS.", "delta_anual": 1763.76, "cuota_cass_ano_siguiente": null, "delta_cass_ano_siguiente": null}, "comparativa": {"delta_neto_anual": 0.0, "delta_cass_anual": 0.0, "delta_irpf_anual": 0.0, "detalle": {"a": {"renta_neta": 23281.0, "tramo_cass": "75%", "cass_anual": 5291.64, "irpf": 0.0, "neto_tras_fiscalidad": 17989.36}, "b": {"renta_neta": 23281.0, "tramo_cass": "75%", "cass_anual": 5291.64, "irpf": 0.0, "neto_tras_fiscalidad": 17989.36}, "cambios_b": {"coste_nuevo_empleado_anual": 28800.0, "facturacion_adicional_requerida": 0.0, "igi_adicional": 0.0}}}, "veredicto": "Contratar cuesta 28800.00 €/año. Necesitas facturar 0.00 € adicionales para cubrirlo con margen e IGI incluidos."}, "punto_optimo": {"error": "margen_bruto debe estar en (0,1)"}, "cierre": null}}</script>
 
@@ -1328,10 +1366,16 @@ function pintarResumen(d){
   // mes de caja y el colchon. Los dos ultimos los calcula el motor
   // desde la proyeccion: NO son fijos (el "contratar" se queda sin
   // colchon porque su caja se agota en el mes 12).
-  document.getElementById('kpiCassMensual').textContent = eur(c.cuota_mensual, 2);
+  // Los KPIs grandes (CASS mensual, recuperable, peor mes, colchon)
+  // son de la tarjeta que va DENTRO del chat: los pinta
+  // pintarTarjetaDelChat. Aqui solo se pintan si existen.
+  var kpiCM = document.getElementById('kpiCassMensual');
+  if (kpiCM) kpiCM.textContent = eur(c.cuota_mensual, 2);
   var recG = document.getElementById('kpiRecuperableGrande');
-  recG.textContent = eur(d.fugas.recuperable_mensual, 2);
-  recG.className = 'n ' + (d.fugas.recuperable_mensual > 0 ? 'verde' : '');
+  if (recG) {
+    recG.textContent = eur(d.fugas.recuperable_mensual, 2);
+    recG.className = 'n ' + (d.fugas.recuperable_mensual > 0 ? 'verde' : '');
+  }
 
   var proy0 = d.proyeccion || {};
   var meses0 = proy0.meses || [];
@@ -1341,6 +1385,7 @@ function pintarResumen(d){
     if (m.gastos > gastoMax) gastoMax = m.gastos;
   });
   var kpiPeor = document.getElementById('kpiPeorMes');
+  if (!kpiPeor) kpiPeor = document.getElementById('chat-kpiPeorMes');
   if (meses0.length) {
     kpiPeor.textContent = eur(peor0, 0);
     kpiPeor.className = 'n ' + (peor0 < 0 ? 'rojo' : '');
@@ -1350,6 +1395,7 @@ function pintarResumen(d){
   }
 
   var kpiColchon = document.getElementById('kpiColchon');
+  if (!kpiColchon) kpiColchon = document.getElementById('chat-kpiColchon');
   if (gastoMax > 0 && proy0.mes_quiebre) {
     kpiColchon.textContent = '0 meses';
     kpiColchon.className = 'n rojo';
@@ -1385,8 +1431,8 @@ function pintarResumen(d){
     leyenda += '<div><i style="background:' + colores[i] + '"></i><span>' +
               (CAT[k] || k) + '</span><b>' + Math.round(pctCat) + ' %</b></div>';
   });
-  document.getElementById('donutSvg').innerHTML = svg;
-  document.getElementById('donutLeyenda').innerHTML = leyenda;
+  document.getElementById('donutSvg2').innerHTML = svg;
+  document.getElementById('donutLeyenda2').innerHTML = leyenda;
 
   // Barras: las 4 categorias que mas pesan
   var maxCat = cats[0] ? categorias[cats[0]] : 1;
@@ -1421,8 +1467,33 @@ function pintarResumen(d){
       : '') +
     '<polyline points="' + pts + '" fill="none" stroke="#00a87e" stroke-width="2.2" ' +
     'stroke-linecap="round" stroke-linejoin="round"/>' +
-    '<polygon points="0,92 ' + pts + ' 320,92" fill="url(#g)"/>';
-  document.getElementById('curvaSvg').innerHTML = svgCurva;
+    '<polygon points="0,92 ' + pts + ' 320,92" fill="url(#g2)"/>';
+  document.getElementById('curvaSvg2').innerHTML = svgCurva;
+
+  // El donut del resumen: las categorias REALES del motor. Antes
+  // estaba escrito a mano en el HTML ("Servicios 52 %, Subcontratas
+  // 26 %"), que no son categorias del motor y no cambiaban al
+  // cambiar de perfil.
+  var cats = (d.tesoreria && d.tesoreria.por_categoria) || {};
+  var keys = Object.keys(cats).filter(function(k){ return cats[k] > 0; })
+                   .sort(function(a,b){ return cats[b] - cats[a]; });
+  var total = keys.reduce(function(a,k){ return a + cats[k]; }, 0) || 1;
+  var colores = ['#00a87e', '#494fdf', '#ec7e00', '#e23b4a'];
+  var off = 25, svg = '', ley = '';
+  keys.slice(0,4).forEach(function(k, i){
+    var pc = cats[k] / total * 100;
+    svg += '<circle cx="21" cy="21" r="15.915" fill="none" stroke="' + colores[i] +
+           '" stroke-width="6" stroke-dasharray="' + pc.toFixed(1) + ' ' + (100-pc).toFixed(1) +
+           '" stroke-dashoffset="' + (-off).toFixed(1) + '"/>';
+    off += pc;
+    ley += '<div><i style="background:' + colores[i] + '"></i><span>' +
+           (CAT[k] || k) + '</span><b>' + Math.round(pc) + ' %</b></div>';
+  });
+  var dSvg = document.getElementById('donutSvg2');
+  if (dSvg) dSvg.innerHTML =
+    '<circle cx="21" cy="21" r="15.915" fill="none" stroke="#e6e9ec" stroke-width="6"/>' + svg;
+  var dLey = document.getElementById('donutLeyenda2');
+  if (dLey) dLey.innerHTML = ley;
 
   pintarHallazgos(d);
 }
@@ -1590,10 +1661,69 @@ function pintarTarjetaDelChat(d){
 }
 
 
+// ── Pestañas ────────────────────────────────────────────────────
+//
+// Los botones de la barra inferior existian en el HTML pero NO
+// habia codigo que los enganchara: al pulsarlos no pasaba nada.
+//
+// En escritorio el chat del asesor se queda SIEMPRE a la izquierda
+// y la vista que elijas pasa a la columna derecha: asi se ven las
+// dos cosas a la vez, sin scroll global.
+//
+// En movil solo hay sitio para una: la del asesor (que lleva el
+// chat con la tarjeta de resultado dentro).
+function esEscritorio(){
+  return window.matchMedia('(min-width: 700px)').matches;
+}
+
+function mostrarVista(nombre){
+  var escritorio = esEscritorio();
+
+  document.querySelectorAll('.vista').forEach(function(v){
+    if (escritorio) {
+      // A la derecha solo la vista elegida; el asesor sigue visible
+      // a la izquierda (no se le quita la clase "activa").
+      var esAsesor = v.id === 'vistaAsesor';
+      v.classList.toggle('activa', esAsesor ? true : v.id === nombre);
+    } else {
+      v.classList.toggle('activa', v.id === nombre);
+    }
+  });
+
+  document.querySelectorAll('.tab').forEach(function(t){
+    t.classList.toggle('activo', t.dataset.vista === nombre);
+  });
+
+  // En movil el composer (perfiles + entrada) tapa el contenido de
+  // las vistas de datos: se aparta cuando no es la del asesor.
+  if (!escritorio) {
+    var comp = document.querySelector('.composer');
+    if (comp) comp.style.display = (nombre === 'vistaAsesor') ? '' : 'none';
+  }
+
+  // La vista que se acaba de mostrar puede necesitar recalcular su
+  // tamano (el SVG del resumen y el iframe del asesor).
+  try {
+    var f = document.querySelector('#vistaAsesor iframe');
+    if (f && f.contentWindow) f.contentWindow.dispatchEvent(new Event('resize'));
+  } catch (e) {}
+  try { window.dispatchEvent(new Event('resize')); } catch (e) {}
+}
+
+function engancharPestanas(){
+  document.querySelectorAll('.tab[data-vista]').forEach(function(t){
+    t.addEventListener('click', function(){
+      mostrarVista(t.dataset.vista);
+    });
+  });
+}
+
+
 /* ═══════════════════════════════════════════════════════════
    Arranque
    ═══════════════════════════════════════════════════════════ */
 try {
+  engancharPestanas();
   pintarPerfiles();
   cambiarPerfil('freelance');
   pintarTarjetaDelChat(MOTOR[perfilActual]);
