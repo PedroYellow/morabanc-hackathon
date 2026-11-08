@@ -478,8 +478,18 @@ input  { font: inherit; color: inherit; }
 
 
 /* ---------- Selector de perfil (datos de prueba) ---------- */
-.perfiles { display: flex; gap: 7px; overflow-x: auto; padding: 0 0 9px; scrollbar-width: none; }
+.perfiles {
+  display: flex; gap: 7px; overflow-x: auto; padding: 0 0 9px;
+  scrollbar-width: none;
+  /* Se desplazan en horizontal: con 6 perfiles no caben en 500 px.
+     El degradado de la derecha avisa de que hay mas, y el boton
+     de la derecha permite moverlos sin rueda. */
+  scroll-snap-type: x proximity;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
+          mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
+}
 .perfiles::-webkit-scrollbar { display: none; }
+.perfiles button { scroll-snap-align: start; }
 .perfiles button {
   flex: none; font-size: 12.5px; font-weight: 500;
   padding: 7px 12px; border-radius: var(--r-pill);
