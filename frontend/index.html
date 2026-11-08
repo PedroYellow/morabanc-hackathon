@@ -305,11 +305,16 @@ input  { font: inherit; color: inherit; }
   outline: none; line-height: 1.4;
 }
 .composer textarea:focus { border-color: var(--navy); background: var(--white); }
+/* El boton de enviar es secundario: la accion principal del chat es
+   hablar con el asesor, y ese boton (el micro) va en dorado. Si los
+   dos van en dorado, compiten y no se sabe a cual hay que pulsar. */
 .enviar {
   width: 44px; height: 44px; border-radius: var(--r-pill); flex: none;
-  background: var(--gold); display: grid; place-items: center;
+  background: var(--navy); display: grid; place-items: center;
+  transition: background .2s, transform .18s;
 }
-.enviar svg { width: 18px; height: 18px; fill: var(--navy); }
+.enviar svg { width: 18px; height: 18px; fill: var(--gold); }
+.enviar:hover { transform: scale(1.06); }
 
 /* Sugerencias */
 .sugerencias { display: flex; gap: 7px; overflow-x: auto; padding: 0 0 9px; scrollbar-width: none; }
@@ -2033,7 +2038,10 @@ function arrancarTodo(){
   pintarPerfiles();
   cambiarPerfil('freelance');
   pintarTarjetaDelChat(MOTOR[perfilActual]);
-  thread.scrollTop = thread.scrollHeight;
+  // Al arrancar, el chat se ve DESDE ARRIBA: lo primero que hay que
+  // leer es el saludo del asesor. Cuando llegan mensajes nuevos, el
+  // chat baja al final (que es donde esta la respuesta).
+  thread.scrollTop = 0;
 
 }
 
