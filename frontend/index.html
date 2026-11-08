@@ -112,8 +112,11 @@ input  { font: inherit; color: inherit; }
      del hueco, sin empujar la pagina. */
   .app #vistaAsesor .thread {
     flex: 1; min-height: 0; overflow-y: auto;
-    /* Hueco para que el composer no tape el final del chat. */
+    /* Hueco para que el composer no tape el final del chat. Lo ajusta
+       el JS al alto real del composer (que cambia cuando se activa la
+       voz y aparece el estado "Hablando con el asesor"). */
     padding-bottom: 212px;
+    transition: padding-bottom .2s;
   }
   /* El composer, abajo de la columna izquierda. */
   .app .composer {
@@ -2201,6 +2204,47 @@ function limpiarEtiquetasAgente(texto){
     }
   }
 })();
+
+
+// ── El hueco entre el chat y el composer ─────────────────────────
+//
+// El composer no es fijo: cambia de alto segun lo que haya debajo
+// (las sugerencias, el estado de la voz). Si el hueco del chat no
+// se ajusta, el composer tapa el ultimo mensaje. Por eso se mide
+// el composer y se aplica como padding del hilo.
+
+function ajustarHuecoChat(){
+  var th = document.getElementById('thread');
+  var comp = document.querySelector('.composer');
+  if (!th || !comp) return;
+  var h = comp.offsetHeight;
+  if (!h) return;
+  // El composer no llega al borde de abajo de la columna: deja por
+  // debajo la barra de pestanas. El hueco del chat tiene que
+  // cobrir las dos cosas, si no el composer tapa el ultimo mensaje.
+  var app = document.querySelector('.app');
+  var barra = document.querySelector('.tabbar');
+  var bajo = 0;
+  if (app && barra) {
+    var ab = app.getBoundingClientRect();
+    var bb = barra.getBoundingClientRect();
+    bajo = Math.max(0, Math.round(ab.bottom - bb.top));
+  }
+  th.style.paddingBottom = (h + bajo + 14) + 'px';
+}
+
+// Y cada vez que cambia el alto del composer (resize, cambio de
+// estado de la voz, o cambio de perfil).
+if (typeof ResizeObserver !== 'undefined') {
+  var _obsChat = new ResizeObserver(function(){ ajustarHuecoChat(); });
+  document.addEventListener('DOMContentLoaded', function(){
+    var comp = document.querySelector('.composer');
+    if (comp) _obsChat.observe(comp);
+    ajustarHuecoChat();
+  });
+} else {
+  window.addEventListener('resize', ajustarHuecoChat);
+}
 
 
 // ── Editar los datos del perfil ─────────────────────────────────
