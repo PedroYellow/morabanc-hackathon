@@ -1,353 +1,1622 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#0a3550">
-<meta name="description" content="PlanificAND: motor de decisiones financieras para autonomos y pymes de Andorra. MoraBanc IA + Finanzas.">
-<title>PlanificAND · Asesor financiero para Andorra</title>
-<link rel="stylesheet" href="assets/styles.css?v=20261107f">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%230a3550'/><path d='M30 52 L44 66 L70 34' fill='none' stroke='%23f1c657' stroke-width='11' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PlanificAND · Asesor financiero de MoraBanc</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   PlanificAND — el asesor financiero de MoraBanc como app
+   conversacional.
+
+   La raiz del sitio sirve esta version: la que se enseño y la que
+   se probo. El chat pregunta al motor de decisiones de MoraBanc
+   (la Lambda en AWS) con los numeros del perfil activo, y la voz
+   usa el agente de ElevenLabs de verdad.
+
+   El front "step 1 -> step 2 -> chat" que desarrollaste antes
+   sigue en app-real.html, por si hay que volver a el.
+   ============================================================ */
+
+:root {
+  /* MoraBanc (heredado del proyecto) */
+  --navy:        #0a3550;
+  --navy-2:      #114274;
+  --gold:        #f1c657;
+  --gold-ink:   #6b5314;
+  --bg:          #f4f7fa;
+  --surface-azul:#e8f1f8;
+
+  /* Revolut (referencia de la app) */
+  --ink:        #191c1f;
+  --ink-2:      #505a63;
+  --ink-3:      #8d969e;
+  --line:       #e6e9ec;
+  --white:      #ffffff;
+  --surface:    #f4f4f4;
+
+  /* Semanticos de finanzas */
+  --danger:     #e23b4a;
+  --teal:       #00a87e;
+  --blue:       #494fdf;
+  --warning:    #ec7e00;
+  --green:      #0b9d5c;
+
+  /* Radios: pill como en la app de referencia */
+  --r-pill: 9999px;
+  --r-card: 20px;
+  --r-md:   14px;
+  --r-sm:   10px;
+
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --nav-h:  62px;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0; padding: 0; height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 16px; line-height: 1.5; letter-spacing: 0.01em;
+  overscroll-behavior-y: none;
+}
+
+button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+input  { font: inherit; color: inherit; }
+
+/* ---------- Estructura de la app ---------- */
+.app {
+  max-width: 480px; margin: 0 auto; height: 100dvh;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+  position: relative; overflow: hidden;
+}
+@media (min-width: 700px) {
+  body { background: #e9edf1; }
+  .app { box-shadow: 0 0 60px rgba(25,28,31,.10); }
+}
+
+/* ---------- Cabecera ---------- */
+.topbar {
+  flex: none; background: var(--navy); color: #fff;
+  padding: 14px 18px 12px;
+  display: flex; align-items: center; gap: 12px;
+}
+.topbar .logo { display: flex; align-items: baseline; gap: 8px; }
+.topbar .logo b { font-size: 17px; font-weight: 600; letter-spacing: -0.02em; }
+.topbar .logo span { font-size: 11px; opacity: .7; font-weight: 500; letter-spacing: .04em; }
+.topbar .spacer { flex: 1; }
+.iconbtn {
+  width: 34px; height: 34px; border-radius: var(--r-pill);
+  display: grid; place-items: center; background: rgba(255,255,255,.10);
+}
+.iconbtn:active { background: rgba(255,255,255,.2); }
+.iconbtn svg { width: 17px; height: 17px; fill: none; stroke: #fff; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+
+.avatar {
+  width: 32px; height: 32px; border-radius: var(--r-pill);
+  background: var(--gold); color: var(--navy);
+  display: grid; place-items: center;
+  font-size: 12px; font-weight: 700; letter-spacing: .02em;
+}
+
+/* ---------- Hilo de chat ---------- */
+.thread {
+  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 18px 16px 12px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+
+.msg { max-width: 84%; }
+.msg.asesor { align-self: flex-start; }
+.msg.yo { align-self: flex-end; }
+
+.burbuja {
+  padding: 12px 15px; border-radius: var(--r-card);
+  font-size: 15px; line-height: 1.48;
+}
+.asesor .burbuja {
+  background: var(--white);
+  border-bottom-left-radius: 6px;
+  border: 1px solid var(--line);
+}
+.yo .burbuja {
+  background: var(--navy); color: #fff;
+  border-bottom-right-radius: 6px;
+}
+.burbuja b { font-weight: 600; }
+.burbuja .cifra { font-weight: 600; color: var(--navy); }
+.yo .burbuja .cifra { color: var(--gold); }
+
+/* Indicador de "está escribiendo" */
+.typing { display: flex; gap: 4px; padding: 14px 16px; }
+.typing i {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3);
+  animation: latido 1.3s infinite ease-in-out;
+}
+.typing i:nth-child(2) { animation-delay: .18s; }
+.typing i:nth-child(3) { animation-delay: .36s; }
+@keyframes latido { 0%,60%,100% { opacity:.3; transform:translateY(0) } 30% { opacity:1; transform:translateY(-3px) } }
+
+/* ---------- Chips de contexto (confirmación sutil) ---------- */
+.contexto {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 2px 4px 0;
+}
+.contexto .chip {
+  font-size: 12px; font-weight: 500;
+  padding: 5px 10px; border-radius: var(--r-pill);
+  background: var(--surface-azul); color: var(--navy);
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.contexto .chip svg { width: 11px; height: 11px; stroke: var(--green); stroke-width: 2.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- Tarjeta de resultado dentro del chat ---------- */
+.resultado {
+  align-self: stretch; max-width: 100%;
+  background: var(--white); border: 1px solid var(--line);
+  border-radius: var(--r-card); overflow: hidden;
+}
+.resultado .cabeza {
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 8px;
+}
+.resultado .cabeza .punto { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); flex: none; }
+.resultado .cabeza h4 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .01em; }
+
+.cifra-grande { padding: 16px; }
+.cifra-grande .num {
+  font-size: 34px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+.cifra-grande .et { font-size: 13px; color: var(--ink-2); margin-top: 3px; }
+.cifra-grande .delta { font-size: 13px; font-weight: 500; color: var(--green); margin-top: 6px; display: flex; align-items: center; gap: 4px; }
+.cifra-grande .delta svg { width: 13px; height: 13px; stroke: var(--green); stroke-width: 2.4; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Rejilla de KPIs */
+.kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); }
+.kpi { background: var(--white); padding: 13px 16px; }
+.kpi .n { font-size: 19px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.kpi .l { font-size: 11.5px; color: var(--ink-2); margin-top: 1px; }
+.kpi .n.rojo { color: var(--danger); }
+.kpi .n.verde { color: var(--green); }
+
+/* Gráficos */
+.gfx { padding: 16px; border-top: 1px solid var(--line); }
+.gfx .titulo {
+  font-size: 12px; font-weight: 600; color: var(--ink-2);
+  margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;
+}
+.gfx .titulo span { font-weight: 400; color: var(--ink-3); font-size: 11px; }
+
+/* Donut */
+.donut-wrap { display: flex; align-items: center; gap: 16px; }
+.donut { width: 104px; height: 104px; flex: none; }
+.leyenda { display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; min-width: 0; }
+.leyenda div { display: flex; align-items: center; gap: 7px; }
+.leyenda i { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+.leyenda span { color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.leyenda b { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Barras horizontales */
+.bars { display: flex; flex-direction: column; gap: 10px; }
+.bar-fila { font-size: 12.5px; }
+.bar-fila .top { display: flex; justify-content: space-between; margin-bottom: 5px; }
+.bar-fila .top span { color: var(--ink-2); }
+.bar-fila .top b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.bar-fila .pista { height: 7px; border-radius: var(--r-pill); background: var(--surface); overflow: hidden; }
+.bar-fila .pista i { display: block; height: 100%; border-radius: var(--r-pill); }
+
+/* Curva de caja */
+.spark { width: 100%; height: 92px; display: block; }
+
+/* Hallazgos */
+.hallazgos { padding: 4px 16px 16px; display: flex; flex-direction: column; gap: 9px; }
+.hallazgo { display: flex; gap: 9px; font-size: 13px; line-height: 1.45; }
+.hallazgo .pt { width: 6px; height: 6px; border-radius: 50%; margin-top: 6px; flex: none; background: var(--gold); }
+.hallazgo b { font-weight: 600; }
+
+/* ---------- Barra de entrada ---------- */
+.composer {
+  flex: none; background: rgba(255,255,255,.92);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--line);
+  padding: 10px 14px calc(10px + var(--safe-b));
+}
+.composer .fila { display: flex; align-items: flex-end; gap: 9px; }
+.composer textarea {
+  flex: 1; border: 1px solid var(--line); background: var(--surface);
+  border-radius: var(--r-md); padding: 11px 14px;
+  font-size: 15px; resize: none; min-height: 44px; max-height: 120px;
+  outline: none; line-height: 1.4;
+}
+.composer textarea:focus { border-color: var(--navy); background: var(--white); }
+.enviar {
+  width: 44px; height: 44px; border-radius: var(--r-pill); flex: none;
+  background: var(--gold); display: grid; place-items: center;
+}
+.enviar svg { width: 18px; height: 18px; fill: var(--navy); }
+
+/* Sugerencias */
+.sugerencias { display: flex; gap: 7px; overflow-x: auto; padding: 0 0 9px; scrollbar-width: none; }
+.sugerencias::-webkit-scrollbar { display: none; }
+.sugerencias button {
+  flex: none; font-size: 13px; font-weight: 500;
+  padding: 8px 13px; border-radius: var(--r-pill);
+  background: var(--surface-azul); color: var(--navy);
+  white-space: nowrap;
+}
+.sugerencias button:active { background: var(--navy); color: #fff; }
+
+/* ---------- Barra inferior (navegación de app) ---------- */
+.tabbar {
+  flex: none; height: calc(var(--nav-h) + var(--safe-b));
+  padding-bottom: var(--safe-b);
+  background: rgba(255,255,255,.94); backdrop-filter: blur(14px);
+  border-top: 1px solid var(--line);
+  display: grid; grid-template-columns: repeat(4, 1fr); align-items: center;
+}
+.tab {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  font-size: 10.5px; font-weight: 500; color: var(--ink-3);
+  padding: 6px 0 4px; height: 100%; justify-content: center;
+}
+.tab svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.tab.activo { color: var(--navy); }
+.tab.activo svg { stroke-width: 2.1; }
+
+/* ---------- Vistas ---------- */
+.vista { display: none; flex: 1; flex-direction: column; overflow-y: auto; }
+.vista.activa { display: flex; }
+
+/* Vista resumen */
+.resumen { padding: 16px 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+.resumen h2 { margin: 4px 0 2px; font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
+.resumen .sub { color: var(--ink-2); font-size: 13.5px; margin-bottom: 4px; }
+.panel {
+  background: var(--white); border: 1px solid var(--line);
+  border-radius: var(--r-card); overflow: hidden;
+}
+.panel .pt { padding: 14px 16px 12px; border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 600; }
+.panel .cuerpo { padding: 16px; }
+
+/* Vista perfil */
+.perfil { padding: 20px 16px; display: flex; flex-direction: column; gap: 12px; }
+.perfil .cab { display: flex; align-items: center; gap: 14px; padding: 6px 0 10px; }
+.perfil .cab .avatar { width: 54px; height: 54px; font-size: 18px; }
+.perfil .cab h3 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.02em; }
+.perfil .cab p { margin: 2px 0 0; font-size: 13px; color: var(--ink-2); }
+.fila-dato {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 13px 16px; border-bottom: 1px solid var(--line); font-size: 14.5px;
+}
+.fila-dato:last-child { border-bottom: 0; }
+.fila-dato .l { color: var(--ink-2); }
+.fila-dato .v { font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* Estados vacíos / placeholders */
+.vacio { padding: 40px 24px; text-align: center; color: var(--ink-3); font-size: 14px; }
+.vacio svg { width: 44px; height: 44px; stroke: var(--line); stroke-width: 1.5; fill: none; margin-bottom: 12px; }
+
+
+/* ---------- Subir / arrastrar extracto ---------- */
+.adjunto {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 14px; border-radius: var(--r-md);
+  background: var(--surface-azul); color: var(--navy);
+  font-size: 13.5px; margin: 0 4px;
+}
+.adjunto .ic { width: 32px; height: 32px; border-radius: var(--r-sm); background: #fff; display: grid; place-items: center; flex: none; }
+.adjunto .ic svg { width: 16px; height: 16px; fill: none; stroke: var(--navy); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.adjunto .txt { min-width: 0; flex: 1; }
+.adjunto .txt b { display: block; font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.adjunto .txt span { font-size: 11.5px; color: var(--navy-2); opacity: .8; }
+.adjunto .quitar { width: 26px; height: 26px; border-radius: var(--r-pill); display: grid; place-items: center; flex: none; }
+.adjunto .quitar svg { width: 13px; height: 13px; stroke: var(--navy); stroke-width: 2.2; fill: none; stroke-linecap: round; }
+
+/* Boton "+" para adjuntar */
+.adherir {
+  width: 44px; height: 44px; border-radius: var(--r-pill); flex: none;
+  background: var(--surface); display: grid; place-items: center;
+}
+.adherir svg { width: 19px; height: 19px; fill: none; stroke: var(--ink-2); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Overlay de arrastre a pantalla completa */
+.drop {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(10,53,80,.86); backdrop-filter: blur(6px);
+  display: none; place-items: center; text-align: center;
+  padding: 32px;
+}
+.drop.visible { display: grid; }
+.drop .caja {
+  border: 2px dashed rgba(241,198,87,.75); border-radius: var(--r-card);
+  padding: 40px 32px; color: #fff; max-width: 320px;
+}
+.drop .caja svg { width: 52px; height: 52px; stroke: var(--gold); fill: none; stroke-width: 1.5; margin-bottom: 14px; }
+.drop .caja b { display: block; font-size: 17px; font-weight: 600; margin-bottom: 6px; }
+.drop .caja span { font-size: 13.5px; opacity: .8; line-height: 1.45; }
+
+/* ---------- Orb de voz (patron UbotPay) ---------- */
+.orb {
+  width: 56px; height: 56px; border-radius: var(--r-pill);
+  background: var(--navy); display: grid; place-items: center;
+  position: relative; flex: none;
+  transition: transform .18s, background .25s;
+}
+.orb svg { width: 23px; height: 23px; fill: none; stroke: #fff; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.orb[data-mode="listening"] { background: var(--navy-2); }
+.orb[data-mode="speaking"]  { background: var(--gold); }
+.orb[data-mode="speaking"] svg { display: none; }
+.orb[data-mode="listening"]::after,
+.orb[data-mode="speaking"]::after {
+  content: ""; position: absolute; inset: -4px; border-radius: var(--r-pill);
+  border: 2px solid currentColor; opacity: .3;
+  animation: aura 1.5s ease-out infinite;
+}
+.orb[data-mode="speaking"]::after { border-color: var(--gold); opacity: .5; }
+@keyframes aura { 0% { transform: scale(.9); opacity:.5 } 100% { transform: scale(1.25); opacity:0 } }
+
+/* Ondas sonoras en el orb cuando habla */
+.orb .ondas { position: absolute; inset: 0; display: none; place-items: center; gap: 2.5px; }
+.orb[data-mode="speaking"] .ondas { display: flex; }
+.orb[data-mode="speaking"] .ondas i {
+  display: block; width: 2.5px; border-radius: var(--r-pill); background: var(--navy);
+  animation: onda 1s ease-in-out infinite;
+}
+.orb[data-mode="speaking"] .ondas i:nth-child(1) { height: 9px;  animation-delay: 0s; }
+.orb[data-mode="speaking"] .ondas i:nth-child(2) { height: 17px; animation-delay: .12s; }
+.orb[data-mode="speaking"] .ondas i:nth-child(3) { height: 24px; animation-delay: .24s; }
+.orb[data-mode="speaking"] .ondas i:nth-child(4) { height: 14px; animation-delay: .36s; }
+.orb[data-mode="speaking"] .ondas i:nth-child(5) { height: 8px;  animation-delay: .48s; }
+@keyframes onda { 0%,100% { transform: scaleY(.45) } 50% { transform: scaleY(1) } }
+
+/* Medidor de nivel */
+.medidor { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--ink-3); padding: 0 2px 8px; }
+.medidor .barra { flex: 1; height: 3px; border-radius: var(--r-pill); background: var(--line); overflow: hidden; }
+.medidor .barra i { display: block; height: 100%; width: 0%; background: var(--gold); transition: width .08s linear; }
+.medidor.activo { color: var(--navy); }
+.medidor.activo #medidorTexto::before {
+  content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--danger); margin-right: 6px; vertical-align: middle;
+  animation: latido-dot 1.4s infinite ease-in-out;
+}
+@keyframes latido-dot { 0%,60%,100% { opacity:.3 } 30% { opacity:1 } }
+
+/* Aviso de que la sesion esta en curso */
+.en-curso {
+  display: none; align-items: center; justify-content: center; gap: 7px;
+  font-size: 11.5px; color: var(--ink-3); padding: 0 2px 8px;
+}
+.en-curso.visible { display: flex; }
+.en-curso .punto { width: 6px; height: 6px; border-radius: 50%; background: var(--danger); animation: latido-dot 1.4s infinite; }
+
+
+/* ---------- Selector de perfil (datos de prueba) ---------- */
+.perfiles { display: flex; gap: 7px; overflow-x: auto; padding: 0 0 9px; scrollbar-width: none; }
+.perfiles::-webkit-scrollbar { display: none; }
+.perfiles button {
+  flex: none; font-size: 12.5px; font-weight: 500;
+  padding: 7px 12px; border-radius: var(--r-pill);
+  background: var(--surface); color: var(--ink-2);
+  white-space: nowrap; border: 1px solid transparent;
+}
+.perfiles button.activo { background: var(--navy); color: #fff; }
+.perfiles .sep { width: 1px; background: var(--line); margin: 4px 3px; flex: none; }
+
+.etiqueta-perfil {
+  align-self: flex-start;
+  font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-3); padding: 0 4px;
+}
+
+/* ---------- Anotaciones de maqueta ---------- */
+.nota {
+  position: fixed; top: 10px; right: 10px; z-index: 50;
+  background: var(--ink); color: #fff; font-size: 11px; font-weight: 500;
+  padding: 7px 11px; border-radius: var(--r-pill); opacity: .9;
+  display: flex; align-items: center; gap: 6px;
+}
+.nota i { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); }
+@media (max-width: 700px) { .nota { display: none; } }
+</style>
+<script>
+// Config de la maqueta. El API_URL lo inyecta el deploy; por defecto
+// es el proxy /api del propio dominio (mismo origen, sin CORS).
+window.__API_URL__ = window.__API_URL__ || "/api";
+window.__COGNITO_DOMAIN__ = window.__COGNITO_DOMAIN__ || "";
+window.__COGNITO_CLIENT_ID__ = window.__COGNITO_CLIENT_ID__ || "";
+window.__AWS_REGION__ = window.__AWS_REGION__ || "us-east-1";
+window.__ELEVENLABS_AGENT_ID__ = window.__ELEVENLABS_AGENT_ID__ || "agent_5301m6vbwqpnea1spa0mwkyvs2ap";
+</script>
 </head>
+
 <body>
 
-<!-- ============ CABECERA ============ -->
-<header class="topbar">
-  <div class="topbar-inner">
-    <div class="brand">
-      <!-- Logo real de MoraBanc (del sitio corporativo, version clara) -->
-      <div class="brand-mark">
-        <img class="brand-logo" src="assets/logo-morabanc.svg" alt="MoraBanc" width="153" height="24">
+<div class="nota"><i></i> Asesor financiero de MoraBanc · motor con la normativa andorrana</div>
+
+<!-- Selector de ficheros (oculto). Va antes del script: si no, el JS
+     lo busca cuando todavia no existe. -->
+<input type="file" id="fichero" accept=".csv,.txt,.xlsx,.xls" hidden>
+
+<div class="app">
+
+  <!-- ══════════ CABECERA ══════════ -->
+  <header class="topbar">
+    <div class="logo">
+      <b>PlanificAND</b><span>MoraBanc</span>
+    </div>
+    <div class="spacer"></div>
+    <button class="iconbtn" aria-label="Cambiar idioma">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 2.5 15.3 0 18M12 3c-2.5 2.7-2.5 15.3 0 18"/></svg>
+    </button>
+    <div class="avatar">PA</div>
+  </header>
+
+  <!-- ══════════ VISTA: ASESOR (chat) ══════════ -->
+  <section class="vista activa" id="vistaAsesor">
+    <div class="thread" id="thread">
+
+      <div class="msg asesor">
+        <div class="burbuja">
+          Hola Pedro, soy tu asesor financiero de MoraBanc.<br><br>
+          Voy a hacerte unas preguntas y con lo que me digas calculo tu
+          CASS, tu IRPF y cómo va tu caja. <b>¿Cuánto ganas al año después de gastos?</b>
+        </div>
       </div>
-      <div class="brand-divider" aria-hidden="true"></div>
-      <div class="brand-text">
-        <strong>PlanificAND</strong>
-        <span class="brand-sub">Autónomos y pymes · Andorra</span>
+
+      <div class="msg yo">
+        <div class="burbuja">Facturo <span class="cifra">30.000</span> al año</div>
+      </div>
+
+      <div class="msg asesor">
+        <div class="burbuja">Perfecto. ¿Y cuánto te queda en la cuenta ahora mismo?</div>
+      </div>
+
+      <div class="msg yo">
+        <div class="burbuja">Tengo <span class="cifra">8.500</span> euros</div>
+      </div>
+
+      <div class="msg asesor">
+        <div class="burbuja">
+          Con eso tengo lo esencial. Un último dato: ¿qué margen te queda
+          sobre lo que facturas?
+        </div>
+      </div>
+
+      <div class="msg yo">
+        <div class="burbuja">Un 70%</div>
+      </div>
+
+      <!-- Chips: confirmación sutil de lo capturado -->
+      <div class="contexto" id="chipsPerfil"></div>
+
+      <!-- Tarjeta de resultado DENTRO del chat -->
+      <div class="msg asesor" style="max-width:100%">
+        <div class="burbuja" style="margin-bottom:8px">
+          Listo, ya tengo lo que necesito. Aquí va:
+        </div>
+
+        <div class="resultado">
+          <div class="cabeza">
+            <span class="punto"></span>
+            <h4 id="chat-cassTitulo">Tu CASS de 2026</h4>
+          </div>
+
+          <div class="cifra-grande">
+            <div class="num" id="chat-cassAnual">—</div>
+            <div class="et" id="chat-cassTramo">—</div>
+            <div class="delta">
+              <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+              <span id="chat-cassMensual">—</span> al mes
+            </div>
+          </div>
+
+          <div class="kpis">
+            <div class="kpi">
+              <div class="n" id="chat-kpiCassMensual">—</div>
+              <div class="l">CASS mensual</div>
+            </div>
+            <div class="kpi">
+              <div class="n verde" id="chat-kpiRecuperableGrande">—</div>
+              <div class="l">recuperable al mes</div>
+            </div>
+            <div class="kpi">
+              <div class="n rojo" id="chat-kpiPeorMes">—</div>
+              <div class="l">peor mes de caja</div>
+            </div>
+            <div class="kpi">
+              <div class="n" id="chat-kpiColchon">—</div>
+              <div class="l">colchón de caja</div>
+            </div>
+          </div>
+            </div>
+          </div>
+
+          <!-- Donut -->
+          <div class="gfx">
+            <div class="titulo">Reparto de tus ingresos <span>12 meses</span></div>
+            <div class="donut-wrap">
+              <svg class="donut" id="chat-donutSvg" viewBox="0 0 42 42">
+                <circle cx="21" cy="21" r="15.915" fill="none" stroke="#e6e9ec" stroke-width="6"/>
+                <circle cx="21" cy="21" r="15.915" fill="none" stroke="#00a87e" stroke-width="6"
+                        stroke-dasharray="52 48" stroke-dashoffset="25"/>
+                <circle cx="21" cy="21" r="15.915" fill="none" stroke="#494fdf" stroke-width="6"
+                        stroke-dasharray="26 74" stroke-dashoffset="-27"/>
+                <circle cx="21" cy="21" r="15.915" fill="none" stroke="#ec7e00" stroke-width="6"
+                        stroke-dasharray="14 86" stroke-dashoffset="-53"/>
+                <circle cx="21" cy="21" r="15.915" fill="none" stroke="#e23b4a" stroke-width="6"
+                        stroke-dasharray="8 92" stroke-dashoffset="-67"/>
+              </svg>
+              <div class="leyenda" id="chat-donutLeyenda">
+                <div><i style="background:#00a87e"></i><span>Servicios</span><b>52 %</b></div>
+                <div><i style="background:#494fdf"></i><span>Subcontratas</span><b>26 %</b></div>
+                <div><i style="background:#ec7e00"></i><span>Material</span><b>14 %</b></div>
+                <div><i style="background:#e23b4a"></i><span>Otros</span><b>8 %</b></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Curva de caja -->
+          <div class="gfx">
+            <div class="titulo">Tu caja mes a mes <span>enero → diciembre</span></div>
+            <svg class="spark" id="chat-curvaSvg" viewBox="0 0 320 92" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="chat-g" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#00a87e" stop-opacity=".22"/>
+                  <stop offset="100%" stop-color="#00a87e" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <!-- La curva la dibuja pintarResumen con los saldos
+                   proyectados del motor (no es un dibujo fijo: cambia
+                   con el perfil). La linea roja marca el saldo 0. -->
+            </svg>
+            <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-3);margin-top:5px">
+              <span>ene</span><span>abr</span><span>jul</span><span>oct</span><span>dic</span>
+            </div>
+          </div>
+
+          <!-- Hallazgos -->
+          <div class="hallazgos" id="hallazgosPerfil"></div>
+        </div>
+      </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Entrada -->
+    <div class="composer">
+      <div class="etiqueta-perfil">Perfil de datos de prueba</div>
+      <div class="perfiles" id="perfiles"></div>
+      <div class="sugerencias">
+        <button>¿Y si subo mi precio un 10%?</button>
+        <button>¿Cuándo me sale mejor contratar?</button>
+        <button>Repíteme el CASS</button>
+      </div>
+      <div class="en-curso" id="enCurso">
+        <span class="punto"></span> Sesión de voz activa · toca el micro para cortarla
+      </div>
+      <div class="medidor" id="medidor">
+        <span id="medidorTexto">Toca el micro: el asesor te oirá y te responderá</span>
+        <span class="barra"><i id="medidorBarra"></i></span>
+      </div>
+      <div class="fila">
+        <button class="adherir" id="adherir" aria-label="Adjuntar extracto">
+          <svg viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+        </button>
+        <textarea id="entrada" rows="1" placeholder="Escribe o habla…"></textarea>
+        <button class="orb" id="orb" data-mode="idle" aria-label="Hablar con el asesor">
+          <svg viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0014 0v-1M12 18v4M8 22h8"/></svg>
+          <span class="ondas"><i></i><i></i><i></i><i></i><i></i></span>
+        </button>
+        <button class="enviar" aria-label="Enviar">
+          <svg viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-2.5-6.5L4 12z"/></svg>
+        </button>
       </div>
     </div>
-    <div class="topbar-actions">
-      <button class="lang-switch" id="langSwitch" aria-label="Cambiar idioma" title="Cambiar idioma">
-        <span class="lang-active">ES</span><span class="lang-sep">·</span><span>CA</span><span class="lang-sep">·</span><span>EN</span>
-      </button>
-    </div>
-  </div>
-</header>
+  </section>
 
-<!-- ============ PASO 1: CONTEXTO ============ -->
-<main class="app">
+  <!-- ══════════ VISTA: RESUMEN ══════════ -->
+  <section class="vista" id="vistaResumen">
+    <div class="resumen">
+      <h2>Tu situación</h2>
+      <div class="sub">Actualizado a 7 nov 2026 · freelance de servicios</div>
 
-  <section class="step" id="stepContexto" data-step="1">
+      <div class="panel">
+        <div class="cifra-grande" style="padding:20px 18px">
+          <div class="num" id="resNumero">—</div>
+          <div class="et" id="resEtiqueta">CASS anual 2026</div>
+          <div class="delta" id="resDelta"></div>
+        </div>
+        <div class="kpis">
+          <div class="kpi"><div class="n" id="kpiRenta">—</div><div class="l">renta neta</div></div>
+          <div class="kpi"><div class="n" id="kpiMargen">—</div><div class="l">margen</div></div>
+          <div class="kpi"><div class="n" id="kpiSaldo">—</div><div class="l">saldo actual</div></div>
+          <div class="kpi"><div class="n verde" id="kpiRecuperable">—</div><div class="l">recuperable/mes</div></div>
+        </div>
+      </div>
 
-    <!--
-      Voz y captura conversacional.
+      <div class="panel">
+        <div class="pt">Reparto de ingresos</div>
+        <div class="cuerpo">
+          <div class="donut-wrap">
+            <svg class="donut" id="donutSvg2" viewBox="0 0 42 42">
+              <circle cx="21" cy="21" r="15.915" fill="none" stroke="#e6e9ec" stroke-width="6"/>
+              <circle cx="21" cy="21" r="15.915" fill="none" stroke="#00a87e" stroke-width="6" stroke-dasharray="52 48" stroke-dashoffset="25"/>
+              <circle cx="21" cy="21" r="15.915" fill="none" stroke="#494fdf" stroke-width="6" stroke-dasharray="26 74" stroke-dashoffset="-27"/>
+              <circle cx="21" cy="21" r="15.915" fill="none" stroke="#ec7e00" stroke-width="6" stroke-dasharray="14 86" stroke-dashoffset="-53"/>
+              <circle cx="21" cy="21" r="15.915" fill="none" stroke="#e23b4a" stroke-width="6" stroke-dasharray="8 92" stroke-dashoffset="-67"/>
+            </svg>
+            <div class="leyenda" id="donutLeyenda2">
+              <div><i style="background:#00a87e"></i><span>Servicios</span><b>52 %</b></div>
+              <div><i style="background:#494fdf"></i><span>Subcontratas</span><b>26 %</b></div>
+              <div><i style="background:#ec7e00"></i><span>Material</span><b>14 %</b></div>
+              <div><i style="background:#e23b4a"></i><span>Otros</span><b>8 %</b></div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-      Este bloque va ANTES del formulario a proposito: el objetivo es
-      que el usuario pueda HABLAR sus datos en vez de escribirlos en
-      cuatro casillas. El formulario queda como atajo para quien ya
-      sabe lo que quiere poner, y se rellena solo con lo que el
-      usuario dice.
+      <div class="panel">
+        <div class="pt">Gastos por categoría</div>
+        <div class="cuerpo">
+          <div class="bars" id="barrasCat">
+            <div class="bar-fila">
+              <div class="top"><span>Alquiler y suministros</span><b>1.850 €</b></div>
+              <div class="pista"><i style="width:74%;background:#e23b4a"></i></div>
+            </div>
+            <div class="bar-fila">
+              <div class="top"><span>Material y subcontratas</span><b>1.240 €</b></div>
+              <div class="pista"><i style="width:50%;background:#ec7e00"></i></div>
+            </div>
+            <div class="bar-fila">
+              <div class="top"><span>Software y servicios</span><b>680 €</b></div>
+              <div class="pista"><i style="width:27%;background:#494fdf"></i></div>
+            </div>
+            <div class="bar-fila">
+              <div class="top"><span>Impuestos y CASS</span><b>735 €</b></div>
+              <div class="pista"><i style="width:29%;background:#00a87e"></i></div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-      El chat de abajo (paso 2) es el mismo: aqui solo aparece el
-      acceso rapido a la voz y el resumen de lo capturado.
-    -->
-    <div class="card voice-card" id="voiceCard">
-      <h2 class="card-title">Cuéntamelo hablando</h2>
-      <p class="card-hint">
-        Pulsa el micro y di tu situación: el asesor la entiende, la
-        anota y calcula. También puedes escribirla.
-      </p>
-
-      <div class="voice-bar" id="voiceBarStep1">
-        <button class="voice-orb" id="voiceOrbStep1" type="button" aria-label="Hablar con el asesor">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
-            <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/>
-            <path d="M18 11a6 6 0 0 1-12 0H4a8 8 0 0 0 7 7.93V22h2v-3.07A8 8 0 0 0 20 11Z" opacity=".85"/>
+      <div class="panel">
+        <div class="pt">Caja mes a mes</div>
+        <div class="cuerpo">
+          <svg class="spark" id="curvaSvg2" viewBox="0 0 320 92" preserveAspectRatio="none" style="height:120px">
+            <defs>
+              <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#00a87e" stop-opacity=".22"/>
+                <stop offset="100%" stop-color="#00a87e" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <line x1="0" y1="58" x2="320" y2="58" stroke="#e23b4a" stroke-width="1" stroke-dasharray="3 3" opacity=".5"/>
+            <path d="M0,26 L29,22 L58,31 L87,28 L116,42 L145,46 L174,55 L203,52 L232,63 L261,59 L290,68 L320,64"
+                  fill="none" stroke="#00a87e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M0,26 L29,22 L58,31 L87,28 L116,42 L145,46 L174,55 L203,52 L232,63 L261,59 L290,68 L320,64 L320,92 L0,92 Z" fill="url(#g2)"/>
           </svg>
-        </button>
-        <div class="voice-meter" id="voiceMeterStep1"><i id="voiceLevelStep1"></i></div>
-        <div class="voice-status" id="voiceStatusStep1" data-state="idle">
-          <span class="dot"></span><span id="voiceStatusTextStep1">Toca para hablar</span>
-        </div>
-        <select class="voice-device" id="voiceDeviceStep1" hidden aria-label="Micrófono"></select>
-      </div>
-
-      <div class="voice-notice" id="voiceNoticeStep1" hidden></div>
-
-      <form class="chat-input" id="voiceFormStep1">
-        <input type="text" id="voiceInputStep1" placeholder="O escribe aquí tu situación…" autocomplete="off" maxlength="200">
-        <button type="submit" class="btn-send" aria-label="Enviar">
-          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 12 L20 4 L14 20 L12 13 Z" fill="currentColor"/></svg>
-        </button>
-      </form>
-
-      <!-- Lo que el asesor ha entendido hasta ahora -->
-      <div class="context-chips" id="contextChipsStep1"></div>
-    </div>
-
-    <div class="step-head">
-      <span class="step-num">1</span>
-      <div>
-        <h1 id="tituloContexto">Tu situación financiera</h1>
-        <p id="subtituloContexto">Empezamos por lo básico: tus cuentas y tus ingresos.</p>
-      </div>
-    </div>
-
-    <!-- Selector de cuenta -->
-    <div class="card">
-      <h2 class="card-title">¿Cómo quieres empezar?</h2>
-      <div class="opciones" id="opcionesInicio">
-        <button class="opcion" data-modo="demo" data-perfil="freelance">
-          <span class="opcion-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg></span>
-          <span class="opcion-body">
-            <strong>Cuenta de demostración</strong>
-            <small>Freelance con nóminas · el caso del pitch</small>
-          </span>
-        </button>
-        <button class="opcion" data-modo="demo" data-perfil="empleado">
-          <span class="opcion-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a7 7 0 0114 0v1"/></svg></span>
-          <span class="opcion-body">
-            <strong>Usuario normal</strong>
-            <small>Asalariado · sin actividad económica</small>
-          </span>
-        </button>
-        <button class="opcion" data-modo="demo" data-perfil="contratar">
-          <span class="opcion-icon warn" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 L22 20 L2 20 Z"/><path d="M12 10v4"/><circle cx="12" cy="17" r=".6" fill="currentColor"/></svg></span>
-          <span class="opcion-body">
-            <strong>Freelancer que quiere contratar</strong>
-            <small>Caja justa, flujo negativo · la pregunta difícil</small>
-          </span>
-        </button>
-        <button class="opcion" data-modo="demo" data-perfil="comercio">
-          <span class="opcion-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9 L5 4 H19 L20 9"/><path d="M4 9 H20 V20 H4 Z"/><path d="M9 20 V14 H15 V20"/></svg></span>
-          <span class="opcion-body">
-            <strong>Comercio con tienda</strong>
-            <small>Pyme con empleado · volumen alto</small>
-          </span>
-        </button>
-        <button class="opcion" data-modo="demo" data-perfil="cierre">
-          <span class="opcion-icon ok" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 L9 17 L4 12"/></svg></span>
-          <span class="opcion-body">
-            <strong>Freelancer que siguió el consejo</strong>
-            <small>El cierre del bucle · ¿hiciste caso?</small>
-          </span>
-        </button>
-        <button class="opcion" data-modo="subir">
-          <span class="opcion-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3 H7 A1 1 0 0 0 6 4 V20 A1 1 0 0 0 7 21 H17 A1 1 0 0 0 18 20 V7 Z"/><path d="M14 3 V7 H18"/><path d="M9 13 H15"/><path d="M9 17 H13"/></svg></span>
-          <span class="opcion-body">
-            <strong>Subir mi extracto</strong>
-            <small>CSV de tu banca · se procesa en el navegador</small>
-          </span>
-        </button>
-      </div>
-
-      <!-- Zona de subida (oculta por defecto) -->
-      <div class="upload-zone" id="uploadZone" hidden>
-        <label class="file-drop" for="fileInput">
-          <!-- Se aceptan CSV (el formato del motor) y tambien PDF, imagen y
-               XLSX: el navegador los adjunta a la conversacion y el
-               asistente puede leerlos. El motor sigue trabajando con el
-               CSV, que es la fuente de verdad de los numeros. -->
-          <input type="file" id="fileInput" multiple
-                 accept=".csv,text/csv,.pdf,application/pdf,.png,.jpg,.jpeg,image/*,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
-          <span class="file-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17 V4"/><path d="M7 9 L12 4 L17 9"/><path d="M4 20 H20"/></svg></span>
-          <strong id="fileDropTitle">Arrastra tus archivos o haz clic</strong>
-          <small>CSV de tu banca (fecha, concepto, importe) · también PDF, Excel o imágenes</small>
-        </label>
-        <div class="upload-privacy">
-          🔒 Tus archivos se procesan en la cuenta AWS aislada del equipo y se borran a los 30 días.
-        </div>
-      </div>
-
-      <!-- Arrastre sobre toda la pagina: suelta el archivo donde estes -->
-      <div class="drop-overlay" id="dropOverlay" hidden aria-hidden="true">
-        <div class="drop-overlay-inner">
-          <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17 V4"/><path d="M7 9 L12 4 L17 9"/><path d="M4 20 H20"/></svg>
-          <strong>Suelta aquí tu extracto</strong>
-          <span>CSV, PDF, Excel o imágenes</span>
+          <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-3);margin-top:6px">
+            <span>ene</span><span>abr</span><span>jul</span><span>oct</span><span>dic</span>
+          </div>
         </div>
       </div>
     </div>
-
-    <!-- Datos fiscales -->
-    <div class="card" id="cardDatos">
-      <h2 class="card-title">Tus datos fiscales</h2>
-      <p class="card-hint">Con esto calculamos tu CASS, tu IRPF y tu IGI con la normativa andorrana. Si ya lo has contado, está relleno.</p>
-
-      <div class="form-grid">
-        <label class="field">
-          <span class="field-label">Renta neta anual</span>
-          <span class="field-hint">Lo que te queda tras gastos, antes de impuestos y CASS</span>
-          <div class="input-money">
-            <input type="number" id="rentaNeta" inputmode="decimal" placeholder="30000" step="100" min="0">
-            <span class="input-suffix">€</span>
-          </div>
-          <small class="field-help">Lo que facturas antes de impuestos y cotizaciones.</small>
-        </label>
-
-        <label class="field">
-          <span class="field-label">Margen bruto</span>
-          <div class="input-money">
-            <input type="number" id="margenBruto" inputmode="decimal" placeholder="70" step="1" min="1" max="99">
-            <span class="input-suffix">%</span>
-          </div>
-          <small class="field-help">Qué parte de cada euro facturas queda para ti.</small>
-        </label>
-
-        <label class="field">
-          <span class="field-label">Saldo actual en cuenta</span>
-          <div class="input-money">
-            <input type="number" id="saldoActual" inputmode="decimal" placeholder="8500" step="100">
-            <span class="input-suffix">€</span>
-          </div>
-          <small class="field-help">Ahora mismo, en la cuenta profesional.</small>
-        </label>
-
-        <label class="field">
-          <span class="field-label">¿Qué haces?</span>
-          <input type="text" id="actividad" placeholder="Freelance de servicios" maxlength="60">
-          <small class="field-help">Nos ayuda a contextualizar las respuestas.</small>
-        </label>
-      </div>
-    </div>
-
-    <button class="btn-primary btn-lg" id="btnAnalizar">
-      <span>Analizar mi situación</span>
-      <span class="btn-arrow">→</span>
-    </button>
   </section>
 
-  <!-- ============ PASO 2: RESULTADO ============ -->
-  <section class="step" id="stepResultado" data-step="2" hidden>
-
-    <!-- Cabecera con veredicto -->
-    <div class="verdict-card" id="verdictCard">
-      <div class="verdict-main">
-        <div class="verdict-label" id="verdictLabel">Diagnóstico</div>
-        <h2 class="verdict-title" id="verdictTitle">—</h2>
-        <p class="verdict-text" id="verdictText">—</p>
+  <!-- ══════════ VISTA: EXTRACTO ══════════ -->
+  <section class="vista" id="vistaExtracto">
+    <div class="resumen">
+      <h2>Movimientos</h2>
+      <div class="sub" id="extSubtitulo">—</div>
+      <div class="panel">
+        <div class="fila-dato"><span class="l">Ingresos</span><span class="v" id="extIngresos" style="color:var(--green)">—</span></div>
+        <div class="fila-dato"><span class="l">Gastos</span><span class="v" id="extGastos" style="color:var(--danger)">—</span></div>
+        <div class="fila-dato"><span class="l">Resultado</span><span class="v" id="extResultado">—</span></div>
       </div>
-      <div class="verdict-metrics" id="verdictMetrics"></div>
-    </div>
-
-    <!-- Tarjetas de hallazgos -->
-    <div class="hallazgos" id="hallazgos"></div>
-
-    <!-- Gráfico de proyección -->
-    <div class="card" id="cardProyeccion" hidden>
-      <div class="card-head">
-        <h2 class="card-title">Tu caja mes a mes</h2>
-        <div class="legend" id="leyendaProyeccion"></div>
-      </div>
-      <div class="chart-wrap">
-        <svg id="graficoCaja" class="chart" viewBox="0 0 640 240" preserveAspectRatio="none"></svg>
-      </div>
-      <div class="chart-note" id="notaProyeccion"></div>
-    </div>
-
-    <!-- Preguntas sugeridas -->
-    <div class="card">
-      <h2 class="card-title">Pregúntame lo que quieras</h2>
-      <div class="sugerencias" id="sugerencias"></div>
-
-      <div class="chat" id="chat">
-        <!--
-          Contexto capturado en vivo. Se rellena solo con lo que el
-          usuario dice (o escribe). Es la pieza que convierte el chat
-          en una captura de datos: el motor recibe un contexto completo.
-        -->
-        <div class="context-chips" id="contextChips"></div>
-
-        <!-- Barra de voz: se despliega al pulsar el microfono -->
-        <div class="voice-bar" id="voiceBar" hidden>
-          <button class="voice-orb" id="voiceOrb" type="button" aria-label="Hablar con el asesor">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
-              <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/>
-              <path d="M18 11a6 6 0 0 1-12 0H4a8 8 0 0 0 7 7.93V22h2v-3.07A8 8 0 0 0 20 11Z" opacity=".85"/>
-            </svg>
-          </button>
-          <div class="voice-meter" id="voiceMeter"><i id="voiceLevel"></i></div>
-          <div class="voice-status" id="voiceStatus" data-state="idle">
-            <span class="dot"></span><span id="voiceStatusText">Toca para hablar</span>
-          </div>
-          <select class="voice-device" id="voiceDevice" hidden aria-label="Micrófono"></select>
-        </div>
-
-        <div class="voice-notice" id="voiceNotice" hidden></div>
-
-        <div class="chat-messages" id="chatMessages"></div>
-        <form class="chat-input" id="chatForm">
-          <button type="button" class="btn-mic" id="btnMic" aria-label="Hablar con el asesor">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-              <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/>
-              <path d="M18 11a6 6 0 0 1-12 0H4a8 8 0 0 0 7 7.93V22h2v-3.07A8 8 0 0 0 20 11Z" opacity=".85"/>
-            </svg>
-          </button>
-          <input type="text" id="chatInput" placeholder="Escribe o habla con el asesor…" autocomplete="off" maxlength="200">
-          <button type="submit" class="btn-send" aria-label="Enviar">
-            <svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 12 L20 4 L14 20 L12 13 Z" fill="currentColor"/></svg>
-          </button>
-        </form>
+      <div class="vacio">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>
+        Aquí aparecerán los movimientos de tu extracto cuando subas el CSV
       </div>
     </div>
-
-    <!-- Traza técnica (para el jurado técnico) -->
-    <details class="traza" id="trazaBox">
-      <summary>Ver el razonamiento y las reglas aplicadas</summary>
-      <div class="traza-body" id="trazaBody"></div>
-    </details>
-
-    <button class="btn-ghost" id="btnReiniciar">← Empezar de nuevo</button>
-
-    <!-- Boton de presentacion: una sola vista grande para el proyector -->
-    <button class="btn-presentacion" id="btnPresentacion">
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21 L16 21"/><path d="M12 17 L12 21"/>
-      </svg>
-      <span>Modo presentación</span>
-    </button>
-
   </section>
 
-</main>
+  <!-- ══════════ VISTA: PERFIL ══════════ -->
+  <section class="vista" id="vistaPerfil">
+    <div class="perfil">
+      <div class="cab">
+        <div class="avatar">PA</div>
+        <div>
+          <h3>Pedro Andre Miranda Gomez</h3>
+          <p>12TJ28 · <span id="perfilActividad">—</span></p>
+        </div>
+      </div>
 
-<!-- ============ MODAL: DETALLE DE UN HALLAZGO ============ -->
-<div class="modal-backdrop" id="modalBackdrop" hidden>
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitulo">
-    <button class="modal-close" id="modalClose" aria-label="Cerrar">×</button>
-    <div class="modal-body" id="modalBody"></div>
+      <div class="panel">
+        <div class="fila-dato"><span class="l">Renta neta anual</span><span class="v" id="perfilRenta">—</span></div>
+        <div class="fila-dato"><span class="l">Margen</span><span class="v" id="perfilMargen">—</span></div>
+        <div class="fila-dato"><span class="l">Saldo actual</span><span class="v" id="perfilSaldo">—</span></div>
+        <div class="fila-dato"><span class="l">Actividad</span><span class="v" id="perfilActividad2">—</span></div>
+      </div>
+
+      <div class="panel">
+        <div class="pt">Editar con el asesor</div>
+        <div class="cuerpo" style="font-size:13.5px;color:var(--ink-2);line-height:1.5">
+          Di «cambia mi renta a 35.000» y el asesor lo actualiza solo.
+          O vuelve a empezar la conversación.
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="fila-dato"><span class="l">Idioma</span><span class="v">Español</span></div>
+        <div class="fila-dato"><span class="l">Notificaciones</span><span class="v">Activadas</span></div>
+        <div class="fila-dato"><span class="l">Privacidad</span><span class="v">Tus datos no se comparten</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ NAVEGACIÓN ══════════ -->
+  <nav class="tabbar">
+    <button class="tab activo" data-vista="vistaAsesor">
+      <svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
+      <span>Asesor</span>
+    </button>
+    <button class="tab" data-vista="vistaResumen">
+      <svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 16l4-6 4 3 5-8"/></svg>
+      <span>Resumen</span>
+    </button>
+    <button class="tab" data-vista="vistaExtracto">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>
+      <span>Extracto</span>
+    </button>
+    <button class="tab" data-vista="vistaPerfil">
+      <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <span>Perfil</span>
+    </button>
+  </nav>
+
+</div>
+
+<script id="datos-motor" type="application/json">{"freelance": {"etiqueta": "Freelance de servicios", "saldo": 8500.0, "renta": 30000.0, "margen": 0.7, "actividad": "Freelance de servicios", "n_movimientos": 219, "periodo": {"desde": "2025-10-03", "hasta": "2026-09-27", "meses": 12, "n_movimientos": 219}, "tesoreria": {"ingresos_totales": 50733.0, "gastos_totales": 27967.31, "flujo_neto": 22765.69, "ingresos_mes": 4227.75, "gastos_mes": 2330.61, "por_categoria": {"impuestos": 8100.0, "seguridad_social": 7055.4, "alquiler": 5400.0, "suministros": 2420.8, "transporte": 2203.19, "material": 992.0, "herramientas": 719.88, "sin_categorizar": 527.64, "seguros": 510.0, "banca": 38.4}}, "fugas": {"n_fugas": 5, "recuperable_mensual": 127.96, "recuperable_anual": 1535.52, "por_tipo": {"deriva_gasto": 288.0, "suscripcion": 1247.52}, "fugas": [{"tipo": "suscripcion", "descripcion": "Cobro recurrente de 59,99 € (suscripcion adobe creative cloud). Se repite 12 veces en 12 meses.", "importe_mensual": 59.99, "importe_anual": 719.88, "movimientos_involucrados": [{"fecha": "2025-10-07", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2025-11-12", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2025-12-08", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-01-03", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-02-12", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-03-07", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-04-08", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-05-07", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-06-12", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-07-11", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-08-04", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-09-10", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}], "accion_sugerida": "Revisa si sigues usando 'suscripcion adobe creative cloud'. Cancelarlo libera 59,99 €/mes (719,88 €/año).", "confianza": 0.8}, {"tipo": "deriva_gasto", "descripcion": "El gasto en 'material' ha subido un 94% en 3 meses (51,00 € -> 99,00 €).", "importe_mensual": 24.0, "importe_anual": 288.0, "movimientos_involucrados": [], "accion_sugerida": "Revisa el gasto en 'material': ha crecido 24,00 €/mes de media. Si lo estabilizas, recuperas 288,00 €/año.", "confianza": 0.6}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 19,99 € (dropbox profesional). Se repite 12 veces en 12 meses.", "importe_mensual": 19.99, "importe_anual": 239.88, "movimientos_involucrados": [{"fecha": "2025-10-06", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2025-11-11", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2025-12-10", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-01-08", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-02-09", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-03-08", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-04-08", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-05-08", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-06-07", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-07-05", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-08-06", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-09-10", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}], "accion_sugerida": "Revisa si sigues usando 'dropbox profesional'. Cancelarlo libera 19,99 €/mes (239,88 €/año).", "confianza": 0.8}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 12,99 € (netflix.com). Se repite 12 veces en 12 meses.", "importe_mensual": 12.99, "importe_anual": 155.88, "movimientos_involucrados": [{"fecha": "2025-10-04", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2025-11-05", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2025-12-08", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-01-12", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-02-12", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-03-11", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-04-05", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-05-09", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-06-11", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-07-10", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-08-11", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-09-07", "concepto": "NETFLIX.COM", "importe": -12.99}], "accion_sugerida": "Revisa si sigues usando 'netflix.com'. Cancelarlo libera 12,99 €/mes (155,88 €/año).", "confianza": 0.8}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 10,99 € (spotify premium). Se repite 12 veces en 12 meses.", "importe_mensual": 10.99, "importe_anual": 131.88, "movimientos_involucrados": [{"fecha": "2025-10-05", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2025-11-05", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2025-12-12", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-01-07", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-02-03", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-03-06", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-04-04", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-05-07", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-06-12", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-07-08", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-08-12", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-09-06", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}], "accion_sugerida": "Revisa si sigues usando 'spotify premium'. Cancelarlo libera 10,99 €/mes (131,88 €/año).", "confianza": 0.8}], "mensaje": "Hemos encontrado 5 fugas. Recuperando lo que no uses: 127.96 €/mes (1535.52 €/año)."}, "proyeccion": {"meses": [{"mes": 1, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 10397.14}, {"mes": 2, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 12294.28}, {"mes": 3, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 14191.42}, {"mes": 4, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 16088.56}, {"mes": 5, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 17985.7}, {"mes": 6, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 19882.84}, {"mes": 7, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 21779.98}, {"mes": 8, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 23677.12}, {"mes": 9, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 25574.26}, {"mes": 10, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 27471.4}, {"mes": 11, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 29368.54}, {"mes": 12, "ingresos": 4227.75, "gastos": 2330.61, "eventos": [], "eventos_importe": 0.0, "saldo": 31265.68}], "mes_quiebre": null, "deuda_en_quiebre": 0.0, "deuda_al_final": 0.0, "ultimo_saldo_positivo": 31265.68, "mes_ultimo_positivo": 12, "resumen": "La caja no se agota en 12 meses. "}, "cass": {"tramo": "100%", "base_cotizacion": 2672.52, "cuota_mensual": 587.95, "rama_general": 267.25, "rama_jubilacion": 320.7, "cuota_anual": 7055.4, "condicion": "Cas general. Tramos inferiors al 100% son opcionals."}, "irpf": {"base_tributable": 6000.0, "cuota_total": 300.0, "bonificacion": 300.0, "tipo_efectivo": 1.0}, "igi": {"cuota": 1350.0, "tipo": 0.045}, "crossover": {"existe": true, "tipo": "Bonificacion IRPF art. 46 toca su techo de 800 €", "renta_punto": 40000.0, "detalle": "Con 30.000,00 € de renta neta el IRPF efectivo es 1.00% (bonificación art. 46 todavia sin tope). Matiz importante: el \"5%\" que se publica es una simplificacion — el tipo real sube del 0% al 2% de forma progresiva entre 24.000 € y 40.000 €, y la bonificacion del 50% alcanza su tope de 800 € exactamente en 40.000 € de base. A partir de ahi la bonificacion se congela, el IRPF acelera y la CASS pasa del 100% al 125%. A 40.000 € la cuota de IRPF pasa de 300,00 € a 800,00 €.", "delta_anual": 0.0, "cuota_cass_ano_siguiente": null, "delta_cass_ano_siguiente": null}, "simular_contratacion": {"coste_nuevo_empleado_anual": 28800.0, "margen_bruto": 70.0, "facturacion_adicional_para_cubrirlo": 42994.29, "igi_adicional": 1851.43, "crossover": {"existe": true, "tipo": "Bonificacion IRPF art. 46 toca su techo de 800 €", "renta_punto": 40000.0, "detalle": "Con 30.000,00 € de renta neta el IRPF efectivo es 1.00% (bonificación art. 46 todavia sin tope). Matiz importante: el \"5%\" que se publica es una simplificacion — el tipo real sube del 0% al 2% de forma progresiva entre 24.000 € y 40.000 €, y la bonificacion del 50% alcanza su tope de 800 € exactamente en 40.000 € de base. A partir de ahi la bonificacion se congela, el IRPF acelera y la CASS pasa del 100% al 125%. A 40.000 € la cuota de IRPF pasa de 300,00 € a 800,00 €.", "delta_anual": 0.0, "cuota_cass_ano_siguiente": null, "delta_cass_ano_siguiente": null}, "comparativa": {"delta_neto_anual": 0.0, "delta_cass_anual": 0.0, "delta_irpf_anual": 0.0, "detalle": {"a": {"renta_neta": 30000.0, "tramo_cass": "100%", "cass_anual": 7055.4, "irpf": 300.0, "neto_tras_fiscalidad": 22644.6}, "b": {"renta_neta": 30000.0, "tramo_cass": "100%", "cass_anual": 7055.4, "irpf": 300.0, "neto_tras_fiscalidad": 22644.6}, "cambios_b": {"coste_nuevo_empleado_anual": 28800.0, "facturacion_adicional_requerida": 42994.29, "igi_adicional": 1851.43}}}, "veredicto": "Contratar cuesta 28800.00 €/año. Necesitas facturar 42994.29 € adicionales para cubrirlo con margen e IGI incluidos."}, "punto_optimo": {"renta_actual": 30000.0, "margen_bruto": 70.0, "mejor_punto": {"renta_neta": 39924.0, "carga_total_anual": 7851.6, "efectivo_sobre_facturacion": 28.09}, "nota": "El coste marginal de facturar mas incluye un salto de tramo CASS, por lo que la relacion coste/beneficio puede empeorar justo despues de un umbral. Este es el insight que un ERP de contabilidad no da."}, "cierre": null}, "contratar": {"etiqueta": "Freelancer de servicios", "saldo": 3200.0, "renta": 28000.0, "margen": 0.7, "actividad": "Freelancer de servicios", "n_movimientos": 236, "periodo": {"desde": "2025-10-03", "hasta": "2026-09-28", "meses": 12, "n_movimientos": 236}, "tesoreria": {"ingresos_totales": 50364.0, "gastos_totales": 53824.32, "flujo_neto": -3460.32, "ingresos_mes": 4197.0, "gastos_mes": 4485.36, "por_categoria": {"nomina": 25200.0, "impuestos": 8100.0, "seguridad_social": 7055.4, "alquiler": 5400.0, "transporte": 2811.2, "suministros": 2450.8, "material": 1011.0, "herramientas": 719.88, "sin_categorizar": 527.64, "seguros": 510.0, "banca": 38.4}}, "fugas": {"n_fugas": 5, "recuperable_mensual": 208.2, "recuperable_anual": 2498.4, "por_tipo": {"deriva_gasto": 1250.88, "suscripcion": 1247.52}, "fugas": [{"tipo": "deriva_gasto", "descripcion": "El gasto en 'transporte' ha subido un 144% en 3 meses (144,78 € -> 353,25 €).", "importe_mensual": 104.24, "importe_anual": 1250.88, "movimientos_involucrados": [], "accion_sugerida": "Revisa el gasto en 'transporte': ha crecido 104,24 €/mes de media. Si lo estabilizas, recuperas 1.250,88 €/año.", "confianza": 0.6}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 59,99 € (suscripcion adobe creative cloud). Se repite 12 veces en 12 meses.", "importe_mensual": 59.99, "importe_anual": 719.88, "movimientos_involucrados": [{"fecha": "2025-10-08", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2025-11-04", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2025-12-10", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-01-10", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-02-11", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-03-06", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-04-05", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-05-05", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-06-05", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-07-07", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-08-06", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-09-10", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}], "accion_sugerida": "Revisa si sigues usando 'suscripcion adobe creative cloud'. Cancelarlo libera 59,99 €/mes (719,88 €/año).", "confianza": 0.8}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 19,99 € (dropbox profesional). Se repite 12 veces en 12 meses.", "importe_mensual": 19.99, "importe_anual": 239.88, "movimientos_involucrados": [{"fecha": "2025-10-10", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2025-11-11", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2025-12-04", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-01-03", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-02-08", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-03-11", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-04-10", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-05-04", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-06-08", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-07-09", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-08-05", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-09-03", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}], "accion_sugerida": "Revisa si sigues usando 'dropbox profesional'. Cancelarlo libera 19,99 €/mes (239,88 €/año).", "confianza": 0.8}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 12,99 € (netflix.com). Se repite 12 veces en 12 meses.", "importe_mensual": 12.99, "importe_anual": 155.88, "movimientos_involucrados": [{"fecha": "2025-10-06", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2025-11-12", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2025-12-12", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-01-10", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-02-04", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-03-04", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-04-04", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-05-07", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-06-08", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-07-12", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-08-04", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-09-05", "concepto": "NETFLIX.COM", "importe": -12.99}], "accion_sugerida": "Revisa si sigues usando 'netflix.com'. Cancelarlo libera 12,99 €/mes (155,88 €/año).", "confianza": 0.8}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 10,99 € (spotify premium). Se repite 12 veces en 12 meses.", "importe_mensual": 10.99, "importe_anual": 131.88, "movimientos_involucrados": [{"fecha": "2025-10-03", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2025-11-12", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2025-12-09", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-01-03", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-02-09", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-03-09", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-04-12", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-05-05", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-06-06", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-07-04", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-08-08", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-09-11", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}], "accion_sugerida": "Revisa si sigues usando 'spotify premium'. Cancelarlo libera 10,99 €/mes (131,88 €/año).", "confianza": 0.8}], "mensaje": "Hemos encontrado 5 fugas. Recuperando lo que no uses: 208.20 €/mes (2498.40 €/año)."}, "proyeccion": {"meses": [{"mes": 1, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": 2911.64}, {"mes": 2, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": 2623.28}, {"mes": 3, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": 2334.92}, {"mes": 4, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": 2046.56}, {"mes": 5, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": 1758.2}, {"mes": 6, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": 1469.84}, {"mes": 7, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": 1181.48}, {"mes": 8, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": 893.12}, {"mes": 9, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": 604.76}, {"mes": 10, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": 316.4}, {"mes": 11, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": 28.04}, {"mes": 12, "ingresos": 4197.0, "gastos": 4485.36, "eventos": [], "eventos_importe": 0.0, "saldo": -260.32}], "mes_quiebre": 12, "deuda_en_quiebre": 260.32, "deuda_al_final": 260.32, "ultimo_saldo_positivo": 28.04, "mes_ultimo_positivo": 11, "resumen": "Con el ritmo actual la caja se agota en el mes 12. Tu ultimo saldo positivo es de 28,04 € (mes 11). En el mes del quiebre te faltan 260,32 € para cubrir los pagos."}, "cass": {"tramo": "100%", "base_cotizacion": 2672.52, "cuota_mensual": 587.95, "rama_general": 267.25, "rama_jubilacion": 320.7, "cuota_anual": 7055.4, "condicion": "Cas general. Tramos inferiors al 100% son opcionals."}, "irpf": {"base_tributable": 4000.0, "cuota_total": 200.0, "bonificacion": 200.0, "tipo_efectivo": 0.71}, "igi": {"cuota": 1260.0, "tipo": 0.045}, "crossover": {"existe": true, "tipo": "Bonificacion IRPF art. 46 toca su techo de 800 €", "renta_punto": 40000.0, "detalle": "Con 28.000,00 € de renta neta el IRPF efectivo es 0.71% (bonificación art. 46 todavia sin tope). Matiz importante: el \"5%\" que se publica es una simplificacion — el tipo real sube del 0% al 2% de forma progresiva entre 24.000 € y 40.000 €, y la bonificacion del 50% alcanza su tope de 800 € exactamente en 40.000 € de base. A partir de ahi la bonificacion se congela, el IRPF acelera y la CASS pasa del 100% al 125%. A 40.000 € la cuota de IRPF pasa de 200,00 € a 800,00 €.", "delta_anual": 0.0, "cuota_cass_ano_siguiente": null, "delta_cass_ano_siguiente": null}, "simular_contratacion": {"coste_nuevo_empleado_anual": 28800.0, "margen_bruto": 70.0, "facturacion_adicional_para_cubrirlo": 42994.29, "igi_adicional": 1851.43, "crossover": {"existe": true, "tipo": "Bonificacion IRPF art. 46 toca su techo de 800 €", "renta_punto": 40000.0, "detalle": "Con 28.000,00 € de renta neta el IRPF efectivo es 0.71% (bonificación art. 46 todavia sin tope). Matiz importante: el \"5%\" que se publica es una simplificacion — el tipo real sube del 0% al 2% de forma progresiva entre 24.000 € y 40.000 €, y la bonificacion del 50% alcanza su tope de 800 € exactamente en 40.000 € de base. A partir de ahi la bonificacion se congela, el IRPF acelera y la CASS pasa del 100% al 125%. A 40.000 € la cuota de IRPF pasa de 200,00 € a 800,00 €.", "delta_anual": 0.0, "cuota_cass_ano_siguiente": null, "delta_cass_ano_siguiente": null}, "comparativa": {"delta_neto_anual": 0.0, "delta_cass_anual": 0.0, "delta_irpf_anual": 0.0, "detalle": {"a": {"renta_neta": 28000.0, "tramo_cass": "100%", "cass_anual": 7055.4, "irpf": 200.0, "neto_tras_fiscalidad": 20744.6}, "b": {"renta_neta": 28000.0, "tramo_cass": "100%", "cass_anual": 7055.4, "irpf": 200.0, "neto_tras_fiscalidad": 20744.6}, "cambios_b": {"coste_nuevo_empleado_anual": 28800.0, "facturacion_adicional_requerida": 42994.29, "igi_adicional": 1851.43}}}, "veredicto": "Contratar cuesta 28800.00 €/año. Necesitas facturar 42994.29 € adicionales para cubrirlo con margen e IGI incluidos."}, "punto_optimo": {"renta_actual": 28000.0, "margen_bruto": 70.0, "mejor_punto": {"renta_neta": 39928.0, "carga_total_anual": 7851.8, "efectivo_sobre_facturacion": 28.09}, "nota": "El coste marginal de facturar mas incluye un salto de tramo CASS, por lo que la relacion coste/beneficio puede empeorar justo despues de un umbral. Este es el insight que un ERP de contabilidad no da."}, "cierre": null}, "comercio": {"etiqueta": "Comercio con tienda local", "saldo": 14200.0, "renta": 45000.0, "margen": 0.35, "actividad": "Comercio con tienda local", "n_movimientos": 1995, "periodo": {"desde": "2025-10-01", "hasta": "2026-09-28", "meses": 12, "n_movimientos": 1995}, "tesoreria": {"ingresos_totales": 157007.0, "gastos_totales": 138778.08, "flujo_neto": 18228.92, "ingresos_mes": 13083.92, "gastos_mes": 11564.84, "por_categoria": {"material": 50933.0, "nomina": 25200.0, "impuestos": 22680.0, "alquiler": 22200.0, "seguridad_social": 14279.28, "suministros": 3187.0, "banca": 298.8}}, "fugas": {"n_fugas": 0, "recuperable_mensual": 0.0, "recuperable_anual": 0.0, "mensaje": "No se detectaron fugas claras en el periodo analizado."}, "proyeccion": {"meses": [{"mes": 1, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 15719.08}, {"mes": 2, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 17238.16}, {"mes": 3, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 18757.24}, {"mes": 4, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 20276.32}, {"mes": 5, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 21795.4}, {"mes": 6, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 23314.48}, {"mes": 7, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 24833.56}, {"mes": 8, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 26352.64}, {"mes": 9, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 27871.72}, {"mes": 10, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 29390.8}, {"mes": 11, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 30909.88}, {"mes": 12, "ingresos": 13083.92, "gastos": 11564.84, "eventos": [], "eventos_importe": 0.0, "saldo": 32428.96}], "mes_quiebre": null, "deuda_en_quiebre": 0.0, "deuda_al_final": 0.0, "ultimo_saldo_positivo": 32428.96, "mes_ultimo_positivo": 12, "resumen": "La caja no se agota en 12 meses. "}, "cass": {"tramo": "125%", "base_cotizacion": 3340.65, "cuota_mensual": 734.94, "rama_general": 334.07, "rama_jubilacion": 400.88, "cuota_anual": 8819.28, "condicion": "Renda neta > 40.000 €, o xifra de negoci > 400.000 € (serveis) / 800.000 € (altres)."}, "irpf": {"base_tributable": 21000.0, "cuota_total": 1300.0, "bonificacion": 800.0, "tipo_efectivo": 2.89}, "igi": {"cuota": 2025.0, "tipo": 0.045}, "crossover": {"existe": true, "tipo": "El tramo CASS sube el año que viene (se declara en enero)", "renta_punto": 40000.0, "detalle": "Cruzar los 40.000 € NO te sube la cuota de CASS de este año: el tramo lo fija el ingreso del AÑO ANTERIOR, que se declara en enero. Con estos ingresos (45.000,00 €), en enero del año que viene declaras este año y la CASS te pasa al tramo 125%: 734,94 €/mes (8.819,28 € al año, +1.763,88 € frente al tramo anterior de 7.055,40 €). Ojo: es el año que viene el que se encarece, no este.", "delta_anual": 1763.88, "cuota_cass_ano_siguiente": 8819.28, "delta_cass_ano_siguiente": 1763.88}, "simular_contratacion": {"coste_nuevo_empleado_anual": 28800.0, "margen_bruto": 35.0, "facturacion_adicional_para_cubrirlo": 85988.57, "igi_adicional": 3702.86, "crossover": {"existe": true, "tipo": "El tramo CASS sube el año que viene (se declara en enero)", "renta_punto": 40000.0, "detalle": "Cruzar los 40.000 € NO te sube la cuota de CASS de este año: el tramo lo fija el ingreso del AÑO ANTERIOR, que se declara en enero. Con estos ingresos (45.000,00 €), en enero del año que viene declaras este año y la CASS te pasa al tramo 125%: 734,94 €/mes (8.819,28 € al año, +1.763,88 € frente al tramo anterior de 7.055,40 €). Ojo: es el año que viene el que se encarece, no este.", "delta_anual": 1763.88, "cuota_cass_ano_siguiente": 8819.28, "delta_cass_ano_siguiente": 1763.88}, "comparativa": {"delta_neto_anual": 0.0, "delta_cass_anual": 0.0, "delta_irpf_anual": 0.0, "detalle": {"a": {"renta_neta": 45000.0, "tramo_cass": "125%", "cass_anual": 8819.28, "irpf": 1300.0, "neto_tras_fiscalidad": 34880.72}, "b": {"renta_neta": 45000.0, "tramo_cass": "125%", "cass_anual": 8819.28, "irpf": 1300.0, "neto_tras_fiscalidad": 34880.72}, "cambios_b": {"coste_nuevo_empleado_anual": 28800.0, "facturacion_adicional_requerida": 85988.57, "igi_adicional": 3702.86}}}, "veredicto": "Contratar cuesta 28800.00 €/año. Necesitas facturar 85988.57 € adicionales para cubrirlo con margen e IGI incluidos."}, "punto_optimo": {"renta_actual": 45000.0, "margen_bruto": 35.0, "mejor_punto": {"renta_neta": 90000.0, "carga_total_anual": 15501.28, "efectivo_sobre_facturacion": 49.21}, "nota": "El coste marginal de facturar mas incluye un salto de tramo CASS, por lo que la relacion coste/beneficio puede empeorar justo despues de un umbral. Este es el insight que un ERP de contabilidad no da."}, "cierre": null}, "crecimiento": {"etiqueta": "Taller de ceramica", "saldo": 6900.0, "renta": 38000.0, "margen": 0.4, "actividad": "Taller de ceramica", "n_movimientos": 1509, "periodo": {"desde": "2025-10-01", "hasta": "2026-09-28", "meses": 12, "n_movimientos": 1509}, "tesoreria": {"ingresos_totales": 109412.6, "gastos_totales": 89147.2, "flujo_neto": 20265.4, "ingresos_mes": 9117.72, "gastos_mes": 7428.93, "por_categoria": {"nomina": 23400.0, "impuestos": 18960.0, "material": 17962.0, "alquiler": 13800.0, "seguridad_social": 12515.4, "suministros": 2211.0, "banca": 298.8}}, "fugas": {"n_fugas": 1, "recuperable_mensual": 17.0, "recuperable_anual": 204.0, "por_tipo": {"deriva_gasto": 204.0}, "fugas": [{"tipo": "deriva_gasto", "descripcion": "El gasto en 'suministros' ha subido un 22% en 3 meses (155,00 € -> 189,00 €).", "importe_mensual": 17.0, "importe_anual": 204.0, "movimientos_involucrados": [], "accion_sugerida": "Revisa el gasto en 'suministros': ha crecido 17,00 €/mes de media. Si lo estabilizas, recuperas 204,00 €/año.", "confianza": 0.6}], "mensaje": "Hemos encontrado 1 fugas. Recuperando lo que no uses: 17.00 €/mes (204.00 €/año)."}, "proyeccion": {"meses": [{"mes": 1, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 8588.79}, {"mes": 2, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 10277.58}, {"mes": 3, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 11966.37}, {"mes": 4, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 13655.16}, {"mes": 5, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 15343.95}, {"mes": 6, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 17032.74}, {"mes": 7, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 18721.53}, {"mes": 8, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 20410.32}, {"mes": 9, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 22099.11}, {"mes": 10, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 23787.9}, {"mes": 11, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 25476.69}, {"mes": 12, "ingresos": 9117.72, "gastos": 7428.93, "eventos": [], "eventos_importe": 0.0, "saldo": 27165.48}], "mes_quiebre": null, "deuda_en_quiebre": 0.0, "deuda_al_final": 0.0, "ultimo_saldo_positivo": 27165.48, "mes_ultimo_positivo": 12, "resumen": "La caja no se agota en 12 meses. "}, "cass": {"tramo": "100%", "base_cotizacion": 2672.52, "cuota_mensual": 587.95, "rama_general": 267.25, "rama_jubilacion": 320.7, "cuota_anual": 7055.4, "condicion": "Cas general. Tramos inferiors al 100% son opcionals."}, "irpf": {"base_tributable": 14000.0, "cuota_total": 700.0, "bonificacion": 700.0, "tipo_efectivo": 1.84}, "igi": {"cuota": 1710.0, "tipo": 0.045}, "crossover": {"existe": true, "tipo": "Bonificacion IRPF art. 46 toca su techo de 800 €", "renta_punto": 40000.0, "detalle": "Con 38.000,00 € de renta neta el IRPF efectivo es 1.84% (bonificación art. 46 todavia sin tope). Matiz importante: el \"5%\" que se publica es una simplificacion — el tipo real sube del 0% al 2% de forma progresiva entre 24.000 € y 40.000 €, y la bonificacion del 50% alcanza su tope de 800 € exactamente en 40.000 € de base. A partir de ahi la bonificacion se congela, el IRPF acelera y la CASS pasa del 100% al 125%. A 40.000 € la cuota de IRPF pasa de 700,00 € a 800,00 €.", "delta_anual": 0.0, "cuota_cass_ano_siguiente": null, "delta_cass_ano_siguiente": null}, "simular_contratacion": {"coste_nuevo_empleado_anual": 28800.0, "margen_bruto": 40.0, "facturacion_adicional_para_cubrirlo": 75240.0, "igi_adicional": 3240.0, "crossover": {"existe": true, "tipo": "Bonificacion IRPF art. 46 toca su techo de 800 €", "renta_punto": 40000.0, "detalle": "Con 38.000,00 € de renta neta el IRPF efectivo es 1.84% (bonificación art. 46 todavia sin tope). Matiz importante: el \"5%\" que se publica es una simplificacion — el tipo real sube del 0% al 2% de forma progresiva entre 24.000 € y 40.000 €, y la bonificacion del 50% alcanza su tope de 800 € exactamente en 40.000 € de base. A partir de ahi la bonificacion se congela, el IRPF acelera y la CASS pasa del 100% al 125%. A 40.000 € la cuota de IRPF pasa de 700,00 € a 800,00 €.", "delta_anual": 0.0, "cuota_cass_ano_siguiente": null, "delta_cass_ano_siguiente": null}, "comparativa": {"delta_neto_anual": 0.0, "delta_cass_anual": 0.0, "delta_irpf_anual": 0.0, "detalle": {"a": {"renta_neta": 38000.0, "tramo_cass": "100%", "cass_anual": 7055.4, "irpf": 700.0, "neto_tras_fiscalidad": 30244.6}, "b": {"renta_neta": 38000.0, "tramo_cass": "100%", "cass_anual": 7055.4, "irpf": 700.0, "neto_tras_fiscalidad": 30244.6}, "cambios_b": {"coste_nuevo_empleado_anual": 28800.0, "facturacion_adicional_requerida": 75240.0, "igi_adicional": 3240.0}}}, "veredicto": "Contratar cuesta 28800.00 €/año. Necesitas facturar 75240.00 € adicionales para cubrirlo con margen e IGI incluidos."}, "punto_optimo": {"renta_actual": 38000.0, "margen_bruto": 40.0, "mejor_punto": {"renta_neta": 76000.0, "carga_total_anual": 14101.28, "efectivo_sobre_facturacion": 46.39}, "nota": "El coste marginal de facturar mas incluye un salto de tramo CASS, por lo que la relacion coste/beneficio puede empeorar justo despues de un umbral. Este es el insight que un ERP de contabilidad no da."}, "cierre": null}, "cierre": {"etiqueta": "Freelance de servicios", "saldo": 6100.0, "renta": 30000.0, "margen": 0.7, "actividad": "Freelance de servicios", "n_movimientos": 215, "periodo": {"desde": "2025-10-02", "hasta": "2026-09-28", "meses": 12, "n_movimientos": 215}, "tesoreria": {"ingresos_totales": 48223.0, "gastos_totales": 29403.89, "flujo_neto": 18819.11, "ingresos_mes": 4018.58, "gastos_mes": 2450.32, "por_categoria": {"impuestos": 8100.0, "seguridad_social": 7055.4, "alquiler": 5400.0, "transporte": 2471.71, "suministros": 2426.8, "nomina": 1200.0, "material": 1026.0, "herramientas": 719.88, "seguros": 510.0, "sin_categorizar": 455.7, "banca": 38.4}}, "fugas": {"n_fugas": 5, "recuperable_mensual": 116.46, "recuperable_anual": 1397.52, "por_tipo": {"deriva_gasto": 150.0, "suscripcion": 1247.52}, "fugas": [{"tipo": "suscripcion", "descripcion": "Cobro recurrente de 59,99 € (suscripcion adobe creative cloud). Se repite 12 veces en 12 meses.", "importe_mensual": 59.99, "importe_anual": 719.88, "movimientos_involucrados": [{"fecha": "2025-10-09", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2025-11-07", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2025-12-08", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-01-11", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-02-12", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-03-06", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-04-07", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-05-03", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-06-05", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-07-04", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-08-09", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}, {"fecha": "2026-09-11", "concepto": "Suscripcion ADOBE CREATIVE CLOUD", "importe": -59.99}], "accion_sugerida": "Revisa si sigues usando 'suscripcion adobe creative cloud'. Cancelarlo libera 59,99 €/mes (719,88 €/año).", "confianza": 0.8}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 19,99 € (dropbox profesional). Se repite 12 veces en 12 meses.", "importe_mensual": 19.99, "importe_anual": 239.88, "movimientos_involucrados": [{"fecha": "2025-10-08", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2025-11-07", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2025-12-04", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-01-11", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-02-10", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-03-10", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-04-07", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-05-06", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-06-11", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-07-10", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-08-11", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}, {"fecha": "2026-09-10", "concepto": "DROPBOX PROFESIONAL", "importe": -19.99}], "accion_sugerida": "Revisa si sigues usando 'dropbox profesional'. Cancelarlo libera 19,99 €/mes (239,88 €/año).", "confianza": 0.8}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 12,99 € (netflix.com). Se repite 9 veces en 9 meses.", "importe_mensual": 12.99, "importe_anual": 155.88, "movimientos_involucrados": [{"fecha": "2025-10-09", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2025-11-09", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2025-12-11", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-01-08", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-02-06", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-03-09", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-04-04", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-05-09", "concepto": "NETFLIX.COM", "importe": -12.99}, {"fecha": "2026-06-07", "concepto": "NETFLIX.COM", "importe": -12.99}], "accion_sugerida": "Revisa si sigues usando 'netflix.com'. Cancelarlo libera 12,99 €/mes (155,88 €/año).", "confianza": 0.8}, {"tipo": "deriva_gasto", "descripcion": "El gasto en 'material' ha subido un 27% en 3 meses (94,00 € -> 119,00 €).", "importe_mensual": 12.5, "importe_anual": 150.0, "movimientos_involucrados": [], "accion_sugerida": "Revisa el gasto en 'material': ha crecido 12,50 €/mes de media. Si lo estabilizas, recuperas 150,00 €/año.", "confianza": 0.6}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 10,99 € (spotify premium). Se repite 9 veces en 9 meses.", "importe_mensual": 10.99, "importe_anual": 131.88, "movimientos_involucrados": [{"fecha": "2025-10-06", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2025-11-09", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2025-12-11", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-01-09", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-02-10", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-03-06", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-04-04", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-05-05", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}, {"fecha": "2026-06-09", "concepto": "SPOTIFY PREMIUM", "importe": -10.99}], "accion_sugerida": "Revisa si sigues usando 'spotify premium'. Cancelarlo libera 10,99 €/mes (131,88 €/año).", "confianza": 0.8}], "mensaje": "Hemos encontrado 5 fugas. Recuperando lo que no uses: 116.46 €/mes (1397.52 €/año)."}, "proyeccion": {"meses": [{"mes": 1, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 7668.26}, {"mes": 2, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 9236.52}, {"mes": 3, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 10804.78}, {"mes": 4, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 12373.04}, {"mes": 5, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 13941.3}, {"mes": 6, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 15509.56}, {"mes": 7, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 17077.82}, {"mes": 8, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 18646.08}, {"mes": 9, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 20214.34}, {"mes": 10, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 21782.6}, {"mes": 11, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 23350.86}, {"mes": 12, "ingresos": 4018.58, "gastos": 2450.32, "eventos": [], "eventos_importe": 0.0, "saldo": 24919.12}], "mes_quiebre": null, "deuda_en_quiebre": 0.0, "deuda_al_final": 0.0, "ultimo_saldo_positivo": 24919.12, "mes_ultimo_positivo": 12, "resumen": "La caja no se agota en 12 meses. "}, "cass": {"tramo": "100%", "base_cotizacion": 2672.52, "cuota_mensual": 587.95, "rama_general": 267.25, "rama_jubilacion": 320.7, "cuota_anual": 7055.4, "condicion": "Cas general. Tramos inferiors al 100% son opcionals."}, "irpf": {"base_tributable": 6000.0, "cuota_total": 300.0, "bonificacion": 300.0, "tipo_efectivo": 1.0}, "igi": {"cuota": 1350.0, "tipo": 0.045}, "crossover": {"existe": true, "tipo": "Bonificacion IRPF art. 46 toca su techo de 800 €", "renta_punto": 40000.0, "detalle": "Con 30.000,00 € de renta neta el IRPF efectivo es 1.00% (bonificación art. 46 todavia sin tope). Matiz importante: el \"5%\" que se publica es una simplificacion — el tipo real sube del 0% al 2% de forma progresiva entre 24.000 € y 40.000 €, y la bonificacion del 50% alcanza su tope de 800 € exactamente en 40.000 € de base. A partir de ahi la bonificacion se congela, el IRPF acelera y la CASS pasa del 100% al 125%. A 40.000 € la cuota de IRPF pasa de 300,00 € a 800,00 €.", "delta_anual": 0.0, "cuota_cass_ano_siguiente": null, "delta_cass_ano_siguiente": null}, "simular_contratacion": {"coste_nuevo_empleado_anual": 28800.0, "margen_bruto": 70.0, "facturacion_adicional_para_cubrirlo": 42994.29, "igi_adicional": 1851.43, "crossover": {"existe": true, "tipo": "Bonificacion IRPF art. 46 toca su techo de 800 €", "renta_punto": 40000.0, "detalle": "Con 30.000,00 € de renta neta el IRPF efectivo es 1.00% (bonificación art. 46 todavia sin tope). Matiz importante: el \"5%\" que se publica es una simplificacion — el tipo real sube del 0% al 2% de forma progresiva entre 24.000 € y 40.000 €, y la bonificacion del 50% alcanza su tope de 800 € exactamente en 40.000 € de base. A partir de ahi la bonificacion se congela, el IRPF acelera y la CASS pasa del 100% al 125%. A 40.000 € la cuota de IRPF pasa de 300,00 € a 800,00 €.", "delta_anual": 0.0, "cuota_cass_ano_siguiente": null, "delta_cass_ano_siguiente": null}, "comparativa": {"delta_neto_anual": 0.0, "delta_cass_anual": 0.0, "delta_irpf_anual": 0.0, "detalle": {"a": {"renta_neta": 30000.0, "tramo_cass": "100%", "cass_anual": 7055.4, "irpf": 300.0, "neto_tras_fiscalidad": 22644.6}, "b": {"renta_neta": 30000.0, "tramo_cass": "100%", "cass_anual": 7055.4, "irpf": 300.0, "neto_tras_fiscalidad": 22644.6}, "cambios_b": {"coste_nuevo_empleado_anual": 28800.0, "facturacion_adicional_requerida": 42994.29, "igi_adicional": 1851.43}}}, "veredicto": "Contratar cuesta 28800.00 €/año. Necesitas facturar 42994.29 € adicionales para cubrirlo con margen e IGI incluidos."}, "punto_optimo": {"renta_actual": 30000.0, "margen_bruto": 70.0, "mejor_punto": {"renta_neta": 39924.0, "carga_total_anual": 7851.6, "efectivo_sobre_facturacion": 28.09}, "nota": "El coste marginal de facturar mas incluye un salto de tramo CASS, por lo que la relacion coste/beneficio puede empeorar justo despues de un umbral. Este es el insight que un ERP de contabilidad no da."}, "cierre": {"n_consejos": 4, "n_evaluables": 4, "cumplidos": 2, "parciales": 0, "incumplidos": 2, "sin_datos": 0, "ahorro_real_mensual": "23.98", "ahorro_esperado_mensual": "103.96", "desviacion_pct": "-76.93", "resumen": "Has seguido 2 de 4 recomendaciones. Llevas ahorrados 23,98 €/mes de los 103,96 €/mes previstos.", "cierres": [{"consejo": {"tipo": "suscripcion", "clave": "netflix.com|12.99", "descripcion": "Revisa si sigues usando 'netflix.com'. Cancelarlo libera 12,99 €/mes (155,88 €/año).", "fecha": "2026-07-01", "esperado_mensual": "12.99", "importe_anual": "155.88", "meses_previstos": 3, "regla": "Motor de tesorería · detección de suscripciones (regla determinista)", "detalle": {"descripcion_fuga": "Cobro recurrente de 12,99 € (netflix.com). Se repite 9 veces en 9 meses.", "confianza": "0.8"}}, "evaluable": true, "veredicto": "cumplido", "ahorro_real_mensual": "12.99", "ahorro_esperado_mensual": "12.99", "desviacion_pct": "0", "meses_observados": 2, "detalle": {"explicacion": "El cargo 'netflix.com' no vuelve a aparecer en los 2 meses posteriores. Se ahorran 12,99 €/mes, exactamente lo previsto.", "cargos_encontrados": 0}}, {"consejo": {"tipo": "suscripcion", "clave": "spotify premium|10.99", "descripcion": "Revisa si sigues usando 'spotify premium'. Cancelarlo libera 10,99 €/mes (131,88 €/año).", "fecha": "2026-07-01", "esperado_mensual": "10.99", "importe_anual": "131.88", "meses_previstos": 3, "regla": "Motor de tesorería · detección de suscripciones (regla determinista)", "detalle": {"descripcion_fuga": "Cobro recurrente de 10,99 € (spotify premium). Se repite 9 veces en 9 meses.", "confianza": "0.8"}}, "evaluable": true, "veredicto": "cumplido", "ahorro_real_mensual": "10.99", "ahorro_esperado_mensual": "10.99", "desviacion_pct": "0", "meses_observados": 2, "detalle": {"explicacion": "El cargo 'spotify premium' no vuelve a aparecer en los 2 meses posteriores. Se ahorran 10,99 €/mes, exactamente lo previsto.", "cargos_encontrados": 0}}, {"consejo": {"tipo": "suscripcion", "clave": "suscripcion adobe creative cloud|59.99", "descripcion": "Revisa si sigues usando 'suscripcion adobe creative cloud'. Cancelarlo libera 59,99 €/mes (719,88 €/año).", "fecha": "2026-07-01", "esperado_mensual": "59.99", "importe_anual": "719.88", "meses_previstos": 3, "regla": "Motor de tesorería · detección de suscripciones (regla determinista)", "detalle": {"descripcion_fuga": "Cobro recurrente de 59,99 € (suscripcion adobe creative cloud). Se repite 12 veces en 12 meses.", "confianza": "0.8"}}, "evaluable": true, "veredicto": "incumplido", "ahorro_real_mensual": "0", "ahorro_esperado_mensual": "59.99", "desviacion_pct": "-100", "meses_observados": 2, "detalle": {"explicacion": "El cargo 'suscripcion adobe creative cloud' sigue apareciendo 3 veces a 59,99 € en los 2 meses posteriores. El consejo no se aplico.", "cargos_encontrados": 3, "importes_vistos": ["59.99"]}}, {"consejo": {"tipo": "suscripcion", "clave": "dropbox profesional|19.99", "descripcion": "Revisa si sigues usando 'dropbox profesional'. Cancelarlo libera 19,99 €/mes (239,88 €/año).", "fecha": "2026-07-01", "esperado_mensual": "19.99", "importe_anual": "239.88", "meses_previstos": 3, "regla": "Motor de tesorería · detección de suscripciones (regla determinista)", "detalle": {"descripcion_fuga": "Cobro recurrente de 19,99 € (dropbox profesional). Se repite 12 veces en 12 meses.", "confianza": "0.8"}}, "evaluable": true, "veredicto": "incumplido", "ahorro_real_mensual": "0", "ahorro_esperado_mensual": "19.99", "desviacion_pct": "-100", "meses_observados": 2, "detalle": {"explicacion": "El cargo 'dropbox profesional' sigue apareciendo 3 veces a 19,99 € en los 2 meses posteriores. El consejo no se aplico.", "cargos_encontrados": 3, "importes_vistos": ["19.99"]}}]}}, "empleado": {"etiqueta": "Treballador per compte d'altri", "saldo": 3400.0, "renta": 23281.0, "margen": 0.0, "actividad": "Treballador per compte d'altri", "n_movimientos": 157, "periodo": {"desde": "2025-10-02", "hasta": "2026-09-28", "meses": 12, "n_movimientos": 157}, "tesoreria": {"ingresos_totales": 24231.44, "gastos_totales": 22465.56, "flujo_neto": 1765.88, "ingresos_mes": 2019.29, "gastos_mes": 1872.13, "por_categoria": {"alquiler": 11400.0, "material": 4744.0, "sin_categorizar": 3473.76, "suministros": 1964.8, "transporte": 853.0, "banca": 30.0}}, "fugas": {"n_fugas": 6, "recuperable_mensual": 159.88, "recuperable_anual": 1918.56, "por_tipo": {"cobro_duplicado": 718.8, "deriva_gasto": 912.0, "suscripcion": 287.76}, "fugas": [{"tipo": "cobro_duplicado", "descripcion": "Cobro duplicado de 59,90 €: 'Internet i mobil ORANGE' el 27/02/2026 y otra vez el 03/03/2026.", "importe_mensual": 59.9, "importe_anual": 718.8, "movimientos_involucrados": [{"fecha": "2026-02-27", "concepto": "Internet i mobil ORANGE", "importe": -59.9}, {"fecha": "2026-03-03", "concepto": "Internet i mobil ORANGE", "importe": -59.9}], "accion_sugerida": "Reclama el cobro duplicado: 59,90 €.", "confianza": 0.9}, {"tipo": "deriva_gasto", "descripcion": "El gasto en 'sin_categorizar' ha subido un 26% en 3 meses (250,98 € -> 316,98 €).", "importe_mensual": 33.0, "importe_anual": 396.0, "movimientos_involucrados": [], "accion_sugerida": "Revisa el gasto en 'sin_categorizar': ha crecido 33,00 €/mes de media. Si lo estabilizas, recuperas 396,00 €/año.", "confianza": 0.6}, {"tipo": "deriva_gasto", "descripcion": "El gasto en 'material' ha subido un 16% en 3 meses (323,00 € -> 374,00 €).", "importe_mensual": 25.5, "importe_anual": 306.0, "movimientos_involucrados": [], "accion_sugerida": "Revisa el gasto en 'material': ha crecido 25,50 €/mes de media. Si lo estabilizas, recuperas 306,00 €/año.", "confianza": 0.6}, {"tipo": "deriva_gasto", "descripcion": "El gasto en 'suministros' ha subido un 22% en 3 meses (159,90 € -> 194,90 €).", "importe_mensual": 17.5, "importe_anual": 210.0, "movimientos_involucrados": [], "accion_sugerida": "Revisa el gasto en 'suministros': ha crecido 17,50 €/mes de media. Si lo estabilizas, recuperas 210,00 €/año.", "confianza": 0.6}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 12,99 € (streaming netflix). Se repite 12 veces en 12 meses.", "importe_mensual": 12.99, "importe_anual": 155.88, "movimientos_involucrados": [{"fecha": "2025-10-15", "concepto": "Streaming NETFLIX", "importe": -12.99}, {"fecha": "2025-11-03", "concepto": "Streaming NETFLIX", "importe": -12.99}, {"fecha": "2025-12-01", "concepto": "Streaming NETFLIX", "importe": -12.99}, {"fecha": "2026-01-15", "concepto": "Streaming NETFLIX", "importe": -12.99}, {"fecha": "2026-02-11", "concepto": "Streaming NETFLIX", "importe": -12.99}, {"fecha": "2026-03-16", "concepto": "Streaming NETFLIX", "importe": -12.99}, {"fecha": "2026-04-21", "concepto": "Streaming NETFLIX", "importe": -12.99}, {"fecha": "2026-05-07", "concepto": "Streaming NETFLIX", "importe": -12.99}, {"fecha": "2026-06-08", "concepto": "Streaming NETFLIX", "importe": -12.99}, {"fecha": "2026-07-24", "concepto": "Streaming NETFLIX", "importe": -12.99}, {"fecha": "2026-08-18", "concepto": "Streaming NETFLIX", "importe": -12.99}, {"fecha": "2026-09-22", "concepto": "Streaming NETFLIX", "importe": -12.99}], "accion_sugerida": "Revisa si sigues usando 'streaming netflix'. Cancelarlo libera 12,99 €/mes (155,88 €/año).", "confianza": 0.8}, {"tipo": "suscripcion", "descripcion": "Cobro recurrente de 10,99 € (spotify premium). Se repite 12 veces en 12 meses.", "importe_mensual": 10.99, "importe_anual": 131.88, "movimientos_involucrados": [{"fecha": "2025-10-03", "concepto": "Spotify Premium", "importe": -10.99}, {"fecha": "2025-11-06", "concepto": "Spotify Premium", "importe": -10.99}, {"fecha": "2025-12-18", "concepto": "Spotify Premium", "importe": -10.99}, {"fecha": "2026-01-04", "concepto": "Spotify Premium", "importe": -10.99}, {"fecha": "2026-02-05", "concepto": "Spotify Premium", "importe": -10.99}, {"fecha": "2026-03-20", "concepto": "Spotify Premium", "importe": -10.99}, {"fecha": "2026-04-06", "concepto": "Spotify Premium", "importe": -10.99}, {"fecha": "2026-05-14", "concepto": "Spotify Premium", "importe": -10.99}, {"fecha": "2026-06-20", "concepto": "Spotify Premium", "importe": -10.99}, {"fecha": "2026-07-22", "concepto": "Spotify Premium", "importe": -10.99}, {"fecha": "2026-08-23", "concepto": "Spotify Premium", "importe": -10.99}, {"fecha": "2026-09-23", "concepto": "Spotify Premium", "importe": -10.99}], "accion_sugerida": "Revisa si sigues usando 'spotify premium'. Cancelarlo libera 10,99 €/mes (131,88 €/año).", "confianza": 0.8}], "mensaje": "Hemos encontrado 6 fugas. Recuperando lo que no uses: 159.88 €/mes (1918.56 €/año)."}, "proyeccion": {"meses": [{"mes": 1, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 3547.16}, {"mes": 2, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 3694.32}, {"mes": 3, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 3841.48}, {"mes": 4, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 3988.64}, {"mes": 5, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 4135.8}, {"mes": 6, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 4282.96}, {"mes": 7, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 4430.12}, {"mes": 8, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 4577.28}, {"mes": 9, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 4724.44}, {"mes": 10, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 4871.6}, {"mes": 11, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 5018.76}, {"mes": 12, "ingresos": 2019.29, "gastos": 1872.13, "eventos": [], "eventos_importe": 0.0, "saldo": 5165.92}], "mes_quiebre": null, "deuda_en_quiebre": 0.0, "deuda_al_final": 0.0, "ultimo_saldo_positivo": 5165.92, "mes_ultimo_positivo": 12, "resumen": "La caja no se agota en 12 meses. "}, "cass": {"tramo": "75%", "base_cotizacion": 2004.39, "cuota_mensual": 440.97, "rama_general": 200.44, "rama_jubilacion": 240.53, "cuota_anual": 5291.64, "condicion": "Renda neta de 18.000 € a 24.000 €. Opcional."}, "irpf": {"base_tributable": 0.0, "cuota_total": 0.0, "bonificacion": 0.0, "tipo_efectivo": 0.0}, "igi": {"cuota": 1047.65, "tipo": 0.045}, "crossover": {"existe": true, "tipo": "CASS 75% -> 100%", "renta_punto": 24000.0, "detalle": "Al cruzar 24.000 € de renda neta, la CASS pasa del 75% (440,97 €/mes) al 100% (587,95 €/mes). El IRPF sigue en 0%, asi que el coste real es solo la CASS.", "delta_anual": 1763.76, "cuota_cass_ano_siguiente": null, "delta_cass_ano_siguiente": null}, "simular_contratacion": {"coste_nuevo_empleado_anual": 28800.0, "margen_bruto": 0.0, "facturacion_adicional_para_cubrirlo": 0.0, "igi_adicional": 0.0, "crossover": {"existe": true, "tipo": "CASS 75% -> 100%", "renta_punto": 24000.0, "detalle": "Al cruzar 24.000 € de renda neta, la CASS pasa del 75% (440,97 €/mes) al 100% (587,95 €/mes). El IRPF sigue en 0%, asi que el coste real es solo la CASS.", "delta_anual": 1763.76, "cuota_cass_ano_siguiente": null, "delta_cass_ano_siguiente": null}, "comparativa": {"delta_neto_anual": 0.0, "delta_cass_anual": 0.0, "delta_irpf_anual": 0.0, "detalle": {"a": {"renta_neta": 23281.0, "tramo_cass": "75%", "cass_anual": 5291.64, "irpf": 0.0, "neto_tras_fiscalidad": 17989.36}, "b": {"renta_neta": 23281.0, "tramo_cass": "75%", "cass_anual": 5291.64, "irpf": 0.0, "neto_tras_fiscalidad": 17989.36}, "cambios_b": {"coste_nuevo_empleado_anual": 28800.0, "facturacion_adicional_requerida": 0.0, "igi_adicional": 0.0}}}, "veredicto": "Contratar cuesta 28800.00 €/año. Necesitas facturar 0.00 € adicionales para cubrirlo con margen e IGI incluidos."}, "punto_optimo": {"error": "margen_bruto debe estar en (0,1)"}, "cierre": null}}</script>
+
+<script>
+// ---- Mock de conversacion (solo maqueta) --------------------------
+// Al enviar, el asesor responde con una animacion de "escribiendo" y
+// un mensaje. Sirve para ver como se siente la interaccion.
+var thread = document.getElementById('thread');
+var entrada = document.getElementById('entrada');
+
+function añadirMensaje(texto, quien) {
+  var d = document.createElement('div');
+  d.className = 'msg ' + quien;
+  var b = document.createElement('div');
+  b.className = 'burbuja';
+  b.innerHTML = texto;
+  d.appendChild(b);
+  thread.appendChild(d);
+  thread.scrollTop = thread.scrollHeight;
+  return d;
+}
+
+function añadirEscribiendo() {
+  var d = document.createElement('div');
+  d.className = 'msg asesor';
+  d.innerHTML = '<div class="burbuja typing"><i></i><i></i><i></i></div>';
+  thread.appendChild(d);
+  thread.scrollTop = thread.scrollHeight;
+  return d;
+}
+
+function responder(texto) {
+  var t = añadirEscribiendo();
+  setTimeout(function(){
+    t.remove();
+    añadirMensaje(texto, 'asesor');
+  }, 1100);
+}
+
+// ---- Motor real: la API de MoraBanc ------------------------------
+//
+// La maqueta ya no responde con un mock: pregunta al motor de verdad
+// (la Lambda en AWS) con los numeros del perfil activo. Si la API no
+// esta disponible, se avisa con claridad en vez de inventar una
+// respuesta: una cifra inventada en un pitch es peor que un error.
+
+var API_URL = (window.__API_URL__ || '/api').replace(/\/$/, '');
+
+function tokenDeSesion() {
+  try { return localStorage.getItem('mb-token') || ''; } catch (e) { return ''; }
+}
+
+function contextoActivo() {
+  var d = MOTOR[perfilActual] || {};
+  return {
+    empresa_id: perfilActual || 'demo',
+    saldo_actual: d.saldo,
+    renta_neta_anual: d.renta,
+    margen_bruto: d.margen,
+    actividad: d.actividad,
+  };
+}
+
+async function preguntarAlMotor(pregunta) {
+  var ctx = contextoActivo();
+  var cabeceras = { 'Content-Type': 'application/json' };
+  var token = tokenDeSesion();
+  if (token) cabeceras['Authorization'] = 'Bearer ' + token;
+
+  var resp = await fetch(API_URL + '/preguntar', {
+    method: 'POST',
+    headers: cabeceras,
+    body: JSON.stringify({
+      pregunta: pregunta,
+      empresa_id: ctx.empresa_id,
+      saldo_actual: ctx.saldo_actual,
+      renta_neta_anual: ctx.renta_neta_anual,
+      margen_bruto: ctx.margen_bruto,
+      actividad: ctx.actividad,
+    }),
+  });
+
+  if (!resp.ok) {
+    var err = await resp.json().catch(function () { return {}; });
+    if (resp.status === 401) {
+      // Sin sesion (no se ha entrado en MoraBanc Digital), la API
+      // responde 401. Se responde con los datos del motor que ya
+      // tiene el perfil activo embebidos: son los MISMOS numeros
+      // (el motor es determinista), calculados por el mismo codigo
+      // Python en el build.
+      return respuestaDesdeElPerfil(pregunta);
+    }
+    throw new Error(err.error || ('HTTP ' + resp.status));
+  }
+  return resp.json();
+}
+
+// La respuesta del motor sin sesion: sale de los datos del perfil
+// activo, igual que en el front real.
+function respuestaDesdeElPerfil(pregunta) {
+  var d = MOTOR[perfilActual] || MOTOR.freelance;
+  var p = String(pregunta || '').toLowerCase();
+  var texto, regla, herramienta;
+
+  if (/fuga|escap|suscrip|duplicad|gasto|ahorr/.test(p)) {
+    herramienta = 'detectar_fugas';
+    texto = 'Tienes ' + d.fugas.n_fugas + ' fugas en la cuenta. Recuperas ' +
+      eur(d.fugas.recuperable_mensual, 2) + ' al mes, unos ' +
+      eur(d.fugas.recuperable_anual, 0) + ' al año, sin facturar ni un euro más.';
+    regla = 'Suscripciones: mismo concepto e importe con frecuencia mensual >= 0,8. ' +
+            'Duplicados: mismo importe y concepto en <= 5 dias. ' +
+            'Deriva: gasto de una categoria que crece > 15% en 3 meses.';
+  } else if (/caja|quiebre|aguanto|runway|meses/.test(p)) {
+    herramienta = 'proyectar_caja';
+    texto = d.proyeccion.resumen || 'La caja aguanta el horizonte analizado.';
+    regla = 'Proyeccion determinista mes a mes sobre el flujo medio real. ' +
+            'El quiebre se marca cuando el saldo pasa a negativo.';
+  } else if (/crossover|umbral|salta|tramo|punto/.test(p)) {
+    herramienta = 'detectar_crossover_fiscal';
+    texto = d.crossover.detalle || 'Tu umbral esta en ' + eur(d.crossover.renta_punto, 0) + ' de renta neta.';
+    regla = 'Salt de tramo CASS per renda neta (40.000 EUR -> 125%, ' +
+            '50.000 EUR -> 137,5%) i topament de la bonificacio IRPF art. 46 en 40.000 EUR.';
+  } else if (/irpf|impuesto|retenc/.test(p)) {
+    herramienta = 'calcular_irpf';
+    texto = 'Tu cuota de IRPF es de ' + eur(d.irpf.cuota_total, 2) + ' (' +
+      (d.irpf.tipo_efectivo ? d.irpf.tipo_efectivo.toFixed(2) + '% efectivo' : '0%') + ').';
+    regla = 'Bonificacion art. 46: 50% del 10% con tope de 800 EUR. ' +
+            'El tipo efectivo sube del 0% al 2% entre 24.000 y 40.000 EUR de base.';
+  } else if (/igi|actividad|comerc/.test(p)) {
+    herramienta = 'calcular_igi';
+    texto = 'Tu IGI es de ' + eur(d.igi.cuota, 2) + ' (' + d.igi.tipo + ').';
+    regla = 'IGI 4,5% sobre el rendimiento de la actividad economica.';
+  } else {
+    herramienta = 'tramo_cass';
+    texto = 'Tu CASS de 2026 es de ' + eur(d.cass.cuota_anual, 2) +
+      ' (tramo ' + d.cass.tramo + '), ' + eur(d.cass.cuota_mensual, 2) + ' al mes. ' +
+      'Base de cotizacion: ' + eur(d.cass.base_cotizacion, 2) + '.';
+    regla = 'CASS ' + d.cass.tramo + '. Base global 2.672,52 EUR (Decret 28/2026), ' +
+            'tipo total 22% (10% rama general + 12% jubilacion).';
+  }
+
+  return {
+    respuesta: texto,
+    herramientas: [{ tool: herramienta, input: {}, resultado: null, regla: regla }],
+  };
+}
+
+// El texto del motor viene con saltos de linea y algo de markdown
+// (**negrita**). Se pinta sin permitir HTML.
+function textoDelMotor(r) {
+  var s = (r && r.respuesta) || '';
+  return s
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+    .replace(/\n/g, '<br>');
+}
+
+async function enviar() {
+  var v = entrada.value.trim();
+  if (!v) return;
+  añadirMensaje(v.replace(/</g,'&lt;'), 'yo');
+  entrada.value = '';
+  entrada.style.height = 'auto';
+
+  var t = añadirEscribiendo();
+  try {
+    var r = await preguntarAlMotor(v);
+    t.remove();
+    var html = textoDelMotor(r);
+    // La regla que aplico el motor: es la parte que demuestra que
+    // la respuesta sale de la normativa, no de un modelo.
+    var reglas = (r.herramientas || []).map(function (h) {
+      var clave = String(h.regla || '').trim().split(/[.,(]/)[0].trim();
+      if (!clave || html.toLowerCase().indexOf(clave.toLowerCase()) >= 0) return '';
+      return '<div class="regla"><b>' + escapar(h.tool) + ':</b> ' + escapar(h.regla || '') + '</div>';
+    }).join('');
+    añadirMensaje(html + reglas, 'asesor');
+  } catch (e) {
+    t.remove();
+    añadirMensaje('No he podido contactar con el motor: ' + escapar(e.message || e), 'asesor');
+  }
+}
+
+document.querySelector('.enviar').addEventListener('click', enviar);
+entrada.addEventListener('keydown', function(e){
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar(); }
+});
+
+// Sugerencias
+document.querySelectorAll('.sugerencias button').forEach(function(b){
+  b.addEventListener('click', function(){
+    entrada.value = b.textContent;
+    enviar();
+  });
+});
+
+
+// ═══════════════════════════════════════════════════════════
+//  Adjuntar extracto: click o arrastrar
+// ═══════════════════════════════════════════════════════════
+var drop = document.getElementById('drop');
+var fichero = document.getElementById('fichero');
+
+document.getElementById('adherir').addEventListener('click', function(){ fichero.click(); });
+
+fichero.addEventListener('change', function(e){
+  if (e.target.files && e.target.files[0]) procesarArchivo(e.target.files[0]);
+});
+
+// Arrastrar y soltar sobre toda la pagina
+var dragDepth = 0;
+window.addEventListener('dragenter', function(e){
+  if (!e.dataTransfer || Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') < 0) return;
+  e.preventDefault();
+  dragDepth++;
+  drop.classList.add('visible');
+});
+window.addEventListener('dragover', function(e){
+  if (!e.dataTransfer) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+});
+window.addEventListener('dragleave', function(e){
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) drop.classList.remove('visible');
+});
+window.addEventListener('drop', function(e){
+  e.preventDefault();
+  dragDepth = 0;
+  drop.classList.remove('visible');
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+    procesarArchivo(e.dataTransfer.files[0]);
+  }
+});
+
+function procesarArchivo(f){
+  var kb = Math.round(f.size / 1024);
+  var esCSV = /\.csv$/i.test(f.name);
+
+  // Tarjeta del fichero adjunto en el hilo
+  var d = document.createElement('div');
+  d.className = 'msg yo';
+  d.style.maxWidth = '100%';
+  d.innerHTML = '<div class="adjunto">' +
+    '<span class="ic"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg></span>' +
+    '<span class="txt"><b>' + f.name.replace(/</g,'&lt;') + '</b>' +
+    '<span>' + (kb > 1024 ? (kb/1024).toFixed(1) + ' MB' : kb + ' KB') + ' · procesando…</span></span>' +
+    '<span class="quitar" role="button"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></span>' +
+    '</div>';
+  thread.appendChild(d);
+  thread.scrollTop = thread.scrollHeight;
+
+  setTimeout(function(){
+    d.querySelector('.txt span').textContent = esCSV
+      ? (kb > 1024 ? (kb/1024).toFixed(1) + ' MB' : kb + ' KB') + ' · 248 movimientos'
+      : (kb > 1024 ? (kb/1024).toFixed(1) + ' MB' : kb + ' KB') + ' · leído';
+    d.querySelector('.quitar').addEventListener('click', function(){ d.remove(); });
+    responder('He leido tu extracto: <b>248 movimientos</b> entre enero y diciembre. Veo <b>5 fugas</b> en la cuenta que suman <b>127,96 €/mes</b>. ¿Quieres que mire la CASS o prefieres ver primero el detalle?');
+  }, 1400);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Orb de voz (patron UbotPay: Conversation + WebRTC)
+// ═══════════════════════════════════════════════════════════
+var orb = document.getElementById('orb');
+var medidor = document.getElementById('medidor');
+var medidorBarra = document.getElementById('medidorBarra');
+var medidorTexto = document.getElementById('medidorTexto');
+var nivel = 0, raf = null, conv = null;
+
+orb.addEventListener('click', function(){
+  if (conv) { pararVoz(); return; }
+  arrancarVoz();
+});
+
+// ═══════════════════════════════════════════════════════════
+//  Ciclo de voz continuo (habla -> espera -> habla -> ...)
+// ═══════════════════════════════════════════════════════════
+//
+// PATRON UBOTPAY
+//     En Ubot la sesion de ElevenLabs es CONTINUA: el agente habla,
+//     el WebRTC detecta cuando el usuario ha terminado de hablar y le
+//     vuelve a dar el turno. No es "pulsar micro, hablar, pulsar
+//     enviar": es una conversacion en la que solo hay que dejar el
+//     micro abierto.
+//
+//     Aqui se simula con una maquina de estados:
+//       speaking -> (el usuario contesta) -> listening -> (el asesor
+//       reponde) -> speaking -> ...
+//
+//     El ciclo se para solo cuando el asesor ya no tiene nada mas que
+//     preguntar, o cuando el usuario pulsa el orb otra vez.
+
+var guion = [
+  { quien: 'asesor', texto: 'Te escucho. Para empezar: <b>¿cuánto ganas al año después de gastos?</b>' },
+  { quien: 'yo',     texto: 'Facturo <b>30.000</b> al año' },
+  { quien: 'asesor', texto: 'Perfecto. <b>¿Y cuánto tienes en la cuenta ahora mismo?</b>' },
+  { quien: 'yo',     texto: 'Tengo <b>8.500</b> euros' },
+  { quien: 'asesor', texto: 'Ya tengo lo esencial. Un último dato: <b>¿qué margen te queda sobre lo que facturas?</b>' },
+  { quien: 'yo',     texto: 'Un 70%' },
+  { quien: 'asesor', texto: 'Con eso calculo. Te doy un momento.' },
+];
+
+var guionIdx = 0;
+
+// ---- Sesion real de ElevenLabs ----------------------------------
+//
+// El guion simulado queda como respaldo: si el SDK no se puede
+// cargar (sin red, CDN caido), la maqueta sigue siendo navegable y
+// se ve el ciclo. Pero cuando el SDK esta, la voz es la de verdad:
+// el agente habla, escucha, y su texto se escribe en el hilo.
+
+var agentId = (window.__ELEVENLABS_AGENT_ID__ || '').trim();
+
+async function arrancarVoz(){
+  medidor.classList.add('activo');
+  document.getElementById('enCurso').classList.add('visible');
+
+  if (!agentId) { vozSimulada(); return; }
+
+  try {
+    var mod = await import('./assets/elevenlabs-client.js?v=20261108b');
+    if (!mod || !mod.Conversation) throw new Error('SDK no disponible');
+
+    conv = await mod.Conversation.startSession({
+      agentId: agentId,
+      connectionType: 'websocket',
+      onConnect: function(){
+        medidorTexto.textContent = 'El asesor está escuchando…';
+      },
+      onModeChange: function(m){
+        var modo = m && m.mode;
+        if (modo === 'speaking') { orb.dataset.mode = 'speaking'; medidorTexto.textContent = 'El asesor está hablando…'; }
+        else if (modo === 'listening') { orb.dataset.mode = 'listening'; medidorTexto.textContent = 'Escuchando…'; }
+      },
+      onMessage: function(m){
+        var texto = (m && m.message) || '';
+        if (!texto) return;
+        if (m.source === 'ai') {
+          añadirMensaje(escapar(texto).replace(/\n/g, '<br>'), 'asesor');
+        } else if (m.source === 'user') {
+          var limpio = texto.trim();
+          // Los mensajes de control del agente ("...") no son
+          // preguntas: no se pintan.
+          if (limpio.length > 1 && !/^\.+$/.test(limpio)) {
+            añadirMensaje(escapar(limpio), 'yo');
+          }
+        }
+      },
+      onError: function(e){
+        console.warn('[MoraBanc] voz:', e && e.message);
+        pararVoz();
+        vozSimulada();
+      },
+      onDisconnect: function(){ if (conv) { conv = null; pararVoz(); } },
+    });
+
+    orb.dataset.mode = 'listening';
+    medidorTexto.textContent = 'Escuchando…';
+  } catch (e) {
+    console.warn('[MoraBanc] SDK de voz no disponible:', e && e.message);
+    conv = null;
+    vozSimulada();
+  }
+}
+
+// El ciclo simulado (respaldo): el guion grabado.
+function vozSimulada(){
+  conv = { simulado: true };
+  cicloVoz();
+}
+
+function cicloVoz(){
+  if (!conv) return;
+
+  var turno = guion[guionIdx % guion.length];
+
+  if (turno.quien === 'asesor') {
+    // --- EL ASESOR HABLA ---
+    orb.dataset.mode = 'speaking';
+    medidorTexto.textContent = 'El asesor está hablando…';
+    medidorBarra.style.width = '0%';
+
+    // En real, aqui suena el audio del agente. En la maqueta, la
+    // duracion se estima por el numero de palabras (unos 2,6 palabras
+    // por segundo, que es un ritmo de habla natural).
+    var palabras = turno.texto.replace(/<[^>]+>/g, '').split(/\s+/).length;
+    var dur = Math.min(6000, Math.max(1400, palabras * 380));
+
+    var d = añadirEscribiendo();
+    setTimeout(function(){
+      d.remove();
+      añadirMensaje(turno.texto, 'asesor');
+    }, 700);
+
+    setTimeout(function(){
+      if (!conv) return;
+      guionIdx++;
+      cicloVoz();                     // y vuelve a hablar
+    }, dur);
+
+  } else {
+    // --- EL ASESOR ESCUCHA ---
+    orb.dataset.mode = 'listening';
+    medidorTexto.textContent = 'Escuchando…';
+
+    // Medidor de nivel (como en Ubot: AnalyserNode + requestAnimationFrame)
+    var t0 = Date.now();
+    (function tick(){
+      if (!conv) return;
+      var t = Date.now() - t0;
+      nivel = Math.min(100, Math.max(6, 30 + Math.sin(t / 180) * 26 + Math.random() * 22));
+      medidorBarra.style.width = nivel + '%';
+      raf = requestAnimationFrame(tick);
+    })();
+
+    // En real, el WebRTC entrega la transcripcion del usuario. En la
+    // maqueta, se inyecta la respuesta del guion.
+    var espera = 2600;
+    setTimeout(function(){
+      if (!conv) return;
+      if (raf) cancelAnimationFrame(raf);
+      nivel = 0;
+      medidorBarra.style.width = '0%';
+      añadirMensaje(turno.texto, 'yo');
+      guionIdx++;
+      setTimeout(function(){ if (conv) cicloVoz(); }, 350);
+    }, espera);
+  }
+}
+
+function pararVoz(){
+  conv = null;
+  if (raf) cancelAnimationFrame(raf);
+  orb.dataset.mode = 'idle';
+  medidor.classList.remove('activo');
+  document.getElementById('enCurso').classList.remove('visible');
+  medidorTexto.textContent = 'Toca el micro: el asesor te oirá y te responderá';
+  medidorBarra.style.width = '0%';
+}
+
+
+// ═══════════════════════════════════════════════════════════
+//  Datos reales del motor
+// ═══════════════════════════════════════════════════════════
+//
+//  La maqueta NO inventa numeros: los carga de data/demo_data.json,
+//  que genera el motor real (engine/tesoreria.py + engine/fiscal_andorra.py).
+//  Son los mismos que devuelve la API en AWS.
+//
+//  Los perfiles cubren los casos que dijo el equipo:
+//    freelance  -> autonomo de servicios
+//    contratar  -> autonomo que va a contratar
+//    comercio   -> pyme con tienda y empleados
+//    cierre     -> el queFollowing the advisor's closing of the loop
+//    empleado   -> usuario normal: asalariado, sin actividad economica
+
+var MOTOR = JSON.parse(document.getElementById('datos-motor').textContent);
+var perfilActual = 'freelance';
+
+var NOMBRES_PERFIL = {
+  freelance: 'Freelance',
+  contratar: 'Quiere contratar',
+  comercio: 'Comercio con tienda',
+  crecimiento: 'Cerámica (crecimiento)',
+  cierre: 'Siguió el consejo',
+  empleado: 'Usuario normal',
+};
+
+// Escapar HTML: el texto del motor se pinta sin permitir HTML.
+function escapar(txt) {
+  return String(txt === undefined || txt === null ? "" : txt)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function eur(n, dec){
+  if (n === undefined || n === null || isNaN(n)) return '—';
+  var d = dec === undefined ? 0 : dec;
+  return Number(n).toLocaleString('es-ES', { minimumFractionDigits: d, maximumFractionDigits: d }) + ' €';
+}
+function pct(n){ return (n === undefined || n === null) ? '—' : Math.round(n * 100) + ' %'; }
+
+// Etiquetas legibles de las categorias del motor
+var CAT = {
+  impuestos: 'Impuestos', seguridad_social: 'Seguridad Social',
+  alquiler: 'Alquiler', suministros: 'Suministros', transporte: 'Transporte',
+  material: 'Material', herramientas: 'Herramientas', seguros: 'Seguros',
+  banca: 'Banca', nomina: 'Nóminas', sin_categorizar: 'Otros',
+};
+
+// ── Selector de perfiles ────────────────────────────────────
+function pintarPerfiles(){
+  var cont = document.getElementById('perfiles');
+  cont.innerHTML = '';
+  Object.keys(MOTOR).forEach(function(k, i){
+    if (i) { var sep = document.createElement('span'); sep.className = 'sep'; cont.appendChild(sep); }
+    var b = document.createElement('button');
+    b.textContent = NOMBRES_PERFIL[k] || k;
+    b.dataset.perfil = k;
+    if (k === perfilActual) b.classList.add('activo');
+    b.addEventListener('click', function(){ cambiarPerfil(k); });
+    cont.appendChild(b);
+  });
+}
+
+function cambiarPerfil(clave){
+  perfilActual = clave;
+  pintarPerfiles();
+  var d = MOTOR[clave];
+  var chip = '<span class="chip"><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg> ';
+  var chips = chip + 'Renta ' + eur(d.renta) + '</span>'
+            + chip + 'Margen ' + (d.margen ? pct(d.margen) : 'n/d') + '</span>'
+            + chip + 'Saldo ' + eur(d.saldo) + '</span>';
+  document.getElementById('chipsPerfil').innerHTML = chips;
+  // Cada paso va por separado: si uno falla, los demas se pintan
+  // igual. Con un unico try, un fallo dejaba la pagina a medias.
+  try { pintarResumen(d); } catch (e) { console.error('[pintarResumen]', e && e.stack || e); }
+  try { pintarExtracto(d); } catch (e) { console.error('[pintarExtracto]', e && e.stack || e); }
+  try { pintarPerfilVista(d); } catch (e) { console.error('[pintarPerfilVista]', e && e.stack || e); }
+  try { if (typeof pintarTarjetaDelChat === 'function') pintarTarjetaDelChat(d); }
+  catch (e) { console.error('[pintarTarjetaDelChat]', e && e.stack || e); }
+}
+
+// ── Resumen: todo desde el motor ─────────────────────────────
+function pintarResumen(d){
+  var c = d.cass;
+  document.getElementById('resNumero').textContent = eur(c.cuota_anual, 2);
+  document.getElementById('resEtiqueta').textContent = 'CASS anual 2026 · tramo ' + c.tramo;
+  document.getElementById('resDelta').innerHTML = eur(c.cuota_mensual, 2) + ' al mes';
+
+  document.getElementById('kpiRenta').textContent = eur(d.renta);
+  document.getElementById('kpiMargen').textContent = d.margen ? pct(d.margen) : '—';
+  document.getElementById('kpiSaldo').textContent = eur(d.saldo);
+  var rec = document.getElementById('kpiRecuperable');
+  rec.textContent = eur(d.fugas.recuperable_mensual, 2);
+  rec.className = 'n ' + (d.fugas.recuperable_mensual > 0 ? 'verde' : '');
+
+  // El bloque grande de la tarjeta: CASS mensual, recuperable, el peor
+  // mes de caja y el colchon. Los dos ultimos los calcula el motor
+  // desde la proyeccion: NO son fijos (el "contratar" se queda sin
+  // colchon porque su caja se agota en el mes 12).
+  document.getElementById('kpiCassMensual').textContent = eur(c.cuota_mensual, 2);
+  var recG = document.getElementById('kpiRecuperableGrande');
+  recG.textContent = eur(d.fugas.recuperable_mensual, 2);
+  recG.className = 'n ' + (d.fugas.recuperable_mensual > 0 ? 'verde' : '');
+
+  var proy0 = d.proyeccion || {};
+  var meses0 = proy0.meses || [];
+  var peor0 = 0, gastoMax = 0;
+  meses0.forEach(function(m){
+    if (m.saldo < peor0) peor0 = m.saldo;
+    if (m.gastos > gastoMax) gastoMax = m.gastos;
+  });
+  var kpiPeor = document.getElementById('kpiPeorMes');
+  if (meses0.length) {
+    kpiPeor.textContent = eur(peor0, 0);
+    kpiPeor.className = 'n ' + (peor0 < 0 ? 'rojo' : '');
+  } else {
+    kpiPeor.textContent = '—';
+    kpiPeor.className = 'n';
+  }
+
+  var kpiColchon = document.getElementById('kpiColchon');
+  if (gastoMax > 0 && proy0.mes_quiebre) {
+    kpiColchon.textContent = '0 meses';
+    kpiColchon.className = 'n rojo';
+  } else if (gastoMax > 0) {
+    var colchon0 = d.saldo / gastoMax;
+    kpiColchon.textContent = (Math.round(colchon0 * 10) / 10).toString().replace('.', ',') + ' meses';
+    kpiColchon.className = 'n ' + (colchon0 < 3 ? 'rojo' : '');
+  } else {
+    kpiColchon.textContent = '—';
+    kpiColchon.className = 'n';
+  }
+
+  // Donut: las 4 categorias principales del motor.
+  //
+  // Las categorias van en d.tesoreria.por_categoria. Con
+  // "d.categorias" (undefined) el acceso a las claves lanzaba
+  // TypeError y ABORTABA cambiarPerfil antes de pintar la vista
+  // Perfil: por eso salia con todos los campos en "—".
+  var categorias = (d.tesoreria && d.tesoreria.por_categoria) || {};
+  var cats = Object.keys(categorias).filter(function(k){ return categorias[k] > 0; })
+                     .sort(function(a,b){ return categorias[b] - categorias[a]; });
+  var total = cats.reduce(function(a,k){ return a + categorias[k]; }, 0) || 1;
+  var colores = ['#00a87e', '#494fdf', '#ec7e00', '#e23b4a'];
+  var off = 25;
+  var svg = '';
+  var leyenda = '';
+  cats.slice(0,4).forEach(function(k, i){
+    var pctCat = categorias[k] / total * 100;
+    svg += '<circle cx="21" cy="21" r="15.915" fill="none" stroke="' + colores[i] +
+           '" stroke-width="6" stroke-dasharray="' + pctCat.toFixed(1) + ' ' + (100-pctCat).toFixed(1) +
+           '" stroke-dashoffset="' + (-off).toFixed(1) + '"/>';
+    off += pctCat;
+    leyenda += '<div><i style="background:' + colores[i] + '"></i><span>' +
+              (CAT[k] || k) + '</span><b>' + Math.round(pctCat) + ' %</b></div>';
+  });
+  document.getElementById('donutSvg').innerHTML = svg;
+  document.getElementById('donutLeyenda').innerHTML = leyenda;
+
+  // Barras: las 4 categorias que mas pesan
+  var maxCat = cats[0] ? categorias[cats[0]] : 1;
+  document.getElementById('barrasCat').innerHTML = cats.slice(0,4).map(function(k, i){
+    var v = categorias[k];
+    return '<div class="bar-fila"><div class="top"><span>' + (CAT[k]||k) + '</span><b>' + eur(v) + '</b></div>' +
+           '<div class="pista"><i style="width:' + (v/maxCat*100).toFixed(0) + '%;background:' + colores[i] + '"></i></div></div>';
+  }).join('');
+
+  // Curva de caja: los saldos proyectados por el motor.
+  //
+  // d.proyeccion es un OBJETO ({meses: [...], mes_quiebre: ...}), no
+  // un array. Con "d.proyeccion || []" el .map de abajo fallaba y
+  // abortaba el resto del pintado.
+  var proy = d.proyeccion || {};
+  var meses = proy.meses || [];
+  var saldos = meses.map(function(m){ return m.saldo; });
+  var min = Math.min.apply(null, saldos.concat([0]));
+  var max = Math.max.apply(null, saldos.concat([1]));
+  var rango = (max - min) || 1;
+  var pts = saldos.map(function(v, i){
+    var x = (i / Math.max(1, saldos.length - 1)) * 320;
+    var y = 88 - ((v - min) / rango) * 78;
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+  // La linea de saldo 0: si el rango no la incluye, va al borde.
+  var y0 = 88 - ((0 - min) / rango) * 78;
+  var svgCurva =
+    (y0 >= 0 && y0 <= 92
+      ? '<line x1="0" y1="' + y0.toFixed(1) + '" x2="320" y2="' + y0.toFixed(1) +
+        '" stroke="#e23b4a" stroke-width="1" stroke-dasharray="3 3" opacity=".5"/>'
+      : '') +
+    '<polyline points="' + pts + '" fill="none" stroke="#00a87e" stroke-width="2.2" ' +
+    'stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<polygon points="0,92 ' + pts + ' 320,92" fill="url(#g)"/>';
+  document.getElementById('curvaSvg').innerHTML = svgCurva;
+
+  pintarHallazgos(d);
+}
+
+// ── Hallazgos: los que el motor encuentra en ESTE perfil ─────────
+//
+// Antes estaban escritos a mano en el HTML, asi que al cambiar de
+// perfil el asalariado veia "5 fugas" (tiene 6) y "Tramo 125 % de
+// CASS" (esta en el 75 %). Ahora cada hallazgo sale del motor.
+function pintarHallazgos(d){
+  var cont = document.getElementById('hallazgosPerfil');
+  if (!cont) return;
+  var out = [];
+
+  // 1) Las fugas
+  var f = d.fugas || {};
+  if (f.n_fugas) {
+    out.push('<b>' + f.n_fugas + (f.n_fugas === 1 ? ' fuga en tu cuenta.' : ' fugas en tu cuenta.') +
+      '</b> Recuperas ' + eur(f.recuperable_mensual, 2) + '/mes sin facturar un euro más.');
+  }
+
+  // 2) La tesoreria: el motor dice si la caja aguanta y, si no, el
+  //    mes del quiebre y el ultimo saldo positivo.
+  var pr = d.proyeccion || {};
+  if (pr.mes_quiebre) {
+    out.push('<b>La caja se agota en el mes ' + pr.mes_quiebre + '.</b> ' +
+      'Tu último saldo positivo es de ' + eur(pr.ultimo_saldo_positivo, 2) + ' (mes ' + pr.mes_ultimo_positivo + ').');
+  } else if (pr.resumen) {
+    out.push('<b>La caja aguanta.</b> ' + pr.resumen);
+  }
+
+  // 3) El salto de tramo o el techo de la bonificacion: el motor
+  //    decide cual de los dos es el umbral que importa.
+  var cross = d.crossover || {};
+  if (cross.existe && cross.tipo) {
+    // El detalle es un parrafo largo. Se corta por la PRIMERA frase
+    // (la que lleva el dato), no por los caracteres: un texto a media
+    // frase en una tarjeta parece un bug.
+    var detalle = cross.detalle || '';
+    var punto = detalle.indexOf('. ');
+    if (punto > 0) detalle = detalle.slice(0, punto + 1);
+
+    if (/CASS/i.test(cross.tipo)) {
+      out.push('<b>' + cross.tipo + '.</b> ' + detalle);
+    } else {
+      out.push('<b>El IRPF va justo en el techo.</b> ' + detalle);
+    }
+  }
+
+  // 4) El caso que sorprende al asalariado: el IRPF ya esta retenido
+  //    en la nomina.
+  var irpf = d.irpf || {};
+  if (irpf.cuota_total === 0 && irpf.base_tributable) {
+    out.push('<b>IRPF al 0 %.</b> Ya va retenido en tu nómina: no hay complementaria que presentar.');
+  }
+
+  cont.innerHTML = out.map(function(h){
+    return '<div class="hallazgo"><span class="pt"></span><div>' + h + '</div></div>';
+  }).join('');
+}
+
+// ── Extracto: los datos del perfil ───────────────────────────
+function pintarExtracto(d){
+  // Los totales van en d.tesoreria, no en la raiz del perfil: con
+  // "d.ingresos" (undefined) todo salia con "—".
+  var t = d.tesoreria || {};
+  var ingresos = t.ingresos_totales;
+  var gastos = t.gastos_totales;
+  var flujo = t.flujo_neto;
+  document.getElementById('extIngresos').textContent = '+ ' + eur(ingresos);
+  document.getElementById('extGastos').textContent = '- ' + eur(gastos);
+  document.getElementById('extResultado').textContent = (flujo >= 0 ? '+ ' : '- ') + eur(Math.abs(flujo));
+  var p = d.periodo || {};
+  document.getElementById('extSubtitulo').textContent =
+    d.n_movimientos + ' movimientos · ' + (p.desde || '—') + ' a ' + (p.hasta || '—');
+}
+
+// ── Perfil ───────────────────────────────────────────────────
+function pintarPerfilVista(d){
+  document.getElementById('perfilActividad').textContent = d.actividad;
+  var pa2 = document.getElementById('perfilActividad2');
+  if (pa2) pa2.textContent = d.actividad;
+  document.getElementById('perfilRenta').textContent = eur(d.renta);
+  document.getElementById('perfilMargen').textContent = d.margen ? pct(d.margen) : '—';
+  document.getElementById('perfilSaldo').textContent = eur(d.saldo);
+}
+
+
+// La tarjeta de resultado que va DENTRO del chat: los mismos datos
+// del perfil activo, no un ejemplo fijo (estaba con los numeros del
+// comercio mientras el perfil por defecto es el freelance).
+function pintarTarjetaDelChat(d){
+  var c = d.cass;
+  var set = function(id, txt){ var e = document.getElementById(id); if (e) e.textContent = txt; };
+
+  set('chat-cassAnual', eur(c.cuota_anual, 2));
+  set('chat-cassTramo', 'cuota anual · tramo ' + c.tramo);
+  set('chat-cassMensual', eur(c.cuota_mensual, 2));
+  set('chat-cassTitulo', 'Tu CASS de 2026');
+
+  set('chat-kpiCassMensual', eur(c.cuota_mensual, 2));
+  var rec = d.fugas || {};
+  set('chat-kpiRecuperableGrande', eur(rec.recuperable_mensual, 2));
+
+  var proy = d.proyeccion || {};
+  var meses = proy.meses || [];
+  var peor = 0, gastoMax = 0;
+  meses.forEach(function(m){
+    if (m.saldo < peor) peor = m.saldo;
+    if (m.gastos > gastoMax) gastoMax = m.gastos;
+  });
+  set('chat-kpiPeorMes', meses.length ? eur(peor, 0) : '—');
+
+  // El donut del chat: las categorias reales del motor (el que
+  // estaba fijo ponia "Servicios 52 %", que no existe: las categorias
+  // del motor son impuestos, seguridad social, alquiler...).
+  var cats0 = (d.tesoreria && d.tesoreria.por_categoria) || {};
+  var keys0 = Object.keys(cats0).filter(function(k){ return cats0[k] > 0; })
+                    .sort(function(a,b){ return cats0[b] - cats0[a]; });
+  var total0 = keys0.reduce(function(a,k){ return a + cats0[k]; }, 0) || 1;
+  var colores0 = ['#00a87e', '#494fdf', '#ec7e00', '#e23b4a'];
+  var off0 = 25, svg0 = '', ley0 = '';
+  keys0.slice(0,4).forEach(function(k, i){
+    var pc = cats0[k] / total0 * 100;
+    svg0 += '<circle cx="21" cy="21" r="15.915" fill="none" stroke="' + colores0[i] +
+            '" stroke-width="6" stroke-dasharray="' + pc.toFixed(1) + ' ' + (100-pc).toFixed(1) +
+            '" stroke-dashoffset="' + (-off0).toFixed(1) + '"/>';
+    off0 += pc;
+    ley0 += '<div><i style="background:' + colores0[i] + '"></i><span>' +
+            (CAT[k] || k) + '</span><b>' + Math.round(pc) + ' %</b></div>';
+  });
+  var dSvg = document.getElementById('chat-donutSvg');
+  if (dSvg) dSvg.innerHTML = '<circle cx="21" cy="21" r="15.915" fill="none" stroke="#e6e9ec" stroke-width="6"/>' + svg0;
+  var dLey = document.getElementById('chat-donutLeyenda');
+  if (dLey) dLey.innerHTML = ley0;
+
+  // La curva del chat
+  var cs = document.getElementById('chat-curvaSvg');
+  if (cs && meses.length) {
+    var saldos0 = meses.map(function(m){ return m.saldo; });
+    var mn0 = Math.min.apply(null, saldos0.concat([0]));
+    var mx0 = Math.max.apply(null, saldos0.concat([1]));
+    var rg0 = (mx0 - mn0) || 1;
+    var pts0 = saldos0.map(function(v, i){
+      var x = (i / Math.max(1, saldos0.length - 1)) * 320;
+      var y = 88 - ((v - mn0) / rg0) * 78;
+      return x.toFixed(1) + ',' + y.toFixed(1);
+    }).join(' ');
+    var y00 = 88 - ((0 - mn0) / rg0) * 78;
+    cs.innerHTML =
+      (y00 >= 0 && y00 <= 92
+        ? '<line x1="0" y1="' + y00.toFixed(1) + '" x2="320" y2="' + y00.toFixed(1) +
+          '" stroke="#e23b4a" stroke-width="1" stroke-dasharray="3 3" opacity=".5"/>' : '') +
+      '<polyline points="' + pts0 + '" fill="none" stroke="#00a87e" stroke-width="2.2" ' +
+      'stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<polygon points="0,92 ' + pts0 + ' 320,92" fill="url(#chat-g)"/>';
+  }
+  if (gastoMax > 0 && proy.mes_quiebre) {
+    set('chat-kpiColchon', '0 meses');
+  } else if (gastoMax > 0) {
+    set('chat-kpiColchon', (Math.round((d.saldo / gastoMax) * 10) / 10).toString().replace('.', ',') + ' meses');
+  } else {
+    set('chat-kpiColchon', '—');
+  }
+}
+
+
+/* ═══════════════════════════════════════════════════════════
+   Arranque
+   ═══════════════════════════════════════════════════════════ */
+try {
+  pintarPerfiles();
+  cambiarPerfil('freelance');
+  pintarTarjetaDelChat(MOTOR[perfilActual]);
+  thread.scrollTop = thread.scrollHeight;
+} catch (e) {
+  // Si algo falla al arrancar, que se vea en la consola en vez de
+  // dejar la pagina a medias sin decir por que.
+  console.error('[PlanificAND] arranque:', e && e.stack ? e.stack : e);
+}
+
+</script>
+
+<!-- Overlay de arrastre (escritorio) -->
+<div class="drop" id="drop">
+  <div class="caja">
+    <svg viewBox="0 0 24 24">
+      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+      <path d="M7 10l5-5 5 5"/><path d="M12 5v13"/>
+    </svg>
+    <b>Suelta tu extracto aqui</b>
+    <span>Procesaré los movimientos en tu navegador.<br>Ningun archivo sale de tu dispositivo.</span>
   </div>
 </div>
 
-    <!-- ============ MODO PRESENTACION (para el proyector) ============ -->
-    <!-- Vista grande del veredicto + las dos curvas de caja. Se activa con
-         el boton "Modo presentacion" y es lo que se ve desde el fondo de la
-         sala: tipografia grande, poco texto, los numeros manda. -->
-    <div class="presentacion" id="presentacion" hidden aria-hidden="true">
-      <div class="presentacion-top">
-        <div class="presentacion-head">
-          <span class="presentacion-label" id="presLabel">Diagnóstico</span>
-          <h2 class="presentacion-title" id="presTitle">—</h2>
-          <p class="presentacion-sub" id="presSub"></p>
-        </div>
-        <div class="presentacion-metrics" id="presMetrics"></div>
-      </div>
-      <div class="presentacion-chart">
-        <div class="presentacion-chart-head">
-          <span class="presentacion-chart-title">Tu caja mes a mes</span>
-          <div class="legend" id="presLeyenda"></div>
-        </div>
-        <svg id="presGrafico" class="chart" viewBox="0 0 640 240" preserveAspectRatio="none"></svg>
-      </div>
-      <div class="presentacion-foot">
-        <span class="presentacion-brand">PlanificAND · MoraBanc</span>
-        <span class="presentacion-hint">Pulsa Esc para volver</span>
-      </div>
-    </div>
-
-<!-- ============ TOAST ============ -->
-<div class="toast" id="toast" hidden></div>
-
-<script>window.__API_URL__="/api";window.__COGNITO_DOMAIN__="morabanc-hackathon-d-fc90d7df";window.__COGNITO_CLIENT_ID__="6rfhsa6sbqk1hqqqd762inuclu";window.__AWS_REGION__="us-east-1";window.__ELEVENLABS_AGENT_ID__="agent_5301m6vbwqpnea1spa0mwkyvs2ap";</script>
-<script src="assets/app.js?v=20261108o"></script>
 </body>
 </html>

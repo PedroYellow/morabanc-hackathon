@@ -2287,6 +2287,10 @@ locals {
     "data/demo_freelancer_contratar.csv" = "text/csv; charset=utf-8"
     "data/mb_escenarios.json" = "application/json; charset=utf-8"
     "index.html" = "text/html; charset=utf-8"
+    # El front real (step 1 -> step 2 -> chat) queda guardado con
+    # otro nombre: la raiz sirve ahora la maqueta conversacional, que
+    # es la que se enseño y la que se probo.
+    "app-real.html" = "text/html; charset=utf-8"
     "maqueta.html" = "text/html; charset=utf-8"
     "mb-empresas.html" = "text/html; charset=utf-8"
     "mb-login.html" = "text/html; charset=utf-8"

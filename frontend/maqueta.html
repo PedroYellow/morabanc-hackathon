@@ -418,6 +418,16 @@ input  { font: inherit; color: inherit; }
 .nota i { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); }
 @media (max-width: 700px) { .nota { display: none; } }
 </style>
+<script>
+// Config de la maqueta. El API_URL lo inyecta el deploy; por defecto
+// es el proxy /api del propio dominio (mismo origen, sin CORS).
+window.__API_URL__ = window.__API_URL__ || "/api";
+window.__COGNITO_DOMAIN__ = window.__COGNITO_DOMAIN__ || "";
+window.__COGNITO_CLIENT_ID__ = window.__COGNITO_CLIENT_ID__ || "";
+window.__AWS_REGION__ = window.__AWS_REGION__ || "us-east-1";
+window.__ELEVENLABS_AGENT_ID__ = window.__ELEVENLABS_AGENT_ID__ || "agent_5301m6vbwqpnea1spa0mwkyvs2ap";
+</script>
+</head>
 </head>
 <body>
 
@@ -804,21 +814,92 @@ function responder(texto) {
   }, 1100);
 }
 
-function enviar() {
+// ---- Motor real: la API de MoraBanc ------------------------------
+//
+// La maqueta ya no responde con un mock: pregunta al motor de verdad
+// (la Lambda en AWS) con los numeros del perfil activo. Si la API no
+// esta disponible, se avisa con claridad en vez de inventar una
+// respuesta: una cifra inventada en un pitch es peor que un error.
+
+var API_URL = (window.__API_URL__ || '/api').replace(/\/$/, '');
+
+function tokenDeSesion() {
+  try { return localStorage.getItem('mb-token') || ''; } catch (e) { return ''; }
+}
+
+function contextoActivo() {
+  var d = MOTOR[perfilActual] || {};
+  return {
+    empresa_id: perfilActual || 'demo',
+    saldo_actual: d.saldo,
+    renta_neta_anual: d.renta,
+    margen_bruto: d.margen,
+    actividad: d.actividad,
+  };
+}
+
+async function preguntarAlMotor(pregunta) {
+  var ctx = contextoActivo();
+  var cabeceras = { 'Content-Type': 'application/json' };
+  var token = tokenDeSesion();
+  if (token) cabeceras['Authorization'] = 'Bearer ' + token;
+
+  var resp = await fetch(API_URL + '/preguntar', {
+    method: 'POST',
+    headers: cabeceras,
+    body: JSON.stringify({
+      pregunta: pregunta,
+      empresa_id: ctx.empresa_id,
+      saldo_actual: ctx.saldo_actual,
+      renta_neta_anual: ctx.renta_neta_anual,
+      margen_bruto: ctx.margen_bruto,
+      actividad: ctx.actividad,
+    }),
+  });
+
+  if (!resp.ok) {
+    var err = await resp.json().catch(function () { return {}; });
+    if (resp.status === 401) {
+      throw new Error('Sesion no valida. Entra en MoraBanc Digital para preguntar al asesor.');
+    }
+    throw new Error(err.error || ('HTTP ' + resp.status));
+  }
+  return resp.json();
+}
+
+// El texto del motor viene con saltos de linea y algo de markdown
+// (**negrita**). Se pinta sin permitir HTML.
+function textoDelMotor(r) {
+  var s = (r && r.respuesta) || '';
+  return s
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+    .replace(/\n/g, '<br>');
+}
+
+async function enviar() {
   var v = entrada.value.trim();
   if (!v) return;
   añadirMensaje(v.replace(/</g,'&lt;'), 'yo');
   entrada.value = '';
   entrada.style.height = 'auto';
 
-  // Respuesta contextual (mock)
-  var t = v.toLowerCase();
-  if (t.indexOf('precio') >= 0 || t.indexOf('subir') >= 0) {
-    responder('Si subes tu precio un 10 %, tu margen pasa de <b>70 %</b> a <b>72 %</b> y la CASS no cambia (depende de la renta neta). <b>Son 3.000 € más al año</b> sin trabajar un día más.');
-  } else if (t.indexOf('contratar') >= 0) {
-    responder('Con un colchón de <b>3,2 meses</b>, contratar antes de enero es viable: entra en vigor en enero y lo amortizas en 8 meses.');
-  } else {
-    responder('Tu CASS de este año es de <b>8.819,28 €</b> (tramo 125 %). ¿Quieres que mire el detalle de tu caja mes a mes?');
+  var t = añadirEscribiendo();
+  try {
+    var r = await preguntarAlMotor(v);
+    t.remove();
+    var html = textoDelMotor(r);
+    // La regla que aplico el motor: es la parte que demuestra que
+    // la respuesta sale de la normativa, no de un modelo.
+    var reglas = (r.herramientas || []).map(function (h) {
+      var clave = String(h.regla || '').trim().split(/[.,(]/)[0].trim();
+      if (!clave || html.toLowerCase().indexOf(clave.toLowerCase()) >= 0) return '';
+      return '<div class="regla"><b>' + escapar(h.tool) + ':</b> ' + escapar(h.regla || '') + '</div>';
+    }).join('');
+    añadirMensaje(html + reglas, 'asesor');
+  } catch (e) {
+    t.remove();
+    añadirMensaje('No he podido contactar con el motor: ' + escapar(e.message || e), 'asesor');
   }
 }
 
@@ -944,12 +1025,70 @@ var guion = [
 
 var guionIdx = 0;
 
-function arrancarVoz(){
-  // Aqui va la sesion real de ElevenLabs (Conversation.startSession).
-  // En la maqueta se simula el ciclo.
-  conv = { simulado: true };
+// ---- Sesion real de ElevenLabs ----------------------------------
+//
+// El guion simulado queda como respaldo: si el SDK no se puede
+// cargar (sin red, CDN caido), la maqueta sigue siendo navegable y
+// se ve el ciclo. Pero cuando el SDK esta, la voz es la de verdad:
+// el agente habla, escucha, y su texto se escribe en el hilo.
+
+var agentId = (window.__ELEVENLABS_AGENT_ID__ || '').trim();
+
+async function arrancarVoz(){
   medidor.classList.add('activo');
   document.getElementById('enCurso').classList.add('visible');
+
+  if (!agentId) { vozSimulada(); return; }
+
+  try {
+    var mod = await import('./assets/elevenlabs-client.js?v=20261108b');
+    if (!mod || !mod.Conversation) throw new Error('SDK no disponible');
+
+    conv = await mod.Conversation.startSession({
+      agentId: agentId,
+      connectionType: 'websocket',
+      onConnect: function(){
+        medidorTexto.textContent = 'El asesor está escuchando…';
+      },
+      onModeChange: function(m){
+        var modo = m && m.mode;
+        if (modo === 'speaking') { orb.dataset.mode = 'speaking'; medidorTexto.textContent = 'El asesor está hablando…'; }
+        else if (modo === 'listening') { orb.dataset.mode = 'listening'; medidorTexto.textContent = 'Escuchando…'; }
+      },
+      onMessage: function(m){
+        var texto = (m && m.message) || '';
+        if (!texto) return;
+        if (m.source === 'ai') {
+          añadirMensaje(escapar(texto).replace(/\n/g, '<br>'), 'asesor');
+        } else if (m.source === 'user') {
+          var limpio = texto.trim();
+          // Los mensajes de control del agente ("...") no son
+          // preguntas: no se pintan.
+          if (limpio.length > 1 && !/^\.+$/.test(limpio)) {
+            añadirMensaje(escapar(limpio), 'yo');
+          }
+        }
+      },
+      onError: function(e){
+        console.warn('[MoraBanc] voz:', e && e.message);
+        pararVoz();
+        vozSimulada();
+      },
+      onDisconnect: function(){ if (conv) { conv = null; pararVoz(); } },
+    });
+
+    orb.dataset.mode = 'listening';
+    medidorTexto.textContent = 'Escuchando…';
+  } catch (e) {
+    console.warn('[MoraBanc] SDK de voz no disponible:', e && e.message);
+    conv = null;
+    vozSimulada();
+  }
+}
+
+// El ciclo simulado (respaldo): el guion grabado.
+function vozSimulada(){
+  conv = { simulado: true };
   cicloVoz();
 }
 
@@ -1049,6 +1188,16 @@ var NOMBRES_PERFIL = {
   cierre: 'Siguió el consejo',
   empleado: 'Usuario normal',
 };
+
+// Escapar HTML: el texto del motor se pinta sin permitir HTML.
+function escapar(txt) {
+  return String(txt === undefined || txt === null ? "" : txt)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 function eur(n, dec){
   if (n === undefined || n === null || isNaN(n)) return '—';

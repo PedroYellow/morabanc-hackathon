@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0a3550">
+<meta name="description" content="PlanificAND: motor de decisiones financieras para autonomos y pymes de Andorra. MoraBanc IA + Finanzas.">
+<title>PlanificAND · Asesor financiero para Andorra</title>
+<link rel="stylesheet" href="assets/styles.css?v=20261107f">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%230a3550'/><path d='M30 52 L44 66 L70 34' fill='none' stroke='%23f1c657' stroke-width='11' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+</head>
+<body>
+
+<!-- ============ CABECERA ============ -->
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <!-- Logo real de MoraBanc (del sitio corporativo, version clara) -->
+      <div class="brand-mark">
+        <img class="brand-logo" src="assets/logo-morabanc.svg" alt="MoraBanc" width="153" height="24">
+      </div>
+      <div class="brand-divider" aria-hidden="true"></div>
+      <div class="brand-text">
+        <strong>PlanificAND</strong>
+        <span class="brand-sub">Autónomos y pymes · Andorra</span>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <button class="lang-switch" id="langSwitch" aria-label="Cambiar idioma" title="Cambiar idioma">
+        <span class="lang-active">ES</span><span class="lang-sep">·</span><span>CA</span><span class="lang-sep">·</span><span>EN</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- ============ PASO 1: CONTEXTO ============ -->
+<main class="app">
+
+  <section class="step" id="stepContexto" data-step="1">
+
+    <!--
+      Voz y captura conversacional.
+
+      Este bloque va ANTES del formulario a proposito: el objetivo es
+      que el usuario pueda HABLAR sus datos en vez de escribirlos en
+      cuatro casillas. El formulario queda como atajo para quien ya
+      sabe lo que quiere poner, y se rellena solo con lo que el
+      usuario dice.
+
+      El chat de abajo (paso 2) es el mismo: aqui solo aparece el
+      acceso rapido a la voz y el resumen de lo capturado.
+    -->
+    <div class="card voice-card" id="voiceCard">
+      <h2 class="card-title">Cuéntamelo hablando</h2>
+      <p class="card-hint">
+        Pulsa el micro y di tu situación: el asesor la entiende, la
+        anota y calcula. También puedes escribirla.
+      </p>
+
+      <div class="voice-bar" id="voiceBarStep1">
+        <button class="voice-orb" id="voiceOrbStep1" type="button" aria-label="Hablar con el asesor">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
+            <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/>
+            <path d="M18 11a6 6 0 0 1-12 0H4a8 8 0 0 0 7 7.93V22h2v-3.07A8 8 0 0 0 20 11Z" opacity=".85"/>
+          </svg>
+        </button>
+        <div class="voice-meter" id="voiceMeterStep1"><i id="voiceLevelStep1"></i></div>
+        <div class="voice-status" id="voiceStatusStep1" data-state="idle">
+          <span class="dot"></span><span id="voiceStatusTextStep1">Toca para hablar</span>
+        </div>
+        <select class="voice-device" id="voiceDeviceStep1" hidden aria-label="Micrófono"></select>
+      </div>
+
+      <div class="voice-notice" id="voiceNoticeStep1" hidden></div>
+
+      <form class="chat-input" id="voiceFormStep1">
+        <input type="text" id="voiceInputStep1" placeholder="O escribe aquí tu situación…" autocomplete="off" maxlength="200">
+        <button type="submit" class="btn-send" aria-label="Enviar">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 12 L20 4 L14 20 L12 13 Z" fill="currentColor"/></svg>
+        </button>
+      </form>
+
+      <!-- Lo que el asesor ha entendido hasta ahora -->
+      <div class="context-chips" id="contextChipsStep1"></div>
+    </div>
+
+    <div class="step-head">
+      <span class="step-num">1</span>
+      <div>
+        <h1 id="tituloContexto">Tu situación financiera</h1>
+        <p id="subtituloContexto">Empezamos por lo básico: tus cuentas y tus ingresos.</p>
+      </div>
+    </div>
+
+    <!-- Selector de cuenta -->
+    <div class="card">
+      <h2 class="card-title">¿Cómo quieres empezar?</h2>
+      <div class="opciones" id="opcionesInicio">
+        <button class="opcion" data-modo="demo" data-perfil="freelance">
+          <span class="opcion-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg></span>
+          <span class="opcion-body">
+            <strong>Cuenta de demostración</strong>
+            <small>Freelance con nóminas · el caso del pitch</small>
+          </span>
+        </button>
+        <button class="opcion" data-modo="demo" data-perfil="empleado">
+          <span class="opcion-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a7 7 0 0114 0v1"/></svg></span>
+          <span class="opcion-body">
+            <strong>Usuario normal</strong>
+            <small>Asalariado · sin actividad económica</small>
+          </span>
+        </button>
+        <button class="opcion" data-modo="demo" data-perfil="contratar">
+          <span class="opcion-icon warn" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 L22 20 L2 20 Z"/><path d="M12 10v4"/><circle cx="12" cy="17" r=".6" fill="currentColor"/></svg></span>
+          <span class="opcion-body">
+            <strong>Freelancer que quiere contratar</strong>
+            <small>Caja justa, flujo negativo · la pregunta difícil</small>
+          </span>
+        </button>
+        <button class="opcion" data-modo="demo" data-perfil="comercio">
+          <span class="opcion-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9 L5 4 H19 L20 9"/><path d="M4 9 H20 V20 H4 Z"/><path d="M9 20 V14 H15 V20"/></svg></span>
+          <span class="opcion-body">
+            <strong>Comercio con tienda</strong>
+            <small>Pyme con empleado · volumen alto</small>
+          </span>
+        </button>
+        <button class="opcion" data-modo="demo" data-perfil="cierre">
+          <span class="opcion-icon ok" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 L9 17 L4 12"/></svg></span>
+          <span class="opcion-body">
+            <strong>Freelancer que siguió el consejo</strong>
+            <small>El cierre del bucle · ¿hiciste caso?</small>
+          </span>
+        </button>
+        <button class="opcion" data-modo="subir">
+          <span class="opcion-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3 H7 A1 1 0 0 0 6 4 V20 A1 1 0 0 0 7 21 H17 A1 1 0 0 0 18 20 V7 Z"/><path d="M14 3 V7 H18"/><path d="M9 13 H15"/><path d="M9 17 H13"/></svg></span>
+          <span class="opcion-body">
+            <strong>Subir mi extracto</strong>
+            <small>CSV de tu banca · se procesa en el navegador</small>
+          </span>
+        </button>
+      </div>
+
+      <!-- Zona de subida (oculta por defecto) -->
+      <div class="upload-zone" id="uploadZone" hidden>
+        <label class="file-drop" for="fileInput">
+          <!-- Se aceptan CSV (el formato del motor) y tambien PDF, imagen y
+               XLSX: el navegador los adjunta a la conversacion y el
+               asistente puede leerlos. El motor sigue trabajando con el
+               CSV, que es la fuente de verdad de los numeros. -->
+          <input type="file" id="fileInput" multiple
+                 accept=".csv,text/csv,.pdf,application/pdf,.png,.jpg,.jpeg,image/*,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+          <span class="file-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17 V4"/><path d="M7 9 L12 4 L17 9"/><path d="M4 20 H20"/></svg></span>
+          <strong id="fileDropTitle">Arrastra tus archivos o haz clic</strong>
+          <small>CSV de tu banca (fecha, concepto, importe) · también PDF, Excel o imágenes</small>
+        </label>
+        <div class="upload-privacy">
+          🔒 Tus archivos se procesan en la cuenta AWS aislada del equipo y se borran a los 30 días.
+        </div>
+      </div>
+
+      <!-- Arrastre sobre toda la pagina: suelta el archivo donde estes -->
+      <div class="drop-overlay" id="dropOverlay" hidden aria-hidden="true">
+        <div class="drop-overlay-inner">
+          <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17 V4"/><path d="M7 9 L12 4 L17 9"/><path d="M4 20 H20"/></svg>
+          <strong>Suelta aquí tu extracto</strong>
+          <span>CSV, PDF, Excel o imágenes</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Datos fiscales -->
+    <div class="card" id="cardDatos">
+      <h2 class="card-title">Tus datos fiscales</h2>
+      <p class="card-hint">Con esto calculamos tu CASS, tu IRPF y tu IGI con la normativa andorrana. Si ya lo has contado, está relleno.</p>
+
+      <div class="form-grid">
+        <label class="field">
+          <span class="field-label">Renta neta anual</span>
+          <span class="field-hint">Lo que te queda tras gastos, antes de impuestos y CASS</span>
+          <div class="input-money">
+            <input type="number" id="rentaNeta" inputmode="decimal" placeholder="30000" step="100" min="0">
+            <span class="input-suffix">€</span>
+          </div>
+          <small class="field-help">Lo que facturas antes de impuestos y cotizaciones.</small>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Margen bruto</span>
+          <div class="input-money">
+            <input type="number" id="margenBruto" inputmode="decimal" placeholder="70" step="1" min="1" max="99">
+            <span class="input-suffix">%</span>
+          </div>
+          <small class="field-help">Qué parte de cada euro facturas queda para ti.</small>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Saldo actual en cuenta</span>
+          <div class="input-money">
+            <input type="number" id="saldoActual" inputmode="decimal" placeholder="8500" step="100">
+            <span class="input-suffix">€</span>
+          </div>
+          <small class="field-help">Ahora mismo, en la cuenta profesional.</small>
+        </label>
+
+        <label class="field">
+          <span class="field-label">¿Qué haces?</span>
+          <input type="text" id="actividad" placeholder="Freelance de servicios" maxlength="60">
+          <small class="field-help">Nos ayuda a contextualizar las respuestas.</small>
+        </label>
+      </div>
+    </div>
+
+    <button class="btn-primary btn-lg" id="btnAnalizar">
+      <span>Analizar mi situación</span>
+      <span class="btn-arrow">→</span>
+    </button>
+  </section>
+
+  <!-- ============ PASO 2: RESULTADO ============ -->
+  <section class="step" id="stepResultado" data-step="2" hidden>
+
+    <!-- Cabecera con veredicto -->
+    <div class="verdict-card" id="verdictCard">
+      <div class="verdict-main">
+        <div class="verdict-label" id="verdictLabel">Diagnóstico</div>
+        <h2 class="verdict-title" id="verdictTitle">—</h2>
+        <p class="verdict-text" id="verdictText">—</p>
+      </div>
+      <div class="verdict-metrics" id="verdictMetrics"></div>
+    </div>
+
+    <!-- Tarjetas de hallazgos -->
+    <div class="hallazgos" id="hallazgos"></div>
+
+    <!-- Gráfico de proyección -->
+    <div class="card" id="cardProyeccion" hidden>
+      <div class="card-head">
+        <h2 class="card-title">Tu caja mes a mes</h2>
+        <div class="legend" id="leyendaProyeccion"></div>
+      </div>
+      <div class="chart-wrap">
+        <svg id="graficoCaja" class="chart" viewBox="0 0 640 240" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="chart-note" id="notaProyeccion"></div>
+    </div>
+
+    <!-- Preguntas sugeridas -->
+    <div class="card">
+      <h2 class="card-title">Pregúntame lo que quieras</h2>
+      <div class="sugerencias" id="sugerencias"></div>
+
+      <div class="chat" id="chat">
+        <!--
+          Contexto capturado en vivo. Se rellena solo con lo que el
+          usuario dice (o escribe). Es la pieza que convierte el chat
+          en una captura de datos: el motor recibe un contexto completo.
+        -->
+        <div class="context-chips" id="contextChips"></div>
+
+        <!-- Barra de voz: se despliega al pulsar el microfono -->
+        <div class="voice-bar" id="voiceBar" hidden>
+          <button class="voice-orb" id="voiceOrb" type="button" aria-label="Hablar con el asesor">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
+              <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/>
+              <path d="M18 11a6 6 0 0 1-12 0H4a8 8 0 0 0 7 7.93V22h2v-3.07A8 8 0 0 0 20 11Z" opacity=".85"/>
+            </svg>
+          </button>
+          <div class="voice-meter" id="voiceMeter"><i id="voiceLevel"></i></div>
+          <div class="voice-status" id="voiceStatus" data-state="idle">
+            <span class="dot"></span><span id="voiceStatusText">Toca para hablar</span>
+          </div>
+          <select class="voice-device" id="voiceDevice" hidden aria-label="Micrófono"></select>
+        </div>
+
+        <div class="voice-notice" id="voiceNotice" hidden></div>
+
+        <div class="chat-messages" id="chatMessages"></div>
+        <form class="chat-input" id="chatForm">
+          <button type="button" class="btn-mic" id="btnMic" aria-label="Hablar con el asesor">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+              <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z"/>
+              <path d="M18 11a6 6 0 0 1-12 0H4a8 8 0 0 0 7 7.93V22h2v-3.07A8 8 0 0 0 20 11Z" opacity=".85"/>
+            </svg>
+          </button>
+          <input type="text" id="chatInput" placeholder="Escribe o habla con el asesor…" autocomplete="off" maxlength="200">
+          <button type="submit" class="btn-send" aria-label="Enviar">
+            <svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 12 L20 4 L14 20 L12 13 Z" fill="currentColor"/></svg>
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Traza técnica (para el jurado técnico) -->
+    <details class="traza" id="trazaBox">
+      <summary>Ver el razonamiento y las reglas aplicadas</summary>
+      <div class="traza-body" id="trazaBody"></div>
+    </details>
+
+    <button class="btn-ghost" id="btnReiniciar">← Empezar de nuevo</button>
+
+    <!-- Boton de presentacion: una sola vista grande para el proyector -->
+    <button class="btn-presentacion" id="btnPresentacion">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21 L16 21"/><path d="M12 17 L12 21"/>
+      </svg>
+      <span>Modo presentación</span>
+    </button>
+
+  </section>
+
+</main>
+
+<!-- ============ MODAL: DETALLE DE UN HALLAZGO ============ -->
+<div class="modal-backdrop" id="modalBackdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitulo">
+    <button class="modal-close" id="modalClose" aria-label="Cerrar">×</button>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+    <!-- ============ MODO PRESENTACION (para el proyector) ============ -->
+    <!-- Vista grande del veredicto + las dos curvas de caja. Se activa con
+         el boton "Modo presentacion" y es lo que se ve desde el fondo de la
+         sala: tipografia grande, poco texto, los numeros manda. -->
+    <div class="presentacion" id="presentacion" hidden aria-hidden="true">
+      <div class="presentacion-top">
+        <div class="presentacion-head">
+          <span class="presentacion-label" id="presLabel">Diagnóstico</span>
+          <h2 class="presentacion-title" id="presTitle">—</h2>
+          <p class="presentacion-sub" id="presSub"></p>
+        </div>
+        <div class="presentacion-metrics" id="presMetrics"></div>
+      </div>
+      <div class="presentacion-chart">
+        <div class="presentacion-chart-head">
+          <span class="presentacion-chart-title">Tu caja mes a mes</span>
+          <div class="legend" id="presLeyenda"></div>
+        </div>
+        <svg id="presGrafico" class="chart" viewBox="0 0 640 240" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="presentacion-foot">
+        <span class="presentacion-brand">PlanificAND · MoraBanc</span>
+        <span class="presentacion-hint">Pulsa Esc para volver</span>
+      </div>
+    </div>
+
+<!-- ============ TOAST ============ -->
+<div class="toast" id="toast" hidden></div>
+
+<script>window.__API_URL__="/api";window.__COGNITO_DOMAIN__="morabanc-hackathon-d-fc90d7df";window.__COGNITO_CLIENT_ID__="6rfhsa6sbqk1hqqqd762inuclu";window.__AWS_REGION__="us-east-1";window.__ELEVENLABS_AGENT_ID__="agent_5301m6vbwqpnea1spa0mwkyvs2ap";</script>
+<script src="assets/app.js?v=20261108o"></script>
+</body>
+</html>
