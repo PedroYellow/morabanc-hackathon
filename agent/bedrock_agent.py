@@ -1301,6 +1301,13 @@ class AgenteFinanciero:
                 "calcules tu."
                 "\n- No inventes cifras. No llames a ninguna herramienta: el "
                 "calculo ya esta hecho."
+                "\n- Los importes van en FORMATO EUROPEO: 7.055,40 EUR "
+                "(punto de millares, coma decimal). Si el resultado del "
+                "motor te da un numero en otro formato, reescribelo con "
+                "punto de millares y coma decimal antes de decirlo. Nunca "
+                "digas 7055.4 ni 108000.0."
+                "\n- Las cifras van con su etiqueta (anual, mensual, base, "
+                "tramo...) y con su unidad en EUR."
             )
             # El motor ya ha calculado: el LLM solo redacta. Forzar la
             # herramienta hacia que el modelo la llamara con parametros
