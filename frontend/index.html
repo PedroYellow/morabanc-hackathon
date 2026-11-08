@@ -1242,6 +1242,40 @@ async function iniciarVozReal(){
           ? dossierDelCliente()
           : 'PENDIENTE'
       },
+      // ── La voz usa el motor real ──
+      //
+      // Sin esto, el agente de voz responde de memoria: puede decir
+      // "tu CASS es de 7.000" sin que sea el numero del motor. Con
+      // estas herramientas, cuando el agente necesita un calculo, lo
+      // pide al motor (el mismo de la Lambda, con la normativa
+      // andorrana) y el resultado le vuelve antes de que hable.
+      clientTools: {
+        preguntar_al_motor: async function(params){
+          var pregunta = (params && (params.pregunta || params.question)) || '';
+          if (!pregunta) return 'No me has pasado la pregunta.';
+          try {
+            var r = await preguntarAlMotor(pregunta);
+            var texto = r.respuesta || '(sin respuesta)';
+            if (r.herramientas && r.herramientas.length) {
+              var reglas = r.herramientas
+                .filter(function(h){ return h.regla; })
+                .map(function(h){ return 'Regla aplicada: ' + h.regla; })
+                .join(' ');
+              if (reglas) texto += '\n\n' + reglas;
+            }
+            return texto;
+          } catch (e) {
+            return 'No he podido calcularlo: ' + (e && e.message ? e.message : 'error');
+          }
+        },
+        evaluar_compra: async function(params){
+          var objetivo = (params && (params.objetivo || params.decision)) || 'coche';
+          var importe = params && params.importe ? Number(params.importe) : null;
+          var pregunta = 'Quiero ' + (objetivo === 'contratar' ? 'contratar a alguien' : 'comprar ' + objetivo);
+          if (importe) pregunta += ' de ' + importe + ' euros';
+          return await this.preguntar_al_motor({ pregunta: pregunta });
+        }
+      },
       onConnect: function(){
         medidorTexto.textContent = 'El asesor está escuchando…';
       },
