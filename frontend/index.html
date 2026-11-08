@@ -842,7 +842,7 @@ window.__ELEVENLABS_AGENT_ID__ = window.__ELEVENLABS_AGENT_ID__ || "agent_5301m6
   <section class="vista" id="vistaResumen">
     <div class="resumen">
       <h2>Tu situación</h2>
-      <div class="sub">Actualizado a 7 nov 2026 · freelance de servicios</div>
+      <div class="sub" id="resumenSubtitulo">—</div>
 
       <div class="panel">
         <div class="cifra-grande" style="padding:20px 18px">
@@ -1762,6 +1762,18 @@ var CAT = {
 };
 
 // ── Selector de perfiles ────────────────────────────────────
+// La actividad llega del extracto del cliente, en minusculas y a
+// veces en Catalan ("freelance de servicios"). Se pone la inicial en
+// mayuscula para que se lea como una etiqueta, no como un dato
+// pegado.
+function actividadLegible(a){
+  if (!a) return '—';
+  var t = String(a).trim();
+  // Si ya viene con mayuscula inicial, se deja como esta.
+  if (/^[A-ZÀ-Ü]/.test(t)) return t;
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
 function pintarPerfiles(){
   var cont = document.getElementById('perfiles');
   cont.innerHTML = '';
@@ -1810,6 +1822,18 @@ function cambiarPerfil(clave){
 // ── Resumen: todo desde el motor ─────────────────────────────
 function pintarResumen(d){
   var c = d.cass;
+
+  // El subtitulo: cuando se actualizan los datos y que actividad
+  // tiene el cliente. No es fijo: cambia con el perfil.
+  var sub = document.getElementById('resumenSubtitulo');
+  if (sub) {
+    var cuando = d.periodo || '';
+    var fecha = new Date();
+    var meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    var hoy = fecha.getDate() + ' ' + meses[fecha.getMonth()] + ' ' + fecha.getFullYear();
+    sub.textContent = 'Actualizado a ' + hoy + ' · ' + actividadLegible(d.actividad);
+  }
+
   document.getElementById('resNumero').textContent = eur(c.cuota_anual, 2);
   document.getElementById('resEtiqueta').textContent = 'CASS anual 2026 · tramo ' + c.tramo;
   document.getElementById('resDelta').innerHTML = eur(c.cuota_mensual, 2) + ' al mes';
@@ -2034,7 +2058,7 @@ function pintarExtracto(d){
 function pintarPerfilVista(d){
   document.getElementById('perfilActividad').textContent = d.actividad;
   var pa2 = document.getElementById('perfilActividad2');
-  if (pa2) pa2.textContent = d.actividad;
+  if (pa2) pa2.textContent = actividadLegible(d.actividad);
   document.getElementById('perfilRenta').textContent = eur(d.renta);
   document.getElementById('perfilMargen').textContent = d.margen ? pct(d.margen) : '—';
   document.getElementById('perfilSaldo').textContent = eur(d.saldo);
