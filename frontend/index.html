@@ -165,7 +165,48 @@ input  { font: inherit; color: inherit; }
 .topbar .logo b { font-size: 17px; font-weight: 600; letter-spacing: -0.02em; }
 .topbar .logo span { font-size: 11px; opacity: .7; font-weight: 500; letter-spacing: .04em; }
 .topbar .spacer { flex: 1; position: relative; z-index: 2; }
-.topbar .iconbtn, .topbar .avatar { position: relative; z-index: 2; }
+.topbar .iconbtn, .topbar /* ---------- El menu de idioma ---------- */
+.menu-idioma {
+  position: absolute;
+  top: calc(100% + 8px); right: 58px;
+  z-index: 40;
+  min-width: 210px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(25,28,31,.16);
+  padding: 10px;
+}
+.menu-idioma[hidden] { display: none; }
+.menu-titulo {
+  font-size: 10.5px; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--ink-3);
+  padding: 2px 6px 8px;
+}
+.menu-lista { display: grid; gap: 2px; }
+.menu-lista button {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; text-align: left;
+  padding: 8px 10px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--ink);
+  font-size: 13.5px; font-weight: 500; font-family: inherit;
+  cursor: pointer;
+}
+.menu-lista button:hover { background: var(--surface); }
+.menu-lista button.activo { background: var(--navy); color: #fff; }
+.menu-lista button .cod {
+  font-size: 10.5px; font-weight: 600; letter-spacing: .04em;
+  color: var(--ink-3); width: 26px; flex: none;
+  margin-right: 2px;
+}
+.menu-lista button.activo .cod { color: rgba(255,255,255,.65); }
+.menu-pie {
+  font-size: 11px; color: var(--ink-3);
+  padding: 8px 6px 2px; margin-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.avatar { position: relative; z-index: 2; }
 .iconbtn {
   width: 34px; height: 34px; border-radius: var(--r-pill);
   display: grid; place-items: center; background: rgba(255,255,255,.10);
@@ -595,9 +636,18 @@ window.__ELEVENLABS_AGENT_ID__ = window.__ELEVENLABS_AGENT_ID__ || "agent_5301m6
     </div>
     <div class="nota"><i></i> Asesor financiero de MoraBanc · motor con la normativa andorrana</div>
     <div class="spacer"></div>
-    <button class="iconbtn" aria-label="Cambiar idioma">
+    <button class="iconbtn" id="btnIdioma" aria-label="Cambiar idioma" aria-haspopup="true" aria-expanded="false">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 2.5 15.3 0 18M12 3c-2.5 2.7-2.5 15.3 0 18"/></svg>
     </button>
+    <!-- El selector de idioma. El motor detecta en que idioma habla
+         el cliente y responde en ese; este boton es para cuando el
+         detector se equivoca o para forzar uno (por ejemplo, en una
+         demo, para ensayar como suena en frances). -->
+    <div class="menu-idioma" id="menuIdioma" hidden>
+      <div class="menu-titulo">Idioma de la respuesta</div>
+      <div class="menu-lista" id="listaIdiomas"></div>
+      <div class="menu-pie">El asesor detecta solo el idioma en que hables.</div>
+    </div>
     <div class="avatar">PA</div>
   </header>
 
@@ -969,6 +1019,8 @@ async function preguntarAlMotor(pregunta) {
       renta_neta_anual: ctx.renta_neta_anual,
       margen_bruto: ctx.margen_bruto,
       actividad: ctx.actividad,
+      // El idioma forzado (si el cliente ha elegido uno en el menu).
+      idioma: idiomaForzado !== 'auto' ? idiomaForzado : undefined,
       // El extracto que el cliente ha arrastrado. El motor lo lee
       // como el contexto.csv.
       extracto_csv: extractoCliente || undefined,
@@ -2019,6 +2071,94 @@ function limpiarEtiquetasAgente(texto){
       recargarConExtracto(csv.texto);
     }
   }
+})();
+
+
+// ── El idioma de la respuesta ───────────────────────────────────
+//
+// El motor (y el agente de voz) detectan solos el idioma en el que
+// habla el cliente y responden en ese. Este selector es para when
+// hace falta forzarlo: una demo en otro idioma, o cuando el
+// detector se equivoca.
+//
+// El idioma forzado se manda al motor en la peticion.
+
+var IDIOMAS_MENU = [
+  { cod: 'auto', etiqueta: 'Automatico', det: 'detectar' },
+  { cod: 'es', etiqueta: 'Espanol',    det: 'es' },
+  { cod: 'ca', etiqueta: 'Catala',      det: 'ca' },
+  { cod: 'fr', etiqueta: 'Francais',   det: 'fr' },
+  { cod: 'en', etiqueta: 'English',    det: 'en' },
+  { cod: 'pt', etiqueta: 'Portugues',  det: 'pt' },
+];
+
+var idiomaForzado = 'auto';
+
+function pintarMenuIdioma(){
+  var lista = document.getElementById('listaIdiomas');
+  if (!lista) return;
+  lista.innerHTML = '';
+  IDIOMAS_MENU.forEach(function(item){
+    var b = document.createElement('button');
+    b.className = (idiomaForzado === item.cod ? 'activo' : '');
+    b.innerHTML = '<span class="cod">' + (item.cod === 'auto' ? 'AUTO' : item.cod.toUpperCase()) + '</span>' +
+                  '<span>' + item.etiqueta + '</span>';
+    b.addEventListener('click', function(){
+      idiomaForzado = item.cod;
+      pintarMenuIdioma();
+      cerrarMenuIdioma();
+      // Se avisa en el chat de que la respuesta va a ir en ese idioma.
+      if (typeof añadirMensaje === 'function') {
+        añadirMensaje(
+          item.cod === 'auto'
+            ? 'A partir de ahora te contesto en el idioma en el que me hables.'
+            : 'A partir de ahora te contesto en ' + item.etiqueta.toLowerCase() + '.',
+          'yo'
+        );
+      }
+      // La sesion de voz, si esta abierta, se reinicia para que el
+      // agente de ElevenLabs cambie de idioma tambien.
+      try {
+        if (typeof conv !== 'undefined' && conv && !conv.simulado && typeof reiniciarVoz === 'function') {
+          reiniciarVoz();
+        }
+      } catch (e) {}
+    });
+    lista.appendChild(b);
+  });
+}
+
+function abrirMenuIdioma(){
+  var m = document.getElementById('menuIdioma');
+  var b = document.getElementById('btnIdioma');
+  if (!m) return;
+  pintarMenuIdioma();
+  m.hidden = false;
+  if (b) b.setAttribute('aria-expanded', 'true');
+}
+
+function cerrarMenuIdioma(){
+  var m = document.getElementById('menuIdioma');
+  var b = document.getElementById('btnIdioma');
+  if (m) m.hidden = true;
+  if (b) b.setAttribute('aria-expanded', 'false');
+}
+
+(function(){
+  var b = document.getElementById('btnIdioma');
+  var m = document.getElementById('menuIdioma');
+  if (!b || !m) return;
+  b.addEventListener('click', function(e){
+    e.stopPropagation();
+    if (m.hidden) abrirMenuIdioma(); else cerrarMenuIdioma();
+  });
+  // Al pulsar fuera, se cierra.
+  document.addEventListener('click', function(e){
+    if (!m.hidden && !m.contains(e.target)) cerrarMenuIdioma();
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape') cerrarMenuIdioma();
+  });
 })();
 
 

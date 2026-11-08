@@ -271,6 +271,119 @@ def _texto_generico(res: dict) -> str:
 # ─────────────────────────────────────────────────────────────────────
 
 
+#: Como se dicen las partes del texto en cada idioma. Las cifras y
+#: los nombres de impuestos NO se tocan: son como estan en la
+#: normativa del banco y como el cliente los ve en sus declaraciones.
+#: Los patrones del texto del motor, con su version en cada idioma.
+#:
+#: Se traducen FRASES COMPLETAS, no palabras sueltas: si se cambiaran
+#: solo las palabras, quedarian restos en español ("Sí Oui, ça
+#: passe"). Y las cifras y los nombres de impuestos (CASS, IRPF, IGI)
+#: no se tocan: son como estan en la normativa del banco y como el
+#: cliente los ve en sus declaraciones.
+PATRONES_IDIOMA: list[tuple[str, dict[str, str]]] = [
+    (
+        "Sí cabe. Puedes gastar hasta {maximo} EUR. Después te quedarían {margen} EUR de margen al mes",
+        {
+            "ca": "Sí que hi cap. Pots gastar fins a {maximo} EUR. Et quedaries {margen} EUR de marge al mes",
+            "fr": "Oui, ça passe. Vous pouvez dépenser jusqu'à {maximo} EUR. Il vous resterait {margen} EUR de marge par mois",
+            "en": "Yes, it fits. You can spend up to {maximo} EUR. You would still have {margen} EUR of margin per month",
+            "pt": "Sim, cabe. Pode gastar até {maximo} EUR. Ficaria com {margen} EUR de margem por mês",
+        },
+    ),
+    (
+        "No cabe de una vez. Tu límite son {maximo} EUR (un {pedido} EUR te deja el margen mensual en {margen} EUR)",
+        {
+            "ca": "No cap d'una sola vegada. El teu límit són {maximo} EUR (un {pedido} EUR et deixa el marge mensual en {margen} EUR)",
+            "fr": "Non, ça ne passe pas d'un coup. Votre limite est de {maximo} EUR (un {pedido} EUR vous laisse une marge mensuelle de {margen} EUR)",
+            "en": "No, it does not fit in one go. Your limit is {maximo} EUR (a {pedido} EUR purchase leaves you a monthly margin of {margen} EUR)",
+            "pt": "Não cabe de uma só vez. O seu limite é {maximo} EUR (um {pedido} EUR deixa-lhe uma margem mensal de {margen} EUR)",
+        },
+    ),
+    (
+        "Ojo con el efecto fiscal: un bien como este no es gasto deducible, es inversion. No te baja el IRPF ni el IGI. Y si lo financias, solo los intereses del prestamo te los puedes descontar",
+        {
+            "ca": "Atenció amb l'efecte fiscal: un bé com aquest no és despesa deduïble, és inversió. No et baixa l'IRPF ni l'IGI. I si el finances, només els interessos del prèstet te'ls pots descomptar",
+            "fr": "Attention à l'effet fiscal : un bien comme celui-ci n'est pas une charge déductible, c'est un investissement. Ça ne te réduit ni l'IRPF ni l'IGI. Et si tu le finances, seules les intérêts du prêt sont déductibles",
+            "en": "Note the tax effect: an asset like this is not a deductible expense, it is an investment. It does not reduce your IRPF or IGI. And if you finance it, only the loan interest is deductible",
+            "pt": "Atenção ao efeito fiscal: um bem assim não é uma despesa dedutível, é investimento. Não lhe baixa o IRPF nem o IGI. E se o financiar, só os juros do empréstimo pode descontar",
+        },
+    ),
+    (
+        "y {colchon} meses de colchón",
+        {
+            "ca": "i {colchon} mesos de collat",
+            "fr": "et {colchon} mois de coussin",
+            "en": "and {colchon} months of buffer",
+            "pt": "e {colchon} meses de almofada",
+        },
+    ),
+    (
+        "Regla aplicada:",
+        {
+            "ca": "Regla aplicada:",
+            "fr": "Règle appliquée :",
+            "en": "Rule applied:",
+            "pt": "Regra aplicada:",
+        },
+    ),
+]
+
+
+def _traducir(out: dict, idioma: str) -> dict:
+    """
+    Pasa el texto del motor al idioma elegido por el cliente.
+
+    Se cambian FRASES COMPLETAS (con los numeros dentro), no palabras
+    sueltas: asi no quedan restos en español. Las cifras y los nombres
+    de impuestos (CASS, IRPF, IGI) se quedan tal cual: son como
+    aparecen en la normativa del banco y como el cliente los ve en sus
+    declaraciones.
+
+    Como funciona: el patron ("Sí cabe. Puedes gastar hasta {maximo}
+    EUR...") se parte por sus marcadores en trozos fijos. Se busca en
+    el texto una secuencia de esos trozos, con lo que haya entre
+    ellos (los numeros) capturets. Si aparece, se sustituye por la
+    frase traducida, con los mismos numeros.
+    """
+    if idioma not in ("ca", "fr", "en", "pt"):
+        return out
+
+    import re as _re
+
+    texto = out.get("respuesta") or ""
+    for patron, versiones in PATRONES_IDIOMA:
+        version = versiones.get(idioma)
+        if not version:
+            continue
+
+        # Los trozos fijos del patron y sus marcadores.
+        trozos = _re.split(r"\{[a-z_]+\}", patron)
+        marcadores = _re.findall(r"\{([a-z_]+)\}", patron)
+
+        # Se busca la secuencia: trozo, numero, trozo, numero...
+        patron_busqueda = ""
+        for i, trozo in enumerate(trozos):
+            patron_busqueda += _re.escape(trozo)
+            if i < len(marcadores):
+                patron_busqueda += r"([0-9][0-9.,]*)"
+        m = _re.search(patron_busqueda, texto)
+        if not m:
+            continue
+
+        # Los numeros capturados, y la frase traducida con ellos.
+        numeros = m.groups()
+        traducida = version
+        for nombre, valor in zip(marcadores, numeros):
+            traducida = traducida.replace("{" + nombre + "}", valor)
+
+        texto = texto[:m.start()] + traducida + texto[m.end():]
+
+    out = dict(out)
+    out["respuesta"] = texto
+    return out
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "MoraBancMotor/1.0"
 
@@ -339,6 +452,14 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:  # noqa: BLE001
             self._json(500, {"error": f"{type(e).__name__}: {e}"})
             return
+
+        # El idioma forzado (lo elige el cliente en el menu del boton
+        # del globo). Las cifras y los nombres de impuestos (CASS, IRPF,
+        # IGI) se quedan como estan: son como aparecen en la normativa
+        # del banco y en sus declaraciones.
+        idioma = (cuerpo.get("idioma") or "").strip().lower()
+        if idioma and idioma != "es":
+            out = _traducir(out, idioma)
 
         self._json(200, out)
 
