@@ -175,11 +175,11 @@
     {
       "id": "crecimiento",
       "usuario": "12TJ31",
-      "perfil_motor": "comercio",
+      "perfil_motor": "crecimiento",
       "empresa": "CERAMICA CANILLO SL",
       "nif": "B-55667788",
       "razon_social": "Ceramica Canillo SL",
-      "actividad": "Comerç amb botiga local",
+      "actividad": "Taller de ceramica",
       "es_autonomo": false,
       "empleados": 2,
       "facturacion_anual": 96000,
@@ -213,7 +213,7 @@
         "lineas_credito": 0
       },
       "nomina_mensual": 5600,
-      "escenario_narrativo": "Pyme que crece: esta a 2.000 euros de renta neta del salto de tramo del CASS. La pregunta es si facturar mas le compensa o se duele.",
+      "escenario_narrativo": "Taller de ceramica con un empleado. La caja aguanta, pero esta a 2.000 EUR del salto de tramo: si facturara un poco mas, pasaria al tramo siguiente y el margen se le Comes.",
       "pregunta_sugerida": "¿Debería facturar más o me quedo aquí?"
     }
   ]

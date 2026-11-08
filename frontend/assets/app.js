@@ -55,6 +55,16 @@
       saldo: 8500, renta: 30000, margen: 0.70,
       actividad: "Freelance de servicios",
     },
+    // Ceramica Canillo (12TJ31): pyme con un empleado, a 2.000 EUR
+    // del umbral de tramo. Su propio extracto: compartirlo con el
+    // comercio de tienda seria ver el mismo extracto bajo dos razones
+    // sociales.
+    crecimiento: {
+      etiqueta: "Taller de ceramica",
+      csv: "data/demo_ceramica.csv",
+      saldo: 6900, renta: 38000, margen: 0.4,
+      actividad: "Taller de ceramica",
+    },
     // Usuario normal: asalariado. No lleva contabilidad; su "ingreso" es
     // la nomina. El motor lo calcula sin actividad economica: sin IGI y
     // sin CASS por cuenta propia. Es el caso de "tengo una cuenta y no
@@ -109,6 +119,14 @@
       "¿Cuánto se me está escapando cada mes?",
       "¿Cuántos meses me aguanto en caja?",
       "¿Cuánto me conviene facturar?",
+    ],
+    // Pyme a 2.000 EUR del umbral: la pregunta es si facturar mas
+    // compensa (el salto de tramo se come el margen extra).
+    crecimiento: [
+      "¿Me compensa facturar más?",
+      "¿Cuánto me queda si facturo 5.000 más?",
+      "¿Qué pasa cuando cambio de tramo?",
+      "¿Cuánto puedo crecer antes de perder dinero?",
     ],
     comercio: [
       "¿Cuánto se me está escapando cada mes?",

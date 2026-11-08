@@ -51,6 +51,15 @@ PERFILES = {
         "saldo": D("14200"), "renta": D("45000"), "margen": D("0.35"),
         "actividad": "Comercio con tienda local",
     },
+    # Ceramica Canillo (12TJ31): pyme con un empleado, a 2.000 EUR del
+    # umbral de tramo. Tiene su propio extracto: compartirlo con el
+    # comercio de tienda seria ver el mismo extracto bajo dos razones
+    # sociales.
+    "crecimiento": {
+        "csv": "demo_ceramica.csv",
+        "saldo": D("6900"), "renta": D("38000"), "margen": D("0.40"),
+        "actividad": "Taller de ceramica",
+    },
     "cierre": {
         "csv": "demo_freelancer_cierre.csv",
         "saldo": D("6100"), "renta": D("30000"), "margen": D("0.70"),

@@ -124,6 +124,66 @@ def gen_comercio() -> list[dict]:
     return m
 
 
+
+# --------------------------------------------------------------------------
+# 3-bis. CERAMICA CANILLO — pyme a 2.000 EUR del umbral de tramo
+# --------------------------------------------------------------------------
+#
+# El escenario del cuarto usuario (12TJ31). No puede compartir extracto
+# con el comercio de tienda: si lo hiciera, el jurado veria el mismo
+# extracto bajo dos razones sociales distintas.
+#
+# La historia: un taller de ceramica con UN empleado y un local mas
+# pequeño que la tienda. Su caja aguanta, pero esta a 2.000 EUR del
+# salto de tramo (40.000 € de renta neta), que es justo la pregunta:
+# "compensa facturar mas o me quedo en el tramo de al lado?"
+
+def gen_ceramica() -> list[dict]:
+    m = []
+    inicio = date(2025, 10, 1)
+    fin = date(2026, 9, 30)
+
+    for mes in range(12):
+        anyo = 2025 if mes < 3 else 2026
+        mes_num = (10 + mes - 1) % 12 + 1
+
+        # Las ventas del taller: menos volumen que la tienda, tickets
+        # mas altos (una pieza de ceramica decorativa cuesta mas que
+        # un producto de tienda).
+        dias = 30 if mes_num in (1, 3, 5, 7, 8, 10, 12) else 28
+        for d in range(1, dias + 1):
+            df = date(anyo, mes_num, d)
+            if not (inicio <= df <= fin):
+                continue
+            for _ in range(random.randint(3, 5)):
+                m.append({
+                    "fecha": df,
+                    "concepto": "TPV VENTA TARJETA",
+                    "importe": round(random.uniform(36, 118), 2),
+                })
+
+        for concepto, importe in [
+            # CASS del dueño (tramo 100 %, 587,95 €/mes) y del empleado
+            # (tramo 75 %). La diferencia con el comercio es que aqui
+            # hay UN empleado, no dos.
+            ("CASS treball per compte propi", 587.95),
+            ("CASS empleat", 455.00),
+            ("Sous empleat", 1950.00),
+            # Alquiler del taller: mas barato que una tienda en el centro.
+            ("Lloguer taller", 1150.00),
+            # IGI: un cuarto de la facturacion, que es lo que se paga.
+            ("Impost IGI trimestre", 1580.00),
+            ("Compra materia prima", random.randint(1150, 1950)),
+            ("Electricitat Endesa taller", random.randint(140, 260)),
+            ("Targeta Visa empresa", 24.90),
+        ]:
+            df = date(anyo, mes_num, random.randint(2, 27))
+            if inicio <= df <= fin:
+                m.append({"fecha": df, "concepto": concepto, "importe": -abs(importe)})
+
+    return m
+
+
 # --------------------------------------------------------------------------
 # 3. FREELANCER QUE ESTA POR CONTRATAR — el caso de la pregunta del pitch
 # --------------------------------------------------------------------------
@@ -263,6 +323,7 @@ def escribir_csv(nombre: str, movimientos: list[dict]) -> str:
 PERFILES = {
     "demo_freelance.csv": gen_freelance,
     "demo_comercio.csv": gen_comercio,
+    "demo_ceramica.csv": gen_ceramica,
     "demo_freelancer_contratar.csv": gen_freelancer_contratar,
     "demo_freelancer_cierre.csv": gen_freelancer_cierre,
     "demo_empleado.csv": gen_empleado,
