@@ -1,0 +1,16 @@
+[Unit]
+Description=MoraBanc motor de decisiones (local)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/var/www/morabanc-motor
+Environment=PYTHONPATH=/var/www/morabanc-motor
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /var/www/morabanc-motor/motor_local.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
