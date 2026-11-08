@@ -165,6 +165,54 @@ check("en espanol no se fuerza nada raro",
       "español" in instruction_de_idioma("es", 1.0).lower()
       or "espanol" in instruction_de_idioma("es", 1.0).lower())
 
+# ─────────────────────────────────────────────────────────────────────
+# LA VIVIENDA: EL MAXIMO TIENE QUE SER UN PRECIO, NO UNA CUOTA
+# ─────────────────────────────────────────────────────────────────────
+#
+# El bug: para una vivienda se rellenaba "importe_maximo" con el tope
+# de compromiso (el 40 % de la renta NETA, que es una cantidad
+# ANUAL de cuota). El veredicto compara el importe pedido con ese
+# maximo, asi que decia "puedes gastar hasta 12.000 euros" para una
+# casa de 300.000: el limite de un prismatico, no el precio.
+#
+# El limite de la vivienda se mide con el compromiso total (la cuota
+# mas lo ya comprometido), y el maximo que se dice es el PRECIO que
+# cabe con esa cuota mas la entrada que se puede adelantar.
+
+print("\nVivienda: el maximo es un precio, no una cuota")
+perfil_v = ProfileCliente(
+    figura_fiscal="autonomo",
+    actividad="Freelance de servicios",
+    renta_neta_anual=Decimal("30000"),
+    margen_bruto=Decimal("0.70"),
+    saldo_actual=Decimal("8500"),
+    gasto_fijo_mensual=Decimal("900"),
+    colchon_meses=Decimal("3.6"),
+)
+
+v300 = evaluar_compra(perfil_v, objetivo="vivienda", importe=Decimal("300000"))
+check("la vivienda de 300.000 trae un maximo de precio, no de cuota",
+      v300.importe_maximo > Decimal("100000"))
+check("el maximo de la vivienda esta en euros de precio",
+      "12.000" not in v300.veredicto())
+
+v600 = evaluar_compra(perfil_v, objetivo="vivienda", importe=Decimal("600000"))
+check("una vivienda de 600.000 no cabe", v600.cabe is False)
+check("el aviso dice cuanto falta de entrada",
+      any("entrada" in a for a in v600.avisos))
+check("el veredicto avisa de que no cabe de una vez",
+      "No cabe" in v600.veredicto())
+
+v150 = evaluar_compra(perfil_v, objetivo="vivienda", importe=Decimal("150000"))
+check("una vivienda de 150.000 si cabe", v150.cabe is True)
+
+# Y el coche, que usa otro criterio, sigue igual.
+coche = evaluar_compra(perfil_v, objetivo="coche", importe=Decimal("30000"))
+check("el coche de 30.000 cabe", coche.cabe is True)
+check("el coche de 150.000 no cabe",
+      evaluar_compra(perfil_v, objetivo="coche", importe=Decimal("150000")).cabe is False)
+
+
 print("\n" + "=" * 60)
 if fallos:
     print(f"{fallos} FALLOS")

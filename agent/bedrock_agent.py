@@ -157,6 +157,9 @@ class ContextoEmpresa:
         figura_fiscal: str = "",
         colchon_meses: Optional[Decimal] = None,
         gasto_fijo_mensual: Optional[Decimal] = None,
+        contactos: Optional[list[dict]] = None,
+        wallet: Optional[dict] = None,
+        empresa_id: Optional[str] = None,
     ):
         self.movimientos = movimientos or []
         self.saldo_actual = Decimal(str(saldo_actual))
@@ -166,6 +169,16 @@ class ContextoEmpresa:
         #: "persona_fisica" | "autonomo" | "sociedad". Lo sabe el banco:
         #: es su cliente, tiene su perfil fiscal. El agente no lo pregunta.
         self.figura_fiscal = figura_fiscal
+        #: Los contactos del cliente (a quien puede enviar dinero). Esto
+        #: lo tiene el banco: es su cliente y sus beneficiaries. El
+        #: agente no lo pregunta, lo resuelve ("mi madre" -> el
+        #: contacto guardado).
+        self.contactos = contactos or []
+        #: Quien es el cliente (para el motor de pagos: cada perfil de
+        #: prueba tiene su wallet y sus contactos).
+        self.empresa_id = empresa_id
+        #: La wallet del cliente: direccion, cadena y saldo disponible.
+        self.wallet = wallet or {}
         #: Colchon de caja en meses (lo calcula el motor de tesoreria).
         self.colchon_meses = Decimal(str(colchon_meses)) if colchon_meses is not None else None
         #: Gasto fijo mensual ya comprometido (alquiler, cuotas).
@@ -422,6 +435,70 @@ _OBJETIVOS_COMPRA: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("invertir", ("invertir", "inversion", "inversión", "bolsa", "cripto",
                   "fondo", "invert")),
 )
+
+
+def _detectar_pago(p: str) -> tuple[str, Optional[float]]:
+    """
+    De una frase como "enviale 200 euros a mi madre", el destinatario
+    y el importe.
+
+    ("mi madre", 200.0)
+    """
+    texto = p.lower()
+
+    # ── El destinatario ──
+    destinatario = ""
+    # Un contacto con relacion ("mi madre") o con nombre ("a Rosa").
+    m = re.search(
+        r"\b(?:a|al|hacia|para)\s+(?:mi\s+|mi\s*)?"
+        r"(madre|padre|hermano|hermana|pareja|esposa|esposo|hijo|hija|"
+        r"abuelo|abuela|tio|tia|primo|prima|amigo|amiga|jefe|empleador)\b",
+        texto,
+    )
+    if m:
+        destinatario = m.group(1)
+    else:
+        # Un nombre propio: "a Rosa", "a Marta".
+        m2 = re.search(r"\b(?:a|al|hacia|para)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,})", p)
+        if m2:
+            destinatario = m2.group(1)
+
+    # ── El importe ──
+    importe: Optional[float] = None
+    m3 = re.search(r"([0-9][0-9.,]*)\s*(?:eur|euros?|€)", texto)
+    if m3:
+        bruto = m3.group(1)
+        try:
+            if "." in bruto and "," in bruto:
+                importe = float(bruto.replace(".", "").replace(",", "."))
+            elif "," in bruto:
+                partes = bruto.split(",")
+                importe = (
+                    float(bruto.replace(",", ""))
+                    if len(partes[-1]) == 3 and len(partes[0]) <= 3
+                    else float(bruto.replace(",", "."))
+                )
+            elif "." in bruto:
+                partes = bruto.split(".")
+                importe = (
+                    float(bruto.replace(".", ""))
+                    if len(partes[-1]) == 3 and (len(partes[0]) <= 3 or len(partes) > 2)
+                    else float(bruto)
+                )
+            else:
+                importe = float(bruto)
+        except ValueError:
+            importe = None
+    else:
+        # Sin "euros" delante: "enviale 200 a mi madre".
+        m4 = re.search(r"(?:envia|enviar|manda|paga|pagar)[^0-9]{0,20}([0-9][0-9.,]*)", texto)
+        if m4:
+            try:
+                importe = float(m4.group(1).replace(".", "").replace(",", "."))
+            except ValueError:
+                importe = None
+
+    return destinatario, importe
 
 
 def _detectar_cambio_dato(p: str) -> tuple[str, Optional[float]]:
@@ -687,6 +764,244 @@ def _recalcular_con_nueva_renta(ctx: ContextoEmpresa) -> dict:
     return out
 
 
+def _importar_motor_pagos():
+    """
+    El motor de pagos (engine/pagos_x402.py).
+
+    Se importa de dos maneras porque el motor corre en sitios
+    distintos: en el VPS, con el directorio del motor como cwd (ahi
+    "from engine import pagos_x402" funciona); y en otros sitios, con
+    el directorio del proyecto en el path.
+    """
+    import importlib
+    import os
+    import sys
+
+    try:
+        return importlib.import_module("engine.pagos_x402")
+    except ImportError:
+        pass
+
+    # Se anade el directorio del proyecto al path y se reintenta.
+    aqui = os.path.dirname(os.path.abspath(__file__))
+    raiz = os.path.dirname(aqui)
+    for candidato in (raiz, os.path.dirname(raiz)):
+        if candidato and candidato not in sys.path:
+            sys.path.insert(0, candidato)
+    try:
+        return importlib.import_module("engine.pagos_x402")
+    except ImportError:
+        return None
+
+
+def _tool_preparar_pago(
+    ctx: ContextoEmpresa,
+    destinatario: Optional[str] = None,
+    importe: Optional[float] = None,
+    concepto: Optional[str] = None,
+    confirmar: Optional[bool] = None,
+    reto_id: Optional[str] = None,
+    **_,
+) -> dict:
+    """
+    Prepara un envio de dinero con el protocolo x402.
+
+    NO envia: prepara. El pago lo confirma el cliente, siempre. Un
+    banco no mueve dinero sin que el cliente lo apruebe, y menos si
+    el destinatario es un familiar.
+
+    El ciclo x402 (el 402 con la oferta, la firma, la liquidacion y
+    la cabecera X-PAYMENT-RESPONSE) lo tiene el motor de pagos
+    (engine/pagos_x402.py). Esta herramienta es la puerta de entrada:
+    resuelve lo que falta y se lo pasa.
+
+    Que falta, se devuelve como "falta" para que el agente lo pida:
+      - el importe, si no lo dice
+      - el destinatario, si no se puede resolver ("mi madre" es un
+        contacto guardado: el banco ya lo sabe)
+    """
+    # ── Si el cliente confirma, se liquida ──
+    if confirmar:
+        return _confirmar_pago_x402(ctx, reto_id)
+
+    # ── El motor de pagos: es quien sabe hacer el 402 y la oferta ──
+    pagos_x402 = _importar_motor_pagos()
+    if pagos_x402 is None:
+        return {
+            "resultado": {
+                "estado": "sin_motor_de_pagos",
+                "error": "El motor de pagos no esta disponible",
+            },
+            "regla": "El envio de dinero necesita el motor de pagos, que no esta "
+                     "disponible aqui.",
+        }
+
+    if pagos_x402 is not None:
+        perfil = ctx.empresa_id or "freelance"
+        resultado = pagos_x402.preparar(
+            perfil=perfil,
+            destinatario=destinatario,
+            importe=importe,
+            concepto=concepto,
+        )
+
+        # Si falta algo, se devuelve la pregunta al cliente.
+        if resultado.get("estado") not in ("preparado",):
+            return {
+                "resultado": resultado,
+                "regla": resultado.get("pregunta", "Necesito mas datos para el envio."),
+            }
+
+        # El pago esta preparado: se devuelve con la oferta x402, el
+        # reto y las cabeceras, para que el front pueda pintar la
+        # tarjeta y el boton de confirmar.
+        return {
+            "resultado": {
+                "estado": "preparado",
+                "reto_id": resultado["reto_id"],
+                "oferta": resultado["oferta"],
+                "cabeceras": resultado["cabeceras"],
+                "importe": resultado["importe"],
+                "importe_formato": resultado["importe_formato"],
+                "concepto": resultado["concepto"],
+                "destinatario": resultado["destinatario"],
+                "red": resultado["red"],
+                "cadena": resultado["cadena"],
+                "token": resultado["token"],
+                "origen": resultado["origen"],
+            },
+            "regla": resultado["pregunta"],
+        }
+
+    return {
+        "resultado": {
+            "estado": "sin_motor_de_pagos",
+            "error": "El motor de pagos no esta disponible",
+        },
+        "regla": "El envio de dinero necesita el motor de pagos, que no esta "
+                 "disponible aqui.",
+    }
+
+
+def _confirmar_pago_x402(ctx: ContextoEmpresa, reto_id: Optional[str]) -> dict:
+    """
+    Confirma el pago: el cliente ha dicho que si.
+
+    Llama al motor de pagos, que verifica el reto, lo liquida y
+    devuelve el hash de la transaccion. Si el motor no esta disponible
+    (el agente corre en AWS y el motor de pagos, en el VPS), dice que
+    esta preparado pero no se puede confirmar aqui.
+    """
+    pagos_x402 = _importar_motor_pagos()
+    if pagos_x402 is None:
+        return {
+            "resultado": {"error": "El motor de pagos no esta disponible"},
+            "regla": "El envio esta preparado, pero no se puede confirmar "
+                     "aqui: falta el motor de pagos.",
+        }
+
+    perfil = ctx.empresa_id or "freelance"
+    resultado = pagos_x402.confirmar(
+        perfil=perfil,
+        reto_id=reto_id or "",
+        x_payment="reto:" + (reto_id or ""),
+    )
+    if resultado.get("estado") != "liquidado":
+        return {
+            "resultado": resultado,
+            "regla": resultado.get("error", "El pago no se ha podido liquidar"),
+        }
+    return {
+        "resultado": resultado,
+        "regla": resultado["pregunta"],
+    }
+
+
+#: Las redes con nombre: el codigo x402 es un identificador de cadena
+#: (CAIP-2), pero al cliente hay que hablarle en Castellano.
+_NOMBRE_RED = {
+    "eip155:8453": "Base",
+    "eip155:1": "Ethereum",
+    "eip155:42161": "Arbitrum",
+    "eip155:137": "Polygon",
+    "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": "Solana",
+    "solana:mainnet": "Solana",
+    "tron": "Tron",
+    "avax": "Avalanche",
+}
+
+
+def _pregunta_pago(faltan: list[str], contacto: Optional[dict], destinatario: Optional[str]) -> str:
+    """
+    La pregunta que le hace el agente al cliente cuando falta algo.
+
+    Si el destinatario ya se ha resuelto ("mi madre"), se dice su
+    nombre: el cliente lo ve y lo confirma ("si, a mi madre Rosa").
+    """
+    partes = []
+    if "a quien" in faltan:
+        if contacto:
+            partes.append("A " + contacto.get("nombre", "el contacto") +
+                          " (" + (contacto.get("alias") or "") + ")")
+        else:
+            partes.append("A quien se lo envio")
+    if "cuanto" in faltan:
+        partes.append("Cuanto")
+    if "dinero en la wallet" in faltan:
+        partes.append("En la wallet no hay saldo suficiente")
+    return " y ".join(partes) + "?"
+
+
+def _resolver_destinatario(ctx: ContextoEmpresa, destinatario: Optional[str]):
+    """
+    Resuelve a quien va el dinero.
+
+    "mi madre" -> el contacto guardado con relacion "madre". El banco
+    lo tiene: es su cliente y sus contactos. Si hay varios (la madre
+    y la suegra), se pregunta cual.
+
+    Devuelve (contacto, falta):
+      - (contacto, False) -> resuelto
+      - (None, True) -> hay que preguntar
+      - (contacto, True) -> hay varios candidatos: se pregunta cual
+    """
+    contactos = ctx.contactos or []
+    if not contactos:
+        return None, True
+
+    # Si el cliente da un nombre o alias, se busca ese.
+    texto = (destinatario or "").strip().lower()
+    if texto:
+        # Quitar el "mi"/"a" inicial: "a mi madre" -> "madre"
+        limpio = re.sub(r"^(a|al|a mi|a la|para)\s+", "", texto).strip()
+        for c in contactos:
+            nombre = str(c.get("nombre", "")).lower()
+            alias = str(c.get("alias", "")).lower()
+            relacion = str(c.get("relacion", "")).lower()
+            if limpio and (limpio == nombre or limpio == alias or limpio == relacion):
+                return c, False
+            if limpio and (limpio in nombre or limpio in alias):
+                return c, False
+
+    # Sin destinatario: se busca por relacion ("madre", "pareja"...).
+    if texto:
+        candidatos = [
+            c for c in contactos
+            if texto in str(c.get("relacion", "")).lower()
+            or texto in str(c.get("nombre", "")).lower()
+            or texto in str(c.get("alias", "")).lower()
+        ]
+        if len(candidatos) == 1:
+            return candidatos[0], False
+        if len(candidatos) > 1:
+            return candidatos[0], True
+
+    # Ni idea de a quien: si hay un solo contacto, es ese.
+    if len(contactos) == 1:
+        return contactos[0], False
+    return None, True
+
+
 def _tool_evaluar_compra(
     ctx: ContextoEmpresa,
     objetivo: Optional[str] = None,
@@ -828,6 +1143,40 @@ TOOL_SCHEMAS: list[dict] = [
                         "renta_neta": {"type": "number", "description": "Renta neta anual en euros"}
                     },
                     "required": [],
+                }
+            },
+        }
+    },
+    {
+        "toolSpec": {
+            "name": "preparar_pago",
+            "description": (
+                "Prepara un envio de dinero con el protocolo x402. Usala "
+                "cuando el cliente quiere enviar dinero a alguien "
+                "('enviale dinero a mi madre'). NO envia: prepara el pago y "
+                "el cliente lo confirma. Si falta el importe o el "
+                "destinatario, el resultado lo dice en 'falta' y en "
+                "'pregunta', y se lo preguntas al cliente. Los contactos "
+                "del cliente los tiene el banco: no los pidas, estan en el "
+                "contexto."
+            ),
+            "inputSchema": {
+                "json": {
+                    "type": "object",
+                    "properties": {
+                        "destinatario": {
+                            "type": "string",
+                            "description": "A quien va el dinero: el alias o la relacion ('madre', 'Rosa')",
+                        },
+                        "importe": {
+                            "type": "number",
+                            "description": "El importe en euros",
+                        },
+                        "concepto": {
+                            "type": "string",
+                            "description": "El concepto del envio (por defecto, 'Envio a <nombre>')",
+                        },
+                    },
                 }
             },
         }
@@ -1074,6 +1423,7 @@ TOOL_IMPLS = {
     "simular_contratacion": _tool_simular_contratacion,
     "evaluar_compra": _tool_evaluar_compra,
     "actualizar_dato": _tool_actualizar_dato,
+    "preparar_pago": _tool_preparar_pago,
     "punto_optimo_facturacion": _tool_punto_optimo,
     "comparar_escenarios": _tool_comparar_escenarios,
     "cerrar_ciclo": _tool_cerrar_ciclo,
@@ -1383,6 +1733,13 @@ class AgenteFinanciero:
         # "Quiero comprar un coche de 30.000 euros" -> objetivo=coche,
         # importe=30000. Sin esto, el motor no sabe que decision se
         # esta evaluando y devuelve el importe por defecto.
+        if herramienta == "preparar_pago":
+            destinatario, importe_pago = _detectar_pago(p)
+            if destinatario:
+                params["destinatario"] = destinatario
+            if importe_pago is not None:
+                params["importe"] = importe_pago
+
         if herramienta == "actualizar_dato":
             campo, valor = _detectar_cambio_dato(p)
             if campo:
@@ -1718,6 +2075,17 @@ class AgenteFinanciero:
     # "cotizo"/"cotizacion" (CASS) debe ir antes que "renta"/"impuesto" (IRPF),
     # porque una pregunta de cotizacion suele mencionar tambien la renta.
     _REGLAS_ROUTER: list[tuple[tuple[str, ...], str, list[str]]] = [
+        # ── LOS PAGOS ──
+        #
+        # "enviale dinero a mi madre" no es una pregunta de calculo: es
+        # una peticion de envio. Va la PRIMERA, porque si no cae en
+        # "cuanto cotizo" y el motor responde con la cuota.
+        (("envia", "enviar", "enviale", "envíale", "manda", "mandar", "mandale",
+          "haz una transferencia", "transferencia", "paga a", "pagale",
+          "pagar a", "send", "dice que le mande", "que le mande",
+          "a mi madre", "a mi padre", "a mi hermano", "a mi hermana",
+          "a mi pareja", "a mi hijo", "que le envie", "le envie dinero"),
+         "preparar_pago", ["destinatario", "importe"]),
         # ── LOS CAMBIOS DE DATOS ──
         #
         # "cambia mi renta a 35.000" no es una pregunta de calculo: es

@@ -88,7 +88,31 @@ def _respuesta_determinista(ctx: ContextoEmpresa, pregunta: str) -> dict:
                 ],
             }
 
-    # 2) El resto: el router del propio motor.
+    # 2) Los pagos: "enviale dinero a mi madre".
+    #
+    # El ciclo x402 lo tiene el motor de pagos (engine/pagos_x402.py):
+    # el 402 con la oferta, la confirmacion y la liquidacion.
+    if _es_peticion_pago(p):
+        from agent.bedrock_agent import _detectar_pago
+        destinatario, importe_pago = _detectar_pago(p)
+        params_pago: dict = {"destinatario": destinatario or None}
+        if importe_pago is not None:
+            params_pago["importe"] = float(importe_pago)
+        out_pago = ejecutar_tool("preparar_pago", ctx, params_pago)
+        res_pago = out_pago.get("resultado") or {}
+        return {
+            "respuesta": out_pago.get("regla", ""),
+            "herramientas": [
+                {
+                    "tool": "preparar_pago",
+                    "input": params_pago,
+                    "resultado": res_pago,
+                    "regla": out_pago.get("regla", ""),
+                }
+            ],
+        }
+
+    # 3) El resto: el router del propio motor.
     agente = AgenteFinanciero(ctx)
     herramientas, resultados = agente._herramienta_determinista(pregunta)
     if resultados:
@@ -96,7 +120,14 @@ def _respuesta_determinista(ctx: ContextoEmpresa, pregunta: str) -> dict:
         res = out.get("resultado") or {}
         texto = _texto_de_resultado(nombre, res)
         if out.get("regla"):
-            texto += f"\n\nRegla aplicada: {out['regla']}"
+            # Para el cambio de dato y el pago, la regla ES la frase
+            # del asesor: si se anade al final del volcado, el cliente
+            # lee dos veces lo mismo, y la primera vez (el volcado)
+            # no se entiende.
+            if nombre in ("actualizar_dato", "preparar_pago"):
+                texto = out["regla"]
+            else:
+                texto += f"\n\nRegla aplicada: {out['regla']}"
         return {
             "respuesta": texto,
             "herramientas": [
@@ -171,6 +202,16 @@ _FORMATO_RESULTADOS: dict[str, list[tuple[str, str, str]]] = {
         ("ingresos", "Ingresos", "eur_anual"),
         ("gastos", "Gastos", "eur_anual"),
         ("flujo_neto", "El flujo neto es de", "eur_anual"),
+    ],
+    # El cambio de un dato del perfil: la frase con las cifras nuevas
+    # la pone el motor (la regla), pero el texto principal tambien
+    # tiene que ser legible.
+    "actualizar_dato": [
+        ("valor_nuevo", "El valor nuevo es de", "eur"),
+    ],
+    # El pago: la oferta la lleva la tarjeta; el texto es la frase.
+    "preparar_pago": [
+        ("importe_formato", "El envio es de", "eur"),
     ],
 }
 
@@ -331,6 +372,29 @@ PATRONES_IDIOMA: list[tuple[str, dict[str, str]]] = [
 ]
 
 
+#: Las palabras que indican que el cliente quiere enviar dinero. La
+#: regla esta en el router del agente, pero aqui se comprueba antes
+#: para que el motor determinista no se lo mande a otra herramienta.
+_PALABRAS_PAGO = (
+    "envia", "enviar", "enviale", "mandar", "manda", "mandale",
+    "transferencia", "paga a", "pagale", "pagar a", "que le mande",
+    "que le envie", "le envie dinero",
+)
+
+
+def _es_peticion_pago(p: str) -> bool:
+    return any(w in p for w in _PALABRAS_PAGO)
+
+
+def _datos_pago(perfil: str) -> dict:
+    """Los contactos y la wallet del cliente (los tiene el banco)."""
+    try:
+        from engine import pagos_x402
+        return pagos_x402.datos_perfil(perfil)
+    except Exception:  # noqa: BLE001
+        return {"contactos": [], "wallet": {}}
+
+
 def _traducir(out: dict, idioma: str) -> dict:
     """
     Pasa el texto del motor al idioma elegido por el cliente.
@@ -480,7 +544,70 @@ class Handler(BaseHTTPRequestHandler):
         if ruta == "/extracto":
             self._servir_extracto()
             return
+        if ruta == "/pago":
+            self._servir_pago()
+            return
         self._json(404, {"error": "no encontrado"})
+
+    def _servir_pago(self):
+        """
+        El ciclo x402 de un envio de dinero.
+
+        El protocolo funciona asi, y esto lo hace de verdad:
+
+          1. El cliente pide enviar ("enviale 200 a mi madre").
+          2. El servidor responde con un 402 Payment Required y la
+             oferta: precio, token, red y direccion de destino.
+          3. El cliente paga (firma la autorizacion) y reenvia la
+             peticion con la cabecera X-PAYMENT.
+          4. El facilitator verifica y liquida; el servidor responde
+             con el recurso y la cabecera X-PAYMENT-RESPONSE.
+
+        En el hackathon, el facilitator es local (engine/pagos_x402.py):
+        el protocolo es real, la cadena no. El pago queda registrado
+        con su hash de transaccion, como en una cadena de verdad.
+
+        El envio NUNCA se hace sin que el cliente lo confirme: el
+        primer POST (preparar) devuelve la oferta y el estado
+        "preparado"; hace falta un segundo POST con
+        {"confirmar": true, "reto": ...} para ejecutarlo.
+        """
+        from urllib.parse import urlparse, parse_qs
+
+        try:
+            longitud = int(self.headers.get("Content-Length") or 0)
+            cuerpo = json.loads(self.rfile.read(longitud) or b"{}")
+        except (ValueError, json.JSONDecodeError):
+            self._json(400, {"error": "cuerpo JSON invalido"})
+            return
+
+        q = parse_qs(urlparse(self.path).query)
+        perfil = (q.get("perfil") or ["freelance"])[0]
+
+        # La cabecera X-PAYMENT es la del protocolo: el cliente paga y
+        # reenvia la peticion con ella. Si no viene, se mira el body
+        # (util para las pruebas y para los clientes que no pueden
+        # mandar cabeceras).
+        cabecera_pago = self.headers.get("X-PAYMENT") or self.headers.get("x-payment")
+        if cabecera_pago and not cuerpo.get("x_payment"):
+            cuerpo["x_payment"] = cabecera_pago
+
+        try:
+            from engine import pagos_x402
+        except ImportError:
+            # El motor puede ejecutarse con el directorio engine/ en el
+            # path (en el VPS, el motor esta en su propio directorio).
+            import sys as _sys
+            _sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            from engine import pagos_x402
+        try:
+            resultado = pagos_x402.procesar_pago(cuerpo, perfil=perfil)
+        except Exception as e:  # noqa: BLE001
+            self._json(500, {"error": f"Error en el pago: {e}"})
+            return
+
+        codigo = resultado.get("codigo_http", 200)
+        self._json(codigo, resultado)
 
     def _servir_extracto(self):
         """
@@ -531,7 +658,11 @@ class Handler(BaseHTTPRequestHandler):
         })
 
     def do_POST(self):
-        if self.path.rstrip("/") != "/preguntar":
+        ruta = self.path.split("?")[0].rstrip("/")
+        if ruta == "/pago":
+            self._servir_pago()
+            return
+        if ruta != "/preguntar":
             self._json(404, {"error": "no encontrado"})
             return
 
@@ -571,6 +702,11 @@ class Handler(BaseHTTPRequestHandler):
             ),
             actividad=cuerpo.get("actividad") or "",
             figura_fiscal=cuerpo.get("figura_fiscal") or "",
+            # Los contactos y la wallet del cliente. El banco los tiene:
+            # es su cliente y sus contactos. El agente no los pregunta.
+            contactos=_datos_pago(cuerpo.get("perfil") or "freelance")["contactos"],
+            wallet=_datos_pago(cuerpo.get("perfil") or "freelance")["wallet"],
+            empresa_id=cuerpo.get("perfil") or "freelance",
         )
 
         try:

@@ -78,6 +78,54 @@ input  { font: inherit; color: inherit; }
   background: var(--bg);
   position: relative; overflow: hidden;
 }
+/* El PC: dos columnas. El asesor a la izquierda (con su composer) y
+   la vista de datos a la derecha. Sin scroll global: cada columna
+   scrollea por su cuenta. */
+@media (min-width: 701px) {
+  html, body { overflow: hidden; }
+
+  .app {
+    max-width: none;
+    width: 100%;
+    margin: 0;          /* en el movil va centrado; en el PC, a sangre */
+    display: grid;
+    grid-template-columns: 500px 1fr;
+    grid-template-rows: 62px 1fr;
+    grid-template-areas:
+      "top   top"
+      "chat  datos";
+    height: 100dvh;
+  }
+  .topbar { grid-area: top; }
+  #vistaAsesor { grid-area: chat; }
+  .vistas-zona { grid-area: datos; display: contents; }
+    /* Las vistas de datos ocupan la celda de la derecha. */
+  .app #vistaResumen,
+  .app #vistaExtracto,
+  .app #vistaPerfil {
+    position: absolute;
+    top: 62px; left: 500px; right: 0; bottom: 56px;
+    width: auto;
+    background: var(--bg);
+    border-left: 1px solid var(--line);
+    overflow-y: auto;
+  }
+  /* El asesor se ve siempre a la izquierda, y el composer con el. */
+  #vistaAsesor {
+    position: absolute;
+    top: 62px; left: 0; bottom: 56px;
+    width: 500px;
+    border-right: 1px solid var(--line);
+  }
+  .app .composer {
+    left: 0; right: auto; width: 500px; bottom: 56px;
+  }
+  .app .tabbar {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    height: 56px; width: 100%;
+  }
+}
+
 @media (min-width: 700px) {
   body { background: #e9edf1; }
   .app {
@@ -580,6 +628,64 @@ input  { font: inherit; color: inherit; }
 }
 .ext-mas:hover { border-color: var(--ink-3); color: var(--ink); }
 
+/* ---------- La tarjeta de pago (x402) ---------- */
+.pago {
+  border: 1px solid var(--line); border-radius: 14px;
+  background: var(--white); overflow: hidden;
+  margin: 10px 0 4px; max-width: 460px;
+}
+.pago-cab {
+  display: flex; align-items: center; gap: 8px;
+  padding: 11px 14px; background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px; font-weight: 600; color: var(--ink);
+}
+.pago-cab .x402 {
+  font-size: 10px; font-weight: 700; letter-spacing: .06em;
+  color: var(--navy); background: #e8eef3;
+  padding: 2px 7px; border-radius: 999px;
+}
+.pago-cuerpo { padding: 12px 14px; }
+.pago-fila {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 6px 0; font-size: 13px;
+}
+.pago-fila .l { color: var(--ink-3); flex: none; width: 108px; font-size: 12px; }
+.pago-fila .v { color: var(--ink); font-weight: 500; word-break: break-all; }
+.pago-fila .v.dir {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; font-weight: 400; color: var(--ink-2);
+}
+.pago-total {
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding: 10px 0 4px; margin-top: 6px;
+  border-top: 1px solid var(--line);
+}
+.pago-total .n { font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
+.pago-total .e { font-size: 12px; color: var(--ink-3); }
+.pago-acciones { display: flex; gap: 8px; padding: 10px 14px 13px; }
+.pago-btn {
+  flex: 1; padding: 10px 12px; border-radius: var(--r-pill);
+  border: 1px solid var(--navy); background: var(--navy); color: #fff;
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: opacity .15s;
+}
+.pago-btn:hover { opacity: .88; }
+.pago-btn.hecho {
+  background: #0a6b52; border-color: #0a6b52; opacity: 1; cursor: default;
+}
+.pago-btn.sec { background: var(--white); color: var(--ink-2); border-color: var(--line); }
+.pago-btn.sec:hover { border-color: var(--ink-3); }
+.pago-aviso {
+  padding: 0 14px 12px; font-size: 11.5px; color: var(--ink-3);
+  line-height: 1.45;
+}
+.pago-hecho {
+  padding: 11px 14px; background: #eaf7f2; border-top: 1px solid #c9e9dd;
+  font-size: 12.5px; color: #0a6b52; line-height: 1.45;
+}
+.pago-hecho b { font-family: ui-monospace, monospace; font-size: 11px; }
+
 /* ---------- Los datos del perfil, editables ---------- */
 .fila-dato.editable {
   width: 100%; border: 0; background: transparent;
@@ -666,6 +772,10 @@ input  { font: inherit; color: inherit; }
 }
 /* En movil no cabe el subtitulo: la cabecera es estrecha. */
 @media (max-width: 700px) {
+  /* En el movil las vistas van apiladas (una a la vez). La zona no
+     es una celda del grid: no pinta nada. */
+  .vistas-zona { display: contents; }
+
   .nota { display: none; }
 }
 </style>
@@ -838,6 +948,15 @@ window.__ELEVENLABS_AGENT_ID__ = window.__ELEVENLABS_AGENT_ID__ || "agent_5301m6
     </div>
   </section>
 
+  <!-- ══════════ LAS VISTAS DE DATOS ══════════ -->
+  <!--
+    En el PC, el asesor se queda a la izquierda y la vista elegida a
+    la derecha. En el movil, una vista a la vez (esta zona se
+    muestra como "contents", que es lo que hace que las vistas
+    ocupen la celda del grid directamente).
+  -->
+  <div class="vistas-zona">
+
   <!-- ══════════ VISTA: RESUMEN ══════════ -->
   <section class="vista" id="vistaResumen">
     <div class="resumen">
@@ -958,6 +1077,8 @@ window.__ELEVENLABS_AGENT_ID__ = window.__ELEVENLABS_AGENT_ID__ || "agent_5301m6
       </div>
     </div>
   </section>
+
+  </div><!-- /vistas-zona -->
 
   <!-- ══════════ NAVEGACIÓN ══════════ -->
   <nav class="tabbar">
@@ -1197,9 +1318,16 @@ function textoDelMotor(r) {
   ((r && r.herramientas) || []).forEach(function (h) {
     if (h && h.tool === 'actualizar_dato' && !herramientaCambio) herramientaCambio = h;
   });
+  // El pago tambien: su respuesta cruda es un volcado tecnico.
+  var herramientaPago = null;
+  ((r && r.herramientas) || []).forEach(function (h) {
+    if (h && h.tool === 'preparar_pago' && !herramientaPago) herramientaPago = h;
+  });
   var s = herramientaCambio
     ? (herramientaCambio.regla || '')
-    : ((r && r.respuesta) || '');
+    : (herramientaPago
+        ? (herramientaPago.regla || '')
+        : ((r && r.respuesta) || ''));
   return s
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
@@ -1279,7 +1407,30 @@ async function enviar() {
     var hayCambio = (r.herramientas || []).some(function (h) {
       return h && h.tool === 'actualizar_dato';
     });
-    var reglas = hayCambio ? '' : (r.herramientas || []).map(function (h) {
+    // El pago: la respuesta cruda del motor tambien es un volcado
+    // tecnico ("estado: preparado; reto_id: ..."). Lo que ve el
+    // cliente es la tarjeta y la frase del asesor.
+    var hayPago = (r.herramientas || []).some(function (h) {
+      return h && h.tool === 'preparar_pago';
+    });
+
+    // Si el asesor ha preparado un envio de dinero, se pinta la
+    // tarjeta con los datos y el boton de confirmar. El dinero no
+    // sale hasta que el cliente lo pulse.
+    var herramientaPago = null;
+    (r.herramientas || []).forEach(function (h) {
+      if (h && h.tool === 'preparar_pago' && !herramientaPago) herramientaPago = h;
+    });
+    if (herramientaPago && herramientaPago.resultado && herramientaPago.resultado.reto_id) {
+      pagoPendiente = {
+        reto_id: herramientaPago.resultado.reto_id,
+        cabeceras: herramientaPago.resultado.cabeceras || {},
+      };
+      html = pintarTarjetaPago(herramientaPago) + html;
+      reglas = '';
+      setTimeout(engancharBotonesPago, 0);
+    }
+    var reglas = (hayCambio || hayPago) ? '' : (r.herramientas || []).map(function (h) {
       var clave = String(h.regla || '').trim().split(/[.,(]/)[0].trim();
       if (!clave || html.toLowerCase().indexOf(clave.toLowerCase()) >= 0) return '';
       return '<div class="regla"><b>' + escapar(h.tool) + ':</b> ' + escapar(h.regla || '') + '</div>';
@@ -2387,6 +2538,139 @@ async function pintarExtracto(){
     if (vacio) vacio.hidden = false;
     if (sub) sub.textContent = 'No se pudo cargar el extracto (' + (err.message || err) + ')';
   }
+}
+
+
+// ── Los pagos con x402 ───────────────────────────────────────────
+//
+// Cuando el asesor prepara un envio de dinero, el motor devuelve la
+// oferta x402 (el "reto" de pago). Aqui se pinta como una tarjeta
+// con los datos, y el cliente confirma con un boton.
+//
+// EL BANCO NUNCA ENVIA SIN QUE EL CLIENTE LO CONFIRME. Por eso el
+// boton: el primer paso solo prepara, el segundo liquida.
+
+// El reto pendiente: lo que el motor pidio y el cliente aun no ha
+// confirmado.
+var pagoPendiente = null;
+
+function pintarTarjetaPago(h) {
+  var res = h.resultado || {};
+  var d = res.destinatario || {};
+  var oferta = (res.oferta && res.oferta.accepts && res.oferta.accepts[0]) || {};
+  var x402 = res.x402 || {};
+
+  var html = '<div class="pago" id="tarjetaPago">';
+  html += '<div class="pago-cab"><span class="x402">x402</span>' +
+          '<span>Envío de dinero preparado</span></div>';
+  html += '<div class="pago-cuerpo">';
+
+  html += '<div class="pago-fila"><span class="l">Para</span><span class="v">' +
+          escapar(d.nombre || '') + (d.relacion ? ' (' + escapar(d.relacion) + ')' : '') +
+          '</span></div>';
+  html += '<div class="pago-fila"><span class="l">Importe</span><span class="v">' +
+          escapar(res.importe_formato || '') + ' ' + escapar(res.token || 'USDC') +
+          '</span></div>';
+  html += '<div class="pago-fila"><span class="l">Red</span><span class="v">' +
+          escapar(res.cadena || '') + '</span></div>';
+  if (oferta.payTo) {
+    html += '<div class="pago-fila"><span class="l">Dirección</span>' +
+            '<span class="v dir">' + escapar(oferta.payTo) + '</span></div>';
+  }
+  if (res.concepto) {
+    html += '<div class="pago-fila"><span class="l">Concepto</span><span class="v">' +
+            escapar(res.concepto) + '</span></div>';
+  }
+  html += '</div>';
+
+  html += '<div class="pago-acciones">' +
+          '<button class="pago-btn" id="btnConfirmarPago">Confirmar y enviar</button>' +
+          '<button class="pago-btn sec" id="btnCancelarPago">Cancelar</button>' +
+          '</div>';
+  html += '<div class="pago-aviso">El dinero no sale hasta que lo confirmes. ' +
+          'La red es ' + escapar(res.cadena || 'Base') + ' y el pago se liquida ' +
+          'en cuanto se firma.</div>';
+  html += '</div>';
+
+  return html;
+}
+
+async function confirmarPago() {
+  if (!pagoPendiente) return;
+  var btn = document.getElementById('btnConfirmarPago');
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+
+  try {
+    // La cabecera X-PAYMENT es la del protocolo x402: el cliente
+    // paga y reenvia la peticion con ella. El body la lleva tambien,
+    // para los clientes que no pueden mandar cabeceras.
+    var cabeceraPago = (pagoPendiente.cabeceras || {})['X-PAYMENT'] || '';
+    var r = await fetch((window.__API_URL__ || '/api') + '/pago', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-PAYMENT': cabeceraPago,
+      },
+      body: JSON.stringify({
+        perfil: perfilActual,
+        confirmar: true,
+        reto_id: pagoPendiente.reto_id,
+        x_payment: cabeceraPago,
+      }),
+    });
+    var d = await r.json();
+    var tarjeta = document.getElementById('tarjetaPago');
+    if (d.estado === 'liquidado') {
+      var pago = d.pago || {};
+      var hecho = '<div class="pago-hecho"><b>Enviado.</b> ' +
+        escapar(pago.importe_formato || '') + ' ' + escapar(pago.token || '') +
+        ' a ' + escapar((pago.destinatario || {}).nombre || '') +
+        '. Referencia <b>' + escapar((pago.tx || '').slice(0, 20)) + '...</b>' +
+        '</div>';
+      if (tarjeta) tarjeta.insertAdjacentHTML('beforeend', hecho);
+      // El boton deja de decir "Enviando...": ya se ha enviado.
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Enviado';
+        btn.classList.add('hecho');
+      }
+      var btnNo = document.getElementById('btnCancelarPago');
+      if (btnNo) btnNo.remove();
+      if (typeof añadirMensaje === 'function') {
+        añadirMensaje(escapar(d.pregunta || ''), 'asesor');
+      }
+      // El saldo de la wallet ha bajado: se refleja en el perfil.
+      try { pintarPerfiles(); } catch (e) {}
+    } else {
+      if (typeof añadirMensaje === 'function') {
+        añadirMensaje(escapar(d.pregunta || d.error || 'No se ha podido enviar'), 'asesor');
+      }
+      if (btn) { btn.disabled = false; btn.textContent = 'Reintentar'; }
+    }
+    pagoPendiente = null;
+  } catch (err) {
+    if (typeof añadirMensaje === 'function') {
+      añadirMensaje('No se ha podido enviar el dinero: ' + (err.message || err), 'asesor');
+    }
+    if (btn) { btn.disabled = false; btn.textContent = 'Reintentar'; }
+  }
+}
+
+function cancelarPago() {
+  pagoPendiente = null;
+  var tarjeta = document.getElementById('tarjetaPago');
+  if (tarjeta) tarjeta.remove();
+  if (typeof añadirMensaje === 'function') {
+    añadirMensaje('Vale, no lo envio.', 'asesor');
+  }
+}
+
+// Engancha los botones de la tarjeta (despues de pintarla).
+function engancharBotonesPago() {
+  var btnOk = document.getElementById('btnConfirmarPago');
+  if (btnOk) btnOk.addEventListener('click', confirmarPago);
+  var btnNo = document.getElementById('btnCancelarPago');
+  if (btnNo) btnNo.addEventListener('click', cancelarPago);
 }
 
 

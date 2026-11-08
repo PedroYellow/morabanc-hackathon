@@ -517,9 +517,25 @@ def evaluar_compra(
                 "llegas, ni aunque te lo presten todo."
             )
             cabe_vivienda = False
+        # El maximo, en euros de PRECIO (no de cuota).
+        #
+        # El tope de compromiso son 12.000 EUR al AÑO (el 40 % de la
+        # renta de 30.000): es una cuota, no un precio. Meterlo como
+        # "importe maximo" hacia que el veredicto dijera "puedes
+        # gastar hasta 12.000" para una casa de 300.000, cuando lo
+        # que queria decir es "puedes comprometer 12.000 al año".
+        #
+        # El precio maximo es el capital que cabe con esa cuota
+        # (mas lo que puedas adelantar de entrada).
+        maximo_vivienda = _capital_maximo_para_cuota(
+            tope_compromiso - ya_comprometido, tipo_interes, meses_prestamo
+        )
+        if maximo_por_caja > 0:
+            maximo_vivienda = min(maximo_vivienda, maximo_por_caja + maximo_por_cuota)
+
         return CapacidadGasto(
             cabe=cabe_vivienda,
-            importe_maximo=tope_compromiso.quantize(Decimal("0.01")),
+            importe_maximo=maximo_vivienda.quantize(Decimal("0.01")),
             importe_pedido=importe,
             margen_mensual_tras_pago=(tope_compromiso - comprometido).quantize(Decimal("0.01")),
             meses_colchon_tras_pago=meses_colchon,
